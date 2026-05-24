@@ -1,0 +1,31 @@
+[package]
+name = "frontend"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "frontend"
+path = "src/main.rs"
+
+[dependencies]
+shared = { path = "../shared" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+
+leptos = { workspace = true }
+leptos_router = { workspace = true }
+leptos_animate = { workspace = true }
+stylist = { workspace = true }
+gloo = { workspace = true }
+reqwasm = { workspace = true }
+web-sys = { workspace = true }
+wasm-bindgen = { workspace = true }
+
+[dev-dependencies]
+wasm-bindgen-test = { workspace = true }

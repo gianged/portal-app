@@ -1,0 +1,2 @@
+# TODO: define dev stack services (postgres, redis, cassandra/scylla, openfga).
+# Run with: docker compose -f infra/docker-compose.yml up -d

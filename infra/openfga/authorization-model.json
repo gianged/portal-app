@@ -1,0 +1,398 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user"
+    },
+    {
+      "type": "company",
+      "relations": {
+        "hr": { "this": {} },
+        "director": { "this": {} },
+        "member": { "this": {} },
+        "can_manage_users": { "computedUserset": { "relation": "hr" } },
+        "can_manage_groups": { "computedUserset": { "relation": "hr" } }
+      },
+      "metadata": {
+        "relations": {
+          "hr": {
+            "directly_related_user_types": [{ "type": "user" }]
+          },
+          "director": {
+            "directly_related_user_types": [{ "type": "user" }]
+          },
+          "member": {
+            "directly_related_user_types": [{ "type": "user", "wildcard": {} }]
+          }
+        }
+      }
+    },
+    {
+      "type": "group",
+      "relations": {
+        "company": { "this": {} },
+        "leader": { "this": {} },
+        "sub_leader": { "this": {} },
+        "direct_member": { "this": {} },
+        "member": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "direct_member" } },
+              { "computedUserset": { "relation": "leader" } },
+              { "computedUserset": { "relation": "sub_leader" } }
+            ]
+          }
+        },
+        "viewer": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "member" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "company" },
+                  "computedUserset": { "relation": "director" }
+                }
+              }
+            ]
+          }
+        },
+        "can_post_announcement": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "leader" } },
+              { "computedUserset": { "relation": "sub_leader" } }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "company": {
+            "directly_related_user_types": [{ "type": "company" }]
+          },
+          "leader": {
+            "directly_related_user_types": [{ "type": "user" }]
+          },
+          "sub_leader": {
+            "directly_related_user_types": [{ "type": "user" }]
+          },
+          "direct_member": {
+            "directly_related_user_types": [{ "type": "user" }]
+          }
+        }
+      }
+    },
+    {
+      "type": "project",
+      "relations": {
+        "company": { "this": {} },
+        "owner_group": { "this": {} },
+        "collaborator_group": { "this": {} },
+        "owner_leader": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "owner_group" },
+            "computedUserset": { "relation": "leader" }
+          }
+        },
+        "owner_sub_leader": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "owner_group" },
+            "computedUserset": { "relation": "sub_leader" }
+          }
+        },
+        "owner_member": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "owner_group" },
+            "computedUserset": { "relation": "member" }
+          }
+        },
+        "collaborator_member": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "collaborator_group" },
+            "computedUserset": { "relation": "member" }
+          }
+        },
+        "viewer": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "owner_member" } },
+              { "computedUserset": { "relation": "collaborator_member" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "company" },
+                  "computedUserset": { "relation": "director" }
+                }
+              }
+            ]
+          }
+        },
+        "can_edit_metadata": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "owner_leader" } },
+              { "computedUserset": { "relation": "owner_sub_leader" } }
+            ]
+          }
+        },
+        "can_change_status": {
+          "computedUserset": { "relation": "owner_leader" }
+        },
+        "can_manage_invites": {
+          "computedUserset": { "relation": "owner_leader" }
+        },
+        "can_assign_request": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "owner_leader" } },
+              { "computedUserset": { "relation": "owner_sub_leader" } }
+            ]
+          }
+        },
+        "can_create_request": {
+          "computedUserset": { "relation": "viewer" }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "company": {
+            "directly_related_user_types": [{ "type": "company" }]
+          },
+          "owner_group": {
+            "directly_related_user_types": [{ "type": "group" }]
+          },
+          "collaborator_group": {
+            "directly_related_user_types": [{ "type": "group" }]
+          }
+        }
+      }
+    },
+    {
+      "type": "request",
+      "relations": {
+        "parent_project": { "this": {} },
+        "creator": { "this": {} },
+        "assignee": { "this": {} },
+        "viewer": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "parent_project" },
+            "computedUserset": { "relation": "viewer" }
+          }
+        },
+        "can_assign": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "parent_project" },
+            "computedUserset": { "relation": "can_assign_request" }
+          }
+        },
+        "can_progress": {
+          "computedUserset": { "relation": "assignee" }
+        },
+        "can_approve_review": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "creator" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "parent_project" },
+                  "computedUserset": { "relation": "owner_leader" }
+                }
+              },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "parent_project" },
+                  "computedUserset": { "relation": "owner_sub_leader" }
+                }
+              }
+            ]
+          }
+        },
+        "can_cancel": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "creator" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "parent_project" },
+                  "computedUserset": { "relation": "owner_leader" }
+                }
+              },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "parent_project" },
+                  "computedUserset": { "relation": "owner_sub_leader" }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "parent_project": {
+            "directly_related_user_types": [{ "type": "project" }]
+          },
+          "creator": {
+            "directly_related_user_types": [{ "type": "user" }]
+          },
+          "assignee": {
+            "directly_related_user_types": [{ "type": "user" }]
+          }
+        }
+      }
+    },
+    {
+      "type": "ticket",
+      "relations": {
+        "company": { "this": {} },
+        "requester": { "this": {} },
+        "assignee": { "this": {} },
+        "it_group": { "this": {} },
+        "it_member": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "it_group" },
+            "computedUserset": { "relation": "member" }
+          }
+        },
+        "viewer": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "requester" } },
+              { "computedUserset": { "relation": "assignee" } },
+              { "computedUserset": { "relation": "it_member" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "company" },
+                  "computedUserset": { "relation": "director" }
+                }
+              }
+            ]
+          }
+        },
+        "can_triage": { "computedUserset": { "relation": "it_member" } },
+        "can_assign": { "computedUserset": { "relation": "it_member" } },
+        "can_work":   { "computedUserset": { "relation": "assignee" } },
+        "can_close":  { "computedUserset": { "relation": "requester" } },
+        "can_reopen": { "computedUserset": { "relation": "requester" } }
+      },
+      "metadata": {
+        "relations": {
+          "company": {
+            "directly_related_user_types": [{ "type": "company" }]
+          },
+          "requester": {
+            "directly_related_user_types": [{ "type": "user" }]
+          },
+          "assignee": {
+            "directly_related_user_types": [{ "type": "user" }]
+          },
+          "it_group": {
+            "directly_related_user_types": [{ "type": "group" }]
+          }
+        }
+      }
+    },
+    {
+      "type": "group_channel",
+      "relations": {
+        "company": { "this": {} },
+        "parent_group": { "this": {} },
+        "parent_member": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "parent_group" },
+            "computedUserset": { "relation": "member" }
+          }
+        },
+        "parent_leader": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "parent_group" },
+            "computedUserset": { "relation": "leader" }
+          }
+        },
+        "parent_sub_leader": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "parent_group" },
+            "computedUserset": { "relation": "sub_leader" }
+          }
+        },
+        "viewer": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "parent_member" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "company" },
+                  "computedUserset": { "relation": "director" }
+                }
+              }
+            ]
+          }
+        },
+        "can_post": { "computedUserset": { "relation": "parent_member" } },
+        "can_post_announcement": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "parent_leader" } },
+              { "computedUserset": { "relation": "parent_sub_leader" } }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "company": {
+            "directly_related_user_types": [{ "type": "company" }]
+          },
+          "parent_group": {
+            "directly_related_user_types": [{ "type": "group" }]
+          }
+        }
+      }
+    },
+    {
+      "type": "direct_channel",
+      "relations": {
+        "participant": { "this": {} },
+        "viewer": { "computedUserset": { "relation": "participant" } },
+        "can_post": { "computedUserset": { "relation": "participant" } }
+      },
+      "metadata": {
+        "relations": {
+          "participant": {
+            "directly_related_user_types": [{ "type": "user" }]
+          }
+        }
+      }
+    },
+    {
+      "type": "general_channel",
+      "relations": {
+        "company": { "this": {} },
+        "viewer": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "company" },
+            "computedUserset": { "relation": "member" }
+          }
+        },
+        "can_post": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "company" },
+            "computedUserset": { "relation": "hr" }
+          }
+        },
+        "can_post_announcement": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "company" },
+            "computedUserset": { "relation": "hr" }
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "company": {
+            "directly_related_user_types": [{ "type": "company" }]
+          }
+        }
+      }
+    }
+  ]
+}

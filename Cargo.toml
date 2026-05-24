@@ -1,0 +1,43 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT"
+
+[workspace.dependencies]
+# core
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+time = { version = "0.3", features = ["serde"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# backend
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+axum = { version = "0.8", features = ["ws", "macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
+redis = { version = "1", features = ["tokio-comp"] }
+scylla = "1"
+
+# workers
+apalis = "0.7"
+
+# frontend
+leptos = { version = "0.8", features = ["csr"] }
+leptos_router = "0.8"
+leptos_animate = "0.1"
+stylist = "0.15"
+gloo = "0.12"
+reqwasm = "0.5"
+web-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-test = "0.3"

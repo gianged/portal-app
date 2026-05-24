@@ -1,0 +1,6 @@
+{
+  "name": "internal-portal",
+  "model_file": "./authorization-model.fga",
+  "tuples": [],
+  "tests": []
+}

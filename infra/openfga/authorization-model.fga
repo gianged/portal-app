@@ -1,0 +1,126 @@
+model
+  schema 1.1
+
+# =============================================================================
+# Internal Portal authorization model (OpenFGA DSL form)
+#
+# Source domain: docs/domain-logic.txt (see PERMISSIONS SUMMARY and
+# CROSS-CUTTING INVARIANTS). The JSON form is in authorization-model.json
+# and is what gets loaded into the OpenFGA store.
+#
+# Design notes:
+#   - There is exactly one 'company' object (singleton) holding the
+#     org-wide relations: director, hr, and a 'member' wildcard for
+#     "every user". The portal is single-tenant per docs/tech.txt, so
+#     no tenant scoping is needed.
+#   - Group membership is the unit of project access (invitations are
+#     group-level). Per-user direct access on projects is deliberately
+#     absent; add a 'collaborator_user' relation later only if a real
+#     need appears.
+#   - Directors have read on EVERYTHING except direct channels
+#     (invariant 10). direct_channel.viewer is participant-only by
+#     design; the director branch is intentionally missing there.
+#   - IT membership is computed via 'member from it_group' where each
+#     ticket holds a relation to the IT group object.
+# =============================================================================
+
+type user
+
+type company
+  relations
+    # HR users; can manage staff records and post company-wide announcements
+    define hr: [user]
+    # Directors; read access across the org (excluding direct messages)
+    define director: [user]
+    # Wildcard: every user. Used by the general channel viewer.
+    define member: [user:*]
+    define can_manage_users: hr
+    define can_manage_groups: hr
+
+type group
+  relations
+    define company: [company]
+    define leader: [user]
+    define sub_leader: [user]
+    # Direct group members. The 'member' relation below unions in leader
+    # and sub_leader because they are also members of the group.
+    define direct_member: [user]
+    define member: direct_member or leader or sub_leader
+    define viewer: member or director from company
+    define can_post_announcement: leader or sub_leader
+
+type project
+  relations
+    define company: [company]
+    define owner_group: [group]
+    define collaborator_group: [group]
+    # Convenience relations derived from owner_group
+    define owner_leader: leader from owner_group
+    define owner_sub_leader: sub_leader from owner_group
+    define owner_member: member from owner_group
+    define collaborator_member: member from collaborator_group
+    define viewer: owner_member or collaborator_member or director from company
+    define can_edit_metadata: owner_leader or owner_sub_leader
+    define can_change_status: owner_leader
+    define can_manage_invites: owner_leader
+    define can_assign_request: owner_leader or owner_sub_leader
+    define can_create_request: viewer
+
+type request
+  relations
+    define parent_project: [project]
+    define creator: [user]
+    define assignee: [user]
+    define viewer: viewer from parent_project
+    define can_assign: can_assign_request from parent_project
+    # Assignee drives draft->submitted->assigned->in_progress->review.
+    # State-specific gates (e.g. only 'assigned' can move to 'in_progress')
+    # belong in the application layer; OpenFGA only answers "is this user
+    # permitted in principle".
+    define can_progress: assignee
+    define can_approve_review: creator or owner_leader from parent_project or owner_sub_leader from parent_project
+    define can_cancel: creator or owner_leader from parent_project or owner_sub_leader from parent_project
+
+type ticket
+  relations
+    define company: [company]
+    define requester: [user]
+    define assignee: [user]
+    define it_group: [group]
+    define it_member: member from it_group
+    define viewer: requester or assignee or it_member or director from company
+    define can_triage: it_member
+    define can_assign: it_member
+    define can_work: assignee
+    define can_close: requester
+    define can_reopen: requester
+
+# Chat channels are split into three types so direct_channel can omit
+# the director branch (invariant 10: direct messages are private even
+# from directors).
+
+type group_channel
+  relations
+    define company: [company]
+    define parent_group: [group]
+    define parent_member: member from parent_group
+    define parent_leader: leader from parent_group
+    define parent_sub_leader: sub_leader from parent_group
+    define viewer: parent_member or director from company
+    define can_post: parent_member
+    define can_post_announcement: parent_leader or parent_sub_leader
+
+type direct_channel
+  relations
+    define participant: [user]
+    # Intentionally no 'director from company' branch. Direct messages
+    # are private; see invariant 10 in docs/domain-logic.txt.
+    define viewer: participant
+    define can_post: participant
+
+type general_channel
+  relations
+    define company: [company]
+    define viewer: member from company
+    define can_post: hr from company
+    define can_post_announcement: hr from company

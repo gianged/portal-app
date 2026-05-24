@@ -1,0 +1,18 @@
+[build]
+target = "index.html"
+release = false
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 8081
+open = false
+
+# Proxy HTTP API calls to the backend during dev. Uncomment once the server is running.
+# [[proxy]]
+# backend = "http://127.0.0.1:8080/api/"
+# rewrite = "/api/"
+
+# Proxy WebSocket connections to the backend. Uncomment once the server is running.
+# [[proxy]]
+# backend = "ws://127.0.0.1:8080/ws/"
+# ws = true

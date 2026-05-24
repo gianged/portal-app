@@ -1,0 +1,22 @@
+[package]
+name = "workers"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "workers"
+path = "src/main.rs"
+
+[dependencies]
+application = { path = "../application" }
+infrastructure = { path = "../infrastructure" }
+shared = { path = "../shared" }
+
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+apalis = { workspace = true }

@@ -1,0 +1,536 @@
+================================================================
+INTERNAL PORTAL - BUSINESS LOGIC
+================================================================
+
+This document describes the domain rules of the portal: who the
+actors are, what entities exist, how those entities move through
+their lifecycles, and what each actor is allowed to do. It does
+not cover infrastructure or implementation details.
+
+
+----------------------------------------------------------------
+ACTORS
+----------------------------------------------------------------
+
+The portal has six distinct actor types. Roles are not mutually
+exclusive: a single user can hold multiple roles. For example, a
+Group Leader is also a Member of their group, and a Director can
+simultaneously be a Group Leader of one team.
+
+Director
+    Has read access to everything in the company. Sees all
+    projects, all tickets, all group chats (with the deliberate
+    exception of direct messages between individuals). Directors
+    can intervene in any workflow but typically do not own
+    day-to-day work.
+
+HR
+    Manages staff records. Creates new users, assigns them to
+    groups, sets their roles within those groups, and deactivates
+    them when they leave. HR is also the only role permitted to
+    post company-wide announcements.
+
+Group Leader
+    Manages a single group's work. Owns the group's projects,
+    invites other groups to collaborate, assigns requests within
+    those projects, and posts announcements in their group's
+    chat. Each group has exactly one leader at any time.
+
+Group Sub-Leader
+    Assists the leader. Can view and assign requests, post
+    announcements in the group chat, but cannot transfer
+    ownership of projects or invite other groups. A group can
+    have multiple sub-leaders.
+
+Member (Staff)
+    Regular employee. Belongs to one or more groups, contributes
+    to projects, chats with colleagues, raises IT tickets when
+    something breaks. The largest population by count.
+
+IT
+    Special-purpose group that handles support tickets. Members
+    of the IT group can triage, assign, and resolve tickets
+    raised by anyone in the company. Otherwise behaves like any
+    other group.
+
+
+----------------------------------------------------------------
+CORE ENTITIES
+----------------------------------------------------------------
+
+User
+    A person with an account. Has a profile (name, avatar,
+    contact info, timezone), belongs to one or more groups, and
+    holds zero or more roles per group. A user has exactly one
+    lifecycle state at any time: pending, active, or deactivated.
+
+Group
+    An organizational unit. Has a name, a description, a single
+    leader, zero or more sub-leaders, and zero or more members.
+    A user's relationship to a group is one of: leader,
+    sub-leader, or member. Groups cannot be nested; the org
+    structure is flat at the group level. Hierarchy lives in
+    user role, not group containment.
+
+Project
+    A body of work owned by a group. Has a name, description,
+    status, owner group, and zero or more collaborator groups.
+    Contains many Requests. Each project has exactly one owner
+    group at any time. Ownership can be transferred between
+    groups but only by mutual consent of both leaders.
+
+Request
+    A unit of work within a project. Has a title, description,
+    creator, optional assignee, status, priority, optional due
+    date, and optional attachments. Belongs to exactly one
+    project.
+
+Ticket
+    A support request from any employee to the IT group.
+    Structurally similar to a Request but lives outside the
+    project hierarchy. Has a requester, optional assignee
+    (an IT member), status, priority, and category (hardware,
+    software, access, other).
+
+Channel
+    A container for chat messages. Three kinds:
+      - Group channel: one per group, members of the group
+        participate.
+      - General channel: one for the whole company, every active
+        user participates.
+      - Direct channel: one per pair of users, only the two
+        participants see it.
+
+Message
+    A chat message within a channel. Has a sender, body,
+    timestamp, optional attachments, optional mentions, and an
+    is_announcement flag.
+
+Announcement
+    A message with the is_announcement flag set. Cannot be
+    edited after a grace period (15 minutes), cannot be deleted
+    by anyone except its sender or HR.
+
+
+----------------------------------------------------------------
+USER LIFECYCLE
+----------------------------------------------------------------
+
+States:
+
+    pending      Account created by HR, user has not yet
+                 completed first login.
+    active       Normal operating state.
+    deactivated  Soft-deleted. Cannot log in, filtered from
+                 active queries, but historical references
+                 (authored messages, created requests, etc.)
+                 remain intact.
+
+Transitions:
+
+    (none) ─create by HR──> pending
+    pending ─first login──> active
+    active ─deactivate by HR──> deactivated
+    deactivated ─reactivate by HR──> active
+
+Rules:
+
+    A pending user has no access to anything until they complete
+    first login.
+
+    Deactivation does not remove the user from their groups
+    immediately. Instead, the user's group memberships are
+    marked inactive. This preserves the structure for audit
+    while removing access.
+
+    Before deactivating a user, HR must resolve any active
+    assignments: open requests assigned to the user must be
+    reassigned or cancelled, and group leadership must be
+    transferred to another member.
+
+    A deactivated user's chat messages, request authorship, and
+    project contributions remain visible in the system. Their
+    name is rendered as their original name with a "(former
+    employee)" suffix in the UI.
+
+
+----------------------------------------------------------------
+GROUP MEMBERSHIP RULES
+----------------------------------------------------------------
+
+A group has exactly one leader. This is enforced at the database
+level via a partial unique constraint.
+
+A group can have any number of sub-leaders, including zero.
+
+A user can be a member of multiple groups. Their role can differ
+per group: leader of group A, member of group B, sub-leader of
+group C.
+
+When a group leader is deactivated, HR must transfer leadership
+to another member (typically a sub-leader, but not required) as
+part of the deactivation flow. A group cannot exist without a
+leader.
+
+A group cannot be deleted while it has active projects. The
+projects must be transferred to another owner group or completed
+first.
+
+
+----------------------------------------------------------------
+PROJECT LIFECYCLE
+----------------------------------------------------------------
+
+States:
+
+    planning    Initial state. Project exists but work has not
+                started. Visible only to the owner group.
+    active      Work in progress. Visible to owner and
+                collaborator groups.
+    on_hold    Temporarily paused. Read-only for everyone
+                except the owner group leader.
+    completed   Work finished. Read-only for all.
+    cancelled   Project abandoned. Read-only for all.
+
+Transitions:
+
+    (none) ─create by group leader──> planning
+    planning ─activate──> active
+    active ─pause──> on_hold
+    on_hold ─resume──> active
+    active ─complete──> completed
+    active ─cancel──> cancelled
+    planning ─cancel──> cancelled
+
+Rules:
+
+    Only group leaders can create projects, and the project is
+    automatically owned by the leader's group.
+
+    Project status transitions can only be initiated by the
+    owner group leader.
+
+    A project in planning state has no collaborator groups
+    visible to it; collaborators can only be invited after the
+    project enters active state.
+
+    Completing or cancelling a project automatically closes all
+    its open requests (status moves to cancelled with a note).
+
+
+----------------------------------------------------------------
+PROJECT COLLABORATION (GROUP INVITES)
+----------------------------------------------------------------
+
+Project invites are group-level. When a project owner wants to
+bring another group into a project, they invite the group as a
+whole. All members of the invited group gain access; subsequent
+membership changes propagate automatically.
+
+Invite states:
+
+    pending     Invite sent, target group leader has not
+                responded.
+    accepted    Invited group is now a collaborator.
+    declined    Invited group declined.
+    revoked     Owner group leader withdrew the invite before
+                it was accepted, or removed the collaborator
+                group later.
+
+Transitions:
+
+    owner sends invite        ─> pending
+    target leader accepts     ─> accepted
+    target leader declines    ─> declined
+    owner revokes (pre-accept)─> revoked
+    owner removes (post-accept)─> revoked
+
+Rules:
+
+    Only the owner group's leader can send or revoke invites.
+
+    Only the target group's leader can accept or decline an
+    incoming invite.
+
+    A group cannot be invited twice to the same project; if an
+    invite was declined or revoked, the owner can send a new
+    one, replacing the old record.
+
+    Owner group cannot be a collaborator of its own project.
+
+    When a collaborator group's membership changes, project
+    access automatically reflects the change. No project-level
+    bookkeeping is needed.
+
+
+----------------------------------------------------------------
+REQUEST LIFECYCLE
+----------------------------------------------------------------
+
+States:
+
+    draft       Creator is still composing. Visible only to
+                creator.
+    submitted   Ready for triage. No assignee yet.
+    assigned    Has an assignee, work has not started.
+    in_progress Assignee is working on it.
+    review      Assignee marked done, awaiting verification by
+                creator or project leader.
+    completed   Verified done.
+    cancelled   Abandoned at any prior state.
+
+Transitions:
+
+    (none) ─create──> draft
+    draft ─submit──> submitted
+    submitted ─assign──> assigned
+    assigned ─start──> in_progress
+    in_progress ─finish──> review
+    review ─approve──> completed
+    review ─reject──> in_progress
+    {any except completed} ─cancel──> cancelled
+
+Rules:
+
+    Anyone with access to the project (owner group members or
+    collaborator group members) can create a request.
+
+    Only the owner group's leader or sub-leaders can assign a
+    request to a specific user. Assignees must be members of
+    the owner group or a collaborator group.
+
+    Only the assignee can move a request from assigned to
+    in_progress, and from in_progress to review.
+
+    Only the creator, the project owner leader, or a
+    sub-leader can approve a review or reject it back to
+    in_progress.
+
+    Once completed, a request cannot be reopened. A new request
+    must be created if follow-up work is needed.
+
+
+----------------------------------------------------------------
+TICKET LIFECYCLE
+----------------------------------------------------------------
+
+States:
+
+    open        Just raised, no IT staff has looked at it yet.
+    triaged     An IT member has reviewed it and set priority.
+    assigned    Specific IT member is responsible for it.
+    in_progress IT member is working on it.
+    resolved    IT believes the issue is fixed, awaiting
+                requester confirmation.
+    closed      Requester confirmed, ticket archived.
+    reopened    Requester rejected resolution, returns to
+                in_progress.
+
+Transitions:
+
+    (none) ─raise──> open
+    open ─triage──> triaged
+    triaged ─assign──> assigned
+    assigned ─start──> in_progress
+    in_progress ─resolve──> resolved
+    resolved ─confirm──> closed
+    resolved ─reject──> in_progress (reopened)
+    closed ─reopen within 7 days──> in_progress (reopened)
+
+Rules:
+
+    Any active user can raise a ticket.
+
+    Only IT group members can move tickets through the triage,
+    assigned, in_progress, and resolved states.
+
+    Only the requester can move a ticket from resolved to closed
+    or reject it back to in_progress.
+
+    After a ticket has been closed for 7 days, it cannot be
+    reopened. A new ticket must be raised.
+
+    Tickets carry a priority (low, normal, high, urgent) set
+    during triage. Urgent tickets generate a notification to all
+    IT members immediately.
+
+
+----------------------------------------------------------------
+CHAT RULES
+----------------------------------------------------------------
+
+Group channels
+
+    One channel per group. Members of the group automatically
+    have read/write access. Non-members cannot see the channel
+    in their channel list.
+
+    Group leader and sub-leaders can post announcements
+    (is_announcement flag) within the group channel.
+
+    Group leader can delete any message in their group's
+    channel. Members can delete only their own messages within
+    a 15-minute grace period.
+
+General channel
+
+    One channel for the entire company. Every active user has
+    read access. Write access is restricted to HR only.
+
+    The general channel is announcement-only in effect: HR
+    posts, everyone reads. This is intentional, to prevent the
+    general channel from becoming noise.
+
+Direct channels
+
+    Created on demand between any two active users. Visible
+    only to the two participants, including to Directors.
+    Directors do not have a backdoor into direct messages.
+
+    No announcements in direct channels.
+
+    Either participant can delete their own messages within a
+    15-minute grace period. Neither can delete the other's.
+
+
+----------------------------------------------------------------
+ANNOUNCEMENTS
+----------------------------------------------------------------
+
+An announcement is a message with the is_announcement flag set.
+It is rendered differently in the UI (pinned, highlighted, or
+similar) and triggers a notification to all channel members.
+
+Posting rules:
+
+    Group channel announcements: posted by the group's leader or
+    sub-leaders.
+
+    General channel announcements: posted by HR only.
+
+    Direct channel: announcements not permitted.
+
+Editing:
+
+    Announcements can be edited only within 15 minutes of
+    posting. After that, they are immutable. A correction must
+    be posted as a new announcement.
+
+    Edits during the grace period are logged; the announcement
+    shows an "edited" marker.
+
+Deletion:
+
+    Only the sender or HR can delete an announcement, at any
+    time. Deletion is hard delete for announcements (unlike
+    regular messages, which are soft-deleted) because they
+    were intentionally broadcast.
+
+
+----------------------------------------------------------------
+PERMISSIONS SUMMARY
+----------------------------------------------------------------
+
+The matrix below summarizes who can perform each major action.
+"Owner leader" means the leader of the project's owner group.
+"Member" means a member of the owner or any collaborator group
+of the relevant project.
+
+Action                          Allowed actors
+------                          --------------
+Create user                     HR
+Deactivate user                 HR
+Assign user to group            HR
+Change user's role in group     HR
+Create group                    HR
+Delete group                    HR (with no active projects)
+Create project                  Group leader (in their group)
+Edit project metadata           Owner leader, sub-leaders
+Change project status           Owner leader
+Invite group to project         Owner leader
+Accept project invite           Target group leader
+Remove collaborator group       Owner leader
+Create request                  Member
+Assign request                  Owner leader, sub-leaders
+Update request status           Assignee, owner leader,
+                                sub-leaders (per state rules)
+Raise ticket                    Any active user
+Triage / assign ticket          IT member
+Close ticket                    Requester
+Send group chat message         Group member
+Send direct message             Either participant
+Send general chat message       HR
+Post group announcement         Group leader, sub-leaders
+Post general announcement       HR
+Read everything (within scope)  Director
+
+
+----------------------------------------------------------------
+CROSS-CUTTING INVARIANTS
+----------------------------------------------------------------
+
+These hold across the entire system, regardless of state.
+
+    1. Every group has exactly one leader at any time.
+
+    2. Every project has exactly one owner group at any time.
+
+    3. A user belongs to a group via exactly one role (leader,
+       sub-leader, or member). No user has multiple roles in
+       the same group.
+
+    4. Deactivated users do not appear in active queries but
+       remain referenced in historical records.
+
+    5. Audit log entries are immutable. They reference user IDs
+       even after deactivation.
+
+    6. Announcements cannot be silently mutated after the
+       15-minute grace period.
+
+    7. A project's owner group cannot also be one of its
+       collaborator groups.
+
+    8. Direct message channels involve exactly two distinct
+       users.
+
+    9. The IT group is structurally a normal group, but its
+       members have additional capabilities on tickets.
+
+    10. Directors have read access to all non-direct
+        communication. Direct messages are private even from
+        Directors.
+
+
+----------------------------------------------------------------
+NOTES AND OPEN QUESTIONS
+----------------------------------------------------------------
+
+A few design decisions that aren't fully settled. Worth deciding
+explicitly before implementation, even if the answer is "do the
+simplest thing for now":
+
+    Should non-leaders in a group be able to create requests in
+    the group's projects, or only contribute to existing ones?
+    The current rules say members can create requests; tighten
+    if needed.
+
+    Should Directors be visible to Group Leaders when viewing
+    their group's project membership? Probably yes; Directors
+    are implicitly attached to every group's view.
+
+    Should there be a "watcher" or "follower" concept on
+    requests and tickets, where uninvolved users can subscribe
+    to status changes? Useful but adds notification complexity.
+
+    Should announcements support scheduled posting (write now,
+    publish at 9am tomorrow)? Out of scope initially.
+
+    Should the IT group be a single group, or should there be
+    sub-categories of IT support (network, software, etc.)?
+    Starting with a single group is simpler.
+
+
+================================================================
+END
+================================================================
