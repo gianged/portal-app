@@ -53,7 +53,7 @@ The dependency graph points inward toward `domain` on the backend; `shared` is t
 
 ## Prerequisites
 
-- Rust 1.88 or newer (toolchain pinned in `rust-toolchain.toml` — `rustup` will install it automatically)
+- Rust 1.94 or newer (toolchain pinned in `rust-toolchain.toml` — `rustup` will install it automatically)
 - Docker + Docker Compose
 - [Trunk](https://trunkrs.dev): `cargo install trunk`
 - [sqlx-cli](https://crates.io/crates/sqlx-cli): `cargo install sqlx-cli --no-default-features --features rustls,postgres`

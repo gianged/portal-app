@@ -736,6 +736,7 @@ dependencies = [
 name = "domain"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "serde",
  "thiserror 2.0.18",
  "time",

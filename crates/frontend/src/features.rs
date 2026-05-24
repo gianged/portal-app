@@ -2,6 +2,7 @@ pub mod announcements;
 pub mod auth;
 pub mod chat;
 pub mod groups;
+pub mod home;
 pub mod notifications;
 pub mod projects;
 pub mod requests;

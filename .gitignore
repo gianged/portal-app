@@ -32,3 +32,6 @@ storage/uploads/*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Reference Files
+references/
