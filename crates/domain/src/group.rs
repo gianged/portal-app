@@ -13,6 +13,8 @@ pub struct Group {
     pub updated_at: OffsetDateTime,
 }
 
+/// IT is modeled as a special-purpose group (per the spec), not as a per-user
+/// identity. IT staff = members of the group with `kind = It`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GroupKind {

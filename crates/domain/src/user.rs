@@ -13,6 +13,7 @@ pub struct User {
     pub phone: Option<String>,
     pub timezone: String,
     pub status: UserStatus,
+    pub system_role: Option<SystemRole>,
     pub first_logged_in_at: Option<OffsetDateTime>,
     pub deactivated_at: Option<OffsetDateTime>,
     pub created_at: OffsetDateTime,
@@ -25,6 +26,18 @@ pub enum UserStatus {
     Pending,
     Active,
     Deactivated,
+}
+
+/// Org-wide identity, orthogonal to per-group `GroupRole`. Most users have
+/// `None`; only Directors and HR staff carry one. IT is not represented here —
+/// IT staff are identified by membership in the group with `GroupKind::It`.
+/// Use this for org-level authz (e.g. "is this user HR?"); use `Membership.role`
+/// for group-scoped checks (e.g. "is this user Leader of group X?").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SystemRole {
+    Director,
+    Hr,
 }
 
 impl UserStatus {

@@ -6,8 +6,8 @@ use crate::{
     ids::{ChannelId, MessageId, UserId},
 };
 
-/// Edit grace window per CLAUDE.md invariant 6: announcements are immutable
-/// after 15 minutes from creation.
+/// Announcements are editable for the first 15 minutes after creation; past
+/// that, they are considered published and immutable.
 pub const EDIT_GRACE: Duration = Duration::minutes(15);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

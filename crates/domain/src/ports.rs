@@ -1,3 +1,4 @@
+pub mod audit_repository;
 pub mod authz_client;
 pub mod chat_repository;
 pub mod event_publisher;
