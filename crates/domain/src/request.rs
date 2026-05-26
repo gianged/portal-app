@@ -115,6 +115,19 @@ impl RequestStatus {
         }
     }
 
+    /// Reject a request currently in review back to `in_progress`.
+    pub const fn try_reject(self) -> Result<Self, TransitionError> {
+        match self {
+            Self::Review => Ok(Self::InProgress),
+            Self::Draft
+            | Self::Submitted
+            | Self::Assigned
+            | Self::InProgress
+            | Self::Completed
+            | Self::Cancelled => Err(TransitionError::invalid(self.as_str(), "in_progress")),
+        }
+    }
+
     pub const fn try_cancel(self) -> Result<Self, TransitionError> {
         match self {
             Self::Draft
@@ -163,6 +176,12 @@ impl Request {
 
     pub fn complete(&mut self, now: OffsetDateTime) -> Result<(), TransitionError> {
         self.status = self.status.try_complete()?;
+        self.updated_at = now;
+        Ok(())
+    }
+
+    pub fn reject(&mut self, now: OffsetDateTime) -> Result<(), TransitionError> {
+        self.status = self.status.try_reject()?;
         self.updated_at = now;
         Ok(())
     }

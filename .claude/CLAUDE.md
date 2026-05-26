@@ -8,7 +8,7 @@ The workspace is fully scaffolded — 7 crates, complete module trees, all depen
 
 ## Toolchain
 
-- Rust 1.94, edition 2024 (pinned in `rust-toolchain.toml`).
+- Edition 2024, MSRV **1.94** (declared as `rust-version` in the workspace `Cargo.toml`). Develop with the latest stable toolchain; CI gates on MSRV.
 - Targets: native + `wasm32-unknown-unknown`.
 - TLS via `rustls`. Never add `openssl` or `native-tls`.
 - Async runtime: `tokio`. Background jobs: `apalis`.

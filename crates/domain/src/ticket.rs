@@ -125,6 +125,19 @@ impl TicketStatus {
         }
     }
 
+    /// Requester rejects an IT resolution; ticket goes back to `in_progress`.
+    pub const fn try_reject_resolution(self) -> Result<Self, TransitionError> {
+        match self {
+            Self::Resolved => Ok(Self::InProgress),
+            Self::Open
+            | Self::Triaged
+            | Self::Assigned
+            | Self::InProgress
+            | Self::Closed
+            | Self::Reopened => Err(TransitionError::invalid(self.as_str(), "in_progress")),
+        }
+    }
+
     /// 7-day reopen window is enforced in `application`, not here.
     pub const fn try_reopen(self) -> Result<Self, TransitionError> {
         match self {
@@ -183,6 +196,13 @@ impl Ticket {
     pub fn close(&mut self, now: OffsetDateTime) -> Result<(), TransitionError> {
         self.status = self.status.try_close()?;
         self.closed_at = Some(now);
+        self.updated_at = now;
+        Ok(())
+    }
+
+    pub fn reject_resolution(&mut self, now: OffsetDateTime) -> Result<(), TransitionError> {
+        self.status = self.status.try_reject_resolution()?;
+        self.resolved_at = None;
         self.updated_at = now;
         Ok(())
     }

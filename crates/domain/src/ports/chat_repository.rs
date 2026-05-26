@@ -46,6 +46,13 @@ pub trait ChatRepository: Send + Sync {
         limit: u32,
     ) -> Result<Vec<Message>, RepositoryError>;
 
+    /// Single-message lookup; needed for moderation (delete, edit-grace check).
+    async fn find_message(
+        &self,
+        channel_id: ChannelId,
+        message_id: MessageId,
+    ) -> Result<Option<Message>, RepositoryError>;
+
     async fn save_message(&self, message: &Message) -> Result<(), RepositoryError>;
 
     async fn find_announcement(
