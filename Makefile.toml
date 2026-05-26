@@ -1,0 +1,90 @@
+# cargo-make tasks for portal-app.
+#
+# Install once: `cargo install cargo-make --locked`
+# Run a task:   `cargo make <task>`
+# List tasks:   `cargo make --list-all-steps`
+#
+# Tasks are surfaced in RustRover via .idea/runConfigurations/.
+
+[config]
+default_to_workspace = false
+skip_core_tasks = true
+
+# ---------------------------------------------------------------- Infrastructure
+# Docker-based dependency stack (Postgres, ScyllaDB, Redis, OpenFGA).
+# Only use these if you need the app to talk to real services.
+
+[tasks.infra-up]
+description = "Bring up Postgres, ScyllaDB, Redis, OpenFGA (detached)."
+command = "docker"
+args = [
+    "compose", "-f", "infra/docker-compose.yml", "up", "-d",
+    "postgres", "scylla", "scylla-init", "redis", "openfga-migrate", "openfga",
+]
+
+[tasks.infra-down]
+description = "Stop and remove containers (keeps data volumes)."
+command = "docker"
+args = ["compose", "-f", "infra/docker-compose.yml", "down"]
+
+[tasks.infra-logs]
+description = "Tail logs from all infra containers."
+command = "docker"
+args = ["compose", "-f", "infra/docker-compose.yml", "logs", "-f"]
+
+# ---------------------------------------------------------------- Database
+
+[tasks.db-init]
+description = "Initialize the OpenFGA store (one-time, after first infra-up)."
+command = "docker"
+args = ["compose", "-f", "infra/docker-compose.yml", "--profile", "init", "up", "openfga-init"]
+
+[tasks.db-reset]
+description = "DESTRUCTIVE: wipe all data + backup volumes."
+command = "docker"
+args = ["compose", "-f", "infra/docker-compose.yml", "down", "-v"]
+
+# ---------------------------------------------------------------- Native services
+# Run the app on the host (not in containers) so breakpoints / hot-reload work
+# and RustRover's debugger can attach.
+
+[tasks.run-server]
+description = "Run the backend server natively."
+command = "cargo"
+args = ["run", "--bin", "server"]
+env = { RUST_LOG = "info,portal=debug" }
+
+[tasks.run-workers]
+description = "Run the background workers natively."
+command = "cargo"
+args = ["run", "--bin", "workers"]
+env = { RUST_LOG = "info,portal=debug" }
+
+[tasks.run-frontend]
+description = "Run the Leptos dev server (trunk serve, port 8081)."
+cwd = "./crates/frontend"
+command = "trunk"
+args = ["serve"]
+
+# ---------------------------------------------------------------- Full stack
+
+[tasks.run-all]
+description = "Run server + workers + frontend natively in parallel."
+run_task = { name = ["run-server", "run-workers", "run-frontend"], parallel = true }
+
+# ---------------------------------------------------------------- Quality
+
+[tasks.test]
+description = "Run all tests (unit, integration, doc) across the workspace."
+command = "cargo"
+args = ["test", "--workspace"]
+
+[tasks.clippy]
+description = "Lint with clippy, deny warnings."
+command = "cargo"
+args = ["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]
+
+[tasks.build]
+description = "Build the entire workspace."
+command = "cargo"
+args = ["build", "--workspace"]

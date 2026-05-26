@@ -28,8 +28,10 @@ axum = { version = "0.8", features = ["ws", "macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
-redis = { version = "1", features = ["tokio-comp"] }
-scylla = "1"
+redis = { version = "1", features = ["tokio-comp", "connection-manager"] }
+scylla = { version = "1", features = ["time-03", "rustls-023"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
+futures = "0.3"
 
 # workers
 apalis = "0.7"

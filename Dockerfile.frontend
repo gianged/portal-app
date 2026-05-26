@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1.6
+#
+# Multi-target build for the Leptos CSR frontend (built via Trunk to WASM).
+#
+# Targets:
+#   runtime  — nginx serving the static dist/, with /api and /ws proxied to
+#              the Rust server.
+#   dev      — full toolchain + trunk, source bind-mounted, `trunk serve`
+#              supplies live-reload over its own WebSocket.
+
+# ---- chef: shared base with trunk + cargo-chef + wasm target -------------
+FROM rust:1.94-bookworm AS chef
+RUN rustup target add wasm32-unknown-unknown
+RUN cargo install cargo-chef --locked --version "^0.1"
+RUN cargo install trunk        --locked --version "^0.21"
+WORKDIR /app
+
+# ---- planner: dep recipe --------------------------------------------------
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path /recipe.json
+
+# ---- builder: cook wasm deps, then trunk build --release ----------------
+FROM chef AS builder
+COPY --from=planner /recipe.json /recipe.json
+RUN cargo chef cook --release --target wasm32-unknown-unknown --recipe-path /recipe.json
+COPY . .
+RUN cd crates/frontend && trunk build --release
+
+# ---- runtime: nginx serves dist/, proxies /api and /ws to server --------
+FROM nginx:1.27-alpine AS runtime
+COPY --from=builder /app/crates/frontend/dist /usr/share/nginx/html
+COPY infra/nginx/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+
+# ---- dev: trunk serve from bind-mounted source --------------------------
+FROM chef AS dev
+ENV CARGO_TARGET_DIR=/build/target
+ENV RUST_BACKTRACE=1
+EXPOSE 8081
+WORKDIR /app/crates/frontend
+# command supplied by docker-compose.dev.yml: trunk serve --address 0.0.0.0 ...

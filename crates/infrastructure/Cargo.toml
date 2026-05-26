@@ -21,3 +21,5 @@ tokio = { workspace = true }
 sqlx = { workspace = true }
 redis = { workspace = true }
 scylla = { workspace = true }
+reqwest = { workspace = true }
+futures = { workspace = true }

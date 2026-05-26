@@ -1,0 +1,91 @@
+# Dev overlay. Apply on top of docker-compose.yml:
+#
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up
+#
+# Changes:
+#   - server/workers/frontend switch to the `dev` build target (toolchain
+#     + cargo-watch / trunk installed).
+#   - Source tree is bind-mounted at /app; cargo target dir lives in
+#     /build/target (a named volume) so it doesn't get overlaid by the bind
+#     mount on Docker Desktop / WSL2.
+#   - cargo-watch uses --poll for reliable file watching across Windows →
+#     WSL2 → container boundary.
+#   - Infra services expose host ports for direct debugging.
+#
+# First `cargo watch` invocation can take 5–15 min on a cold cache — this is
+# normal for a 7-crate workspace. Subsequent rebuilds are incremental.
+
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: dev
+      args:
+        BINARY_NAME: server
+    command: ["cargo", "watch", "--poll", "--why", "-x", "run --bin server"]
+    environment:
+      CARGO_TARGET_DIR: /build/target
+    volumes:
+      - ../:/app
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+      - target-cache:/build/target
+    working_dir: /app
+
+  workers:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: dev
+      args:
+        BINARY_NAME: workers
+    command: ["cargo", "watch", "--poll", "--why", "-x", "run --bin workers"]
+    environment:
+      CARGO_TARGET_DIR: /build/target
+    volumes:
+      - ../:/app
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+      - target-cache:/build/target
+    working_dir: /app
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: Dockerfile.frontend
+      target: dev
+    command: ["trunk", "serve", "--address", "0.0.0.0", "--port", "8081"]
+    environment:
+      CARGO_TARGET_DIR: /build/target
+    ports:
+      - "${FRONTEND_DEV_PORT:-8081}:8081"
+    volumes:
+      - ../:/app
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+      - target-cache:/build/target
+    working_dir: /app/crates/frontend
+
+  # Expose infra service ports on the host for direct debugging in dev.
+  postgres:
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+
+  redis:
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+
+  scylla:
+    ports:
+      - "${SCYLLA_HOST_PORT:-9042}:9042"
+
+  openfga:
+    ports:
+      - "${OPENFGA_HTTP_HOST_PORT:-8088}:8080"
+      - "${OPENFGA_GRPC_HOST_PORT:-8089}:8081"
+
+volumes:
+  cargo-registry:
+  cargo-git:
+  target-cache:

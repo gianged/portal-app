@@ -1,0 +1,42 @@
+# Rust build artifacts (multi-GB)
+target/
+**/target/
+
+# Frontend build artifacts
+crates/frontend/dist/
+
+# Git + editor metadata
+.git/
+.gitignore
+.gitattributes
+.idea/
+.vscode/
+
+# Environment files (secrets — never bake into images)
+.env
+.env.local
+.env.*.local
+
+# Local storage / user uploads
+storage/uploads/*
+!storage/uploads/.gitkeep
+
+# Test artifacts
+e2e/
+**/coverage/
+
+# Logs
+*.log
+**/*.log
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Node deps if/when frontend tooling adds any
+node_modules/
+
+# Docker meta (don't ship into images)
+Dockerfile*
+.dockerignore
+infra/docker-compose*.yml
