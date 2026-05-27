@@ -3,10 +3,7 @@ use leptos::prelude::*;
 use crate::theme::{class, color, radius, space, typography};
 
 #[component]
-pub fn Card(
-    #[prop(optional, into)] padding: Option<String>,
-    children: Children,
-) -> impl IntoView {
+pub fn Card(#[prop(optional, into)] padding: Option<String>, children: Children) -> impl IntoView {
     let padding = padding.unwrap_or_else(|| format!("{} {}", space::D4, space::D5));
     let cls = class(format!(
         "background: {bg}; border: 1px solid {b}; border-radius: {r}; \

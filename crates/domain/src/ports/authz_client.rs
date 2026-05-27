@@ -7,12 +7,7 @@ use crate::{error::AuthzError, ids::UserId};
 /// in `application` so `domain` does not accumulate `ReBAC` vocabulary.
 #[async_trait]
 pub trait AuthzClient: Send + Sync {
-    async fn check(
-        &self,
-        user: UserId,
-        relation: &str,
-        object: &str,
-    ) -> Result<bool, AuthzError>;
+    async fn check(&self, user: UserId, relation: &str, object: &str) -> Result<bool, AuthzError>;
 
     async fn write_tuple(
         &self,

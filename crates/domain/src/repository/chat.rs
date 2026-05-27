@@ -9,10 +9,7 @@ use crate::{
 
 #[async_trait]
 pub trait ChatRepository: Send + Sync {
-    async fn find_channel(
-        &self,
-        id: ChannelId,
-    ) -> Result<Option<Channel>, RepositoryError>;
+    async fn find_channel(&self, id: ChannelId) -> Result<Option<Channel>, RepositoryError>;
 
     /// Lookup using the `direct_channel_by_users` table; users should be passed
     /// in any order — the impl canonicalises via `DirectChannel::new`.
@@ -65,10 +62,7 @@ pub trait ChatRepository: Send + Sync {
         channel_id: ChannelId,
     ) -> Result<Vec<Announcement>, RepositoryError>;
 
-    async fn save_announcement(
-        &self,
-        announcement: &Announcement,
-    ) -> Result<(), RepositoryError>;
+    async fn save_announcement(&self, announcement: &Announcement) -> Result<(), RepositoryError>;
 
     async fn delete_announcement(
         &self,

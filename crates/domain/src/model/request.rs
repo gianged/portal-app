@@ -130,11 +130,9 @@ impl RequestStatus {
 
     pub const fn try_cancel(self) -> Result<Self, TransitionError> {
         match self {
-            Self::Draft
-            | Self::Submitted
-            | Self::Assigned
-            | Self::InProgress
-            | Self::Review => Ok(Self::Cancelled),
+            Self::Draft | Self::Submitted | Self::Assigned | Self::InProgress | Self::Review => {
+                Ok(Self::Cancelled)
+            }
             Self::Completed | Self::Cancelled => {
                 Err(TransitionError::invalid(self.as_str(), "cancelled"))
             }
@@ -151,11 +149,7 @@ impl Request {
 
     /// The only path past `Submitted`; encodes the schema invariant
     /// "`assignee_user_id` required once status > submitted".
-    pub fn assign(
-        &mut self,
-        assignee: UserId,
-        now: OffsetDateTime,
-    ) -> Result<(), TransitionError> {
+    pub fn assign(&mut self, assignee: UserId, now: OffsetDateTime) -> Result<(), TransitionError> {
         self.status = self.status.try_assign()?;
         self.assignee_user_id = Some(assignee);
         self.updated_at = now;

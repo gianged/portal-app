@@ -126,7 +126,9 @@ impl ProjectService {
     }
 
     pub async fn complete(&self, actor: UserId, project_id: ProjectId) -> Result<Project> {
-        let project = self.transition(actor, project_id, Project::complete).await?;
+        let project = self
+            .transition(actor, project_id, Project::complete)
+            .await?;
         self.cascade_cancel_open_requests(actor, project_id).await?;
         Ok(project)
     }
@@ -328,7 +330,9 @@ impl ProjectService {
         actor: UserId,
         project_id: ProjectId,
     ) -> Result<Vec<ProjectCollaborator>> {
-        self.perms.require_can_view_project(actor, project_id).await?;
+        self.perms
+            .require_can_view_project(actor, project_id)
+            .await?;
         Ok(self.projects.list_collaborators(project_id).await?)
     }
 
@@ -346,18 +350,21 @@ impl ProjectService {
         actor: UserId,
         group_id: GroupId,
     ) -> Result<Vec<ProjectInvite>> {
-        self.perms.require_group_leader_or_sub(actor, group_id).await?;
-        Ok(self.projects.list_pending_invites_for_group(group_id).await?)
+        self.perms
+            .require_group_leader_or_sub(actor, group_id)
+            .await?;
+        Ok(self
+            .projects
+            .list_pending_invites_for_group(group_id)
+            .await?)
     }
 
-    async fn transition<F>(
-        &self,
-        actor: UserId,
-        project_id: ProjectId,
-        op: F,
-    ) -> Result<Project>
+    async fn transition<F>(&self, actor: UserId, project_id: ProjectId, op: F) -> Result<Project>
     where
-        F: FnOnce(&mut Project, OffsetDateTime) -> std::result::Result<(), domain::error::TransitionError>,
+        F: FnOnce(
+            &mut Project,
+            OffsetDateTime,
+        ) -> std::result::Result<(), domain::error::TransitionError>,
     {
         let mut project = self.load(project_id).await?;
         self.perms
@@ -386,7 +393,10 @@ impl ProjectService {
     ) -> Result<()> {
         let now = OffsetDateTime::now_utc();
         for status in OPEN_REQUEST_STATUSES {
-            let open = self.requests.list_for_project(project_id, Some(*status)).await?;
+            let open = self
+                .requests
+                .list_for_project(project_id, Some(*status))
+                .await?;
             for mut request in open {
                 let from = request.status;
                 request.cancel(now)?;

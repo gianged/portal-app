@@ -54,38 +54,51 @@ fn variant_css(v: ButtonVariant) -> String {
             "background: {a}; color: {fg}; border-color: {a}; box-shadow: {s}, inset 0 1px 0 rgba(255,255,255,0.12); \
              &:hover:not(:disabled) {{ background: {ah}; border-color: {ah}; }} \
              &:active:not(:disabled) {{ background: {aa}; }}",
-            a = color::ACCENT, fg = color::TEXT_ON_ACCENT,
-            ah = color::ACCENT_HOVER, aa = color::ACCENT_ACTIVE,
+            a = color::ACCENT,
+            fg = color::TEXT_ON_ACCENT,
+            ah = color::ACCENT_HOVER,
+            aa = color::ACCENT_ACTIVE,
             s = typography::SHADOW_XS,
         ),
         ButtonVariant::Secondary => format!(
             "background: {bg}; color: {fg}; border-color: {b}; box-shadow: {s}; \
              &:hover:not(:disabled) {{ background: {bh}; border-color: {bs}; }} \
              &:active:not(:disabled) {{ background: {ba}; }}",
-            bg = color::BG_ELEVATED, fg = color::TEXT, b = color::BORDER,
-            bh = color::BG_HOVER, bs = color::BORDER_STRONG, ba = color::BG_ACTIVE,
+            bg = color::BG_ELEVATED,
+            fg = color::TEXT,
+            b = color::BORDER,
+            bh = color::BG_HOVER,
+            bs = color::BORDER_STRONG,
+            ba = color::BG_ACTIVE,
             s = typography::SHADOW_XS,
         ),
         ButtonVariant::Ghost => format!(
             "background: transparent; color: {fg}; \
              &:hover:not(:disabled) {{ background: {bh}; }} \
              &:active:not(:disabled) {{ background: {ba}; }}",
-            fg = color::TEXT, bh = color::BG_HOVER, ba = color::BG_ACTIVE,
+            fg = color::TEXT,
+            bh = color::BG_HOVER,
+            ba = color::BG_ACTIVE,
         ),
         ButtonVariant::Destructive => format!(
             "background: {d}; color: #fff; border-color: {d}; box-shadow: {s}, inset 0 1px 0 rgba(255,255,255,0.12); \
              &:hover:not(:disabled) {{ background: {dh}; border-color: {dh}; }}",
-            d = color::DANGER, dh = color::DANGER_HOVER, s = typography::SHADOW_XS,
+            d = color::DANGER,
+            dh = color::DANGER_HOVER,
+            s = typography::SHADOW_XS,
         ),
         ButtonVariant::Link => format!(
             "background: transparent; color: {a}; padding: 0; height: auto; \
              &:hover:not(:disabled) {{ color: {ah}; text-decoration: underline; text-underline-offset: 3px; }}",
-            a = color::ACCENT, ah = color::ACCENT_HOVER,
+            a = color::ACCENT,
+            ah = color::ACCENT_HOVER,
         ),
         ButtonVariant::Icon => format!(
             "background: transparent; color: {fg}; padding: 0; \
              &:hover:not(:disabled) {{ color: {ft}; background: {bh}; }}",
-            fg = color::TEXT_MUTED, ft = color::TEXT, bh = color::BG_HOVER,
+            fg = color::TEXT_MUTED,
+            ft = color::TEXT,
+            bh = color::BG_HOVER,
         ),
     }
 }

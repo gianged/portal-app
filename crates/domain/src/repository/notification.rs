@@ -9,10 +9,8 @@ use crate::{
 
 #[async_trait]
 pub trait NotificationRepository: Send + Sync {
-    async fn find_by_id(
-        &self,
-        id: NotificationId,
-    ) -> Result<Option<Notification>, RepositoryError>;
+    async fn find_by_id(&self, id: NotificationId)
+    -> Result<Option<Notification>, RepositoryError>;
 
     async fn list_for_user(
         &self,

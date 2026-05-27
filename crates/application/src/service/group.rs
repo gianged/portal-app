@@ -41,11 +41,7 @@ impl GroupService {
         }
     }
 
-    pub async fn create_group(
-        &self,
-        actor: UserId,
-        cmd: CreateGroupCommand,
-    ) -> Result<Group> {
+    pub async fn create_group(&self, actor: UserId, cmd: CreateGroupCommand) -> Result<Group> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
 
@@ -89,9 +85,12 @@ impl GroupService {
             .ok_or(Error::NotFound("group"))?;
 
         let projects = self.projects.list_for_owner_group(group_id).await?;
-        let has_active = projects
-            .iter()
-            .any(|p| !matches!(p.status, ProjectStatus::Completed | ProjectStatus::Cancelled));
+        let has_active = projects.iter().any(|p| {
+            !matches!(
+                p.status,
+                ProjectStatus::Completed | ProjectStatus::Cancelled
+            )
+        });
         if has_active {
             return Err(Error::Conflict("group_has_active_projects".into()));
         }
@@ -226,9 +225,7 @@ impl GroupService {
         if !membership.is_active() {
             return Ok(());
         }
-        if membership.role == GroupRole::Leader
-            && self.count_active_leaders(group_id).await? <= 1
-        {
+        if membership.role == GroupRole::Leader && self.count_active_leaders(group_id).await? <= 1 {
             return Err(Error::Conflict("transfer_leadership_first".into()));
         }
 
@@ -338,10 +335,7 @@ impl GroupService {
         self.perms.require_active(actor).await?;
         // Members of the group, HR, and Directors can see the membership roster.
         let is_member = self.perms.group_role(actor, group_id).await?.is_some();
-        if !is_member
-            && !self.perms.is_hr(actor).await?
-            && !self.perms.is_director(actor).await?
-        {
+        if !is_member && !self.perms.is_hr(actor).await? && !self.perms.is_director(actor).await? {
             return Err(Error::Forbidden);
         }
         Ok(self.groups.list_memberships_for_group(group_id).await?)

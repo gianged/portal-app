@@ -110,11 +110,7 @@ impl Permissions {
     }
 
     /// Returns the actor's role in `group` only if their membership is active.
-    pub async fn group_role(
-        &self,
-        actor: UserId,
-        group: GroupId,
-    ) -> Result<Option<GroupRole>> {
+    pub async fn group_role(&self, actor: UserId, group: GroupId) -> Result<Option<GroupRole>> {
         let Some(membership) = self.groups.find_membership(group, actor).await? else {
             return Ok(None);
         };
@@ -132,11 +128,7 @@ impl Permissions {
         }
     }
 
-    pub async fn require_group_leader_or_sub(
-        &self,
-        actor: UserId,
-        group: GroupId,
-    ) -> Result<()> {
+    pub async fn require_group_leader_or_sub(&self, actor: UserId, group: GroupId) -> Result<()> {
         match self.group_role(actor, group).await? {
             Some(GroupRole::Leader | GroupRole::SubLeader) => Ok(()),
             _ => Err(Error::Forbidden),
@@ -165,11 +157,7 @@ impl Permissions {
         }
     }
 
-    pub async fn user_can_view_project(
-        &self,
-        actor: UserId,
-        project: ProjectId,
-    ) -> Result<bool> {
+    pub async fn user_can_view_project(&self, actor: UserId, project: ProjectId) -> Result<bool> {
         let allowed = self
             .authz
             .check(actor, REL_CAN_VIEW, &obj_project(project))
@@ -177,11 +165,7 @@ impl Permissions {
         Ok(allowed)
     }
 
-    pub async fn require_can_view_project(
-        &self,
-        actor: UserId,
-        project: ProjectId,
-    ) -> Result<()> {
+    pub async fn require_can_view_project(&self, actor: UserId, project: ProjectId) -> Result<()> {
         if self.user_can_view_project(actor, project).await? {
             Ok(())
         } else {
@@ -221,11 +205,7 @@ impl Permissions {
         }
     }
 
-    pub async fn require_can_view_channel(
-        &self,
-        actor: UserId,
-        channel: &Channel,
-    ) -> Result<()> {
+    pub async fn require_can_view_channel(&self, actor: UserId, channel: &Channel) -> Result<()> {
         match channel {
             Channel::Group(c) => self.require_group_member(actor, c.group_id).await,
             Channel::General(_) => {
@@ -335,8 +315,6 @@ impl Permissions {
 fn map_authz_write(err: AuthzError) -> Error {
     match err {
         AuthzError::Denied => Error::Conflict("authz_write_denied".into()),
-        AuthzError::Backend(msg) => {
-            Error::Repository(domain::error::RepositoryError::Backend(msg))
-        }
+        AuthzError::Backend(msg) => Error::Repository(domain::error::RepositoryError::Backend(msg)),
     }
 }

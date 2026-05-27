@@ -5,44 +5,31 @@
 # List tasks:   `cargo make --list-all-steps`
 #
 # Tasks are surfaced in RustRover via .idea/runConfigurations/.
+#
+# Typical flow:
+#
+#   cargo make init       # bring up infra + bootstrap (idempotent — safe to re-run)
+#   cargo make run-all
+#
+# If something goes wrong, wipe volumes and re-init:
+#   docker compose -f infra/docker-compose.infra.yml down -v
+#   cargo make init
 
 [config]
 default_to_workspace = false
 skip_core_tasks = true
 
-# ---------------------------------------------------------------- Infrastructure
-# Docker-based dependency stack (Postgres, ScyllaDB, Redis, OpenFGA).
-# Only use these if you need the app to talk to real services.
+# ---------------------------------------------------------------- Bootstrap
+# Single idempotent entry point:
+#   - First run: creates volumes, runs Postgres init scripts, applies Scylla
+#     schema, runs OpenFGA migrations, bootstraps the OpenFGA store.
+#   - Subsequent runs: no-op (init scripts only fire on empty volumes;
+#     openfga-init is idempotent — reuses the existing 'portal' store).
 
-[tasks.infra-up]
-description = "Bring up Postgres, ScyllaDB, Redis, OpenFGA (detached)."
+[tasks.init]
+description = "Bring up infra and bootstrap OpenFGA store (idempotent)."
 command = "docker"
-args = [
-    "compose", "-f", "infra/docker-compose.yml", "up", "-d",
-    "postgres", "scylla", "scylla-init", "redis", "openfga-migrate", "openfga",
-]
-
-[tasks.infra-down]
-description = "Stop and remove containers (keeps data volumes)."
-command = "docker"
-args = ["compose", "-f", "infra/docker-compose.yml", "down"]
-
-[tasks.infra-logs]
-description = "Tail logs from all infra containers."
-command = "docker"
-args = ["compose", "-f", "infra/docker-compose.yml", "logs", "-f"]
-
-# ---------------------------------------------------------------- Database
-
-[tasks.db-init]
-description = "Initialize the OpenFGA store (one-time, after first infra-up)."
-command = "docker"
-args = ["compose", "-f", "infra/docker-compose.yml", "--profile", "init", "up", "openfga-init"]
-
-[tasks.db-reset]
-description = "DESTRUCTIVE: wipe all data + backup volumes."
-command = "docker"
-args = ["compose", "-f", "infra/docker-compose.yml", "down", "-v"]
+args = ["compose", "-f", "infra/docker-compose.infra.yml", "--profile", "init", "up", "-d"]
 
 # ---------------------------------------------------------------- Native services
 # Run the app on the host (not in containers) so breakpoints / hot-reload work

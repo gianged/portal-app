@@ -35,11 +35,7 @@ impl AnnouncementService {
         }
     }
 
-    pub async fn post(
-        &self,
-        actor: UserId,
-        cmd: PostAnnouncementCommand,
-    ) -> Result<Announcement> {
+    pub async fn post(&self, actor: UserId, cmd: PostAnnouncementCommand) -> Result<Announcement> {
         self.perms.require_active(actor).await?;
         let channel = self
             .chats

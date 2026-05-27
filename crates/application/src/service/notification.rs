@@ -19,10 +19,7 @@ pub struct NotificationService {
 
 impl NotificationService {
     #[must_use]
-    pub fn new(
-        notifications: Arc<dyn NotificationRepository>,
-        perms: Arc<Permissions>,
-    ) -> Self {
+    pub fn new(notifications: Arc<dyn NotificationRepository>, perms: Arc<Permissions>) -> Self {
         Self {
             notifications,
             perms,
@@ -47,11 +44,7 @@ impl NotificationService {
         Ok(self.notifications.count_unread(actor).await?)
     }
 
-    pub async fn mark_read(
-        &self,
-        actor: UserId,
-        notification_id: NotificationId,
-    ) -> Result<()> {
+    pub async fn mark_read(&self, actor: UserId, notification_id: NotificationId) -> Result<()> {
         self.perms.require_active(actor).await?;
         let notification = self
             .notifications

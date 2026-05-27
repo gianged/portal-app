@@ -70,9 +70,7 @@ impl UserStatus {
     pub const fn try_reactivate(self) -> Result<Self, TransitionError> {
         match self {
             Self::Deactivated => Ok(Self::Active),
-            Self::Pending | Self::Active => {
-                Err(TransitionError::invalid(self.as_str(), "active"))
-            }
+            Self::Pending | Self::Active => Err(TransitionError::invalid(self.as_str(), "active")),
         }
     }
 }

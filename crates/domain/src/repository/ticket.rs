@@ -13,15 +13,9 @@ pub trait TicketRepository: Send + Sync {
     /// IT triage hot path — open + reopened tickets, recency-ordered.
     async fn list_open_for_triage(&self, limit: u32) -> Result<Vec<Ticket>, RepositoryError>;
 
-    async fn list_for_assignee(
-        &self,
-        assignee: UserId,
-    ) -> Result<Vec<Ticket>, RepositoryError>;
+    async fn list_for_assignee(&self, assignee: UserId) -> Result<Vec<Ticket>, RepositoryError>;
 
-    async fn list_for_requester(
-        &self,
-        requester: UserId,
-    ) -> Result<Vec<Ticket>, RepositoryError>;
+    async fn list_for_requester(&self, requester: UserId) -> Result<Vec<Ticket>, RepositoryError>;
 
     async fn save(&self, ticket: &Ticket) -> Result<(), RepositoryError>;
 }

@@ -1,0 +1,127 @@
+name: portal
+
+# Infra-only stack: Postgres + ScyllaDB + Redis + OpenFGA, no app containers.
+# Host ports are exposed by default so the server/workers/frontend can run on
+# the host (cargo run / trunk serve) and talk to the dependencies over
+# localhost. Pair with the host-side `.env` (DATABASE_URL=...localhost:5432...).
+#
+# Shares `name: portal` with docker-compose.yml so volumes/network are
+# interchangeable — you can swap between this file and the full stack without
+# losing data.
+#
+# Run:    docker compose -f infra/docker-compose.infra.yml up -d
+# Init:   docker compose -f infra/docker-compose.infra.yml --profile init up openfga-init
+# Tear:   docker compose -f infra/docker-compose.infra.yml down          (keeps data)
+#         docker compose -f infra/docker-compose.infra.yml down -v       (WIPES data)
+
+services:
+  # ---------------------------------------------------------------- Postgres
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-portal}
+      POSTGRES_USER: ${POSTGRES_USER:-portal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-portal}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Whole directory mounted ro: image runs *.sh then *.sql in name order
+      # on first start only (when the data dir is empty). 00- before 10-.
+      - ./postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-portal} -d ${POSTGRES_DB:-portal}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------- ScyllaDB
+  scylla:
+    image: scylladb/scylla:5.4
+    restart: unless-stopped
+    command: --smp 1 --memory 1G --overprovisioned 1 --reactor-backend=epoll
+    ports:
+      - "${SCYLLA_HOST_PORT:-9042}:9042"
+    volumes:
+      - scylla-data:/var/lib/scylla
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'SELECT now() FROM system.local'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  scylla-init:
+    image: scylladb/scylla:5.4
+    restart: "no"
+    depends_on:
+      scylla:
+        condition: service_healthy
+    volumes:
+      - ./cassandra/schema.cql:/schema.cql:ro
+    entrypoint: ["sh", "-c", "cqlsh scylla -f /schema.cql && echo '[scylla-init] schema applied'"]
+
+  # ------------------------------------------------------------------- Redis
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---------------------------------------------------------------- OpenFGA
+  openfga-migrate:
+    image: openfga/openfga:v1.5.4
+    restart: "no"
+    command: migrate
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@postgres:5432/openfga?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  openfga:
+    image: openfga/openfga:v1.5.4
+    restart: unless-stopped
+    command: run
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@postgres:5432/openfga?sslmode=disable
+      OPENFGA_LOG_LEVEL: info
+      OPENFGA_LOG_FORMAT: json
+      OPENFGA_HTTP_ADDR: 0.0.0.0:8080
+      OPENFGA_GRPC_ADDR: 0.0.0.0:8081
+      OPENFGA_PLAYGROUND_ENABLED: "false"
+    ports:
+      - "${OPENFGA_HTTP_HOST_PORT:-8088}:8080"
+      - "${OPENFGA_GRPC_HOST_PORT:-8089}:8081"
+    depends_on:
+      openfga-migrate:
+        condition: service_completed_successfully
+
+  openfga-init:
+    image: alpine/curl:8.10.1
+    restart: "no"
+    profiles: ["init"]
+    depends_on:
+      openfga:
+        condition: service_started
+    volumes:
+      - ./openfga:/openfga:ro
+      - openfga-config:/config
+    entrypoint: ["/bin/sh", "/openfga/openfga-init.sh"]
+
+volumes:
+  postgres-data:
+  scylla-data:
+  redis-data:
+  openfga-config:

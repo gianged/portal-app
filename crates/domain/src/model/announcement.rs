@@ -27,11 +27,7 @@ impl Announcement {
         delta >= Duration::ZERO && delta <= EDIT_GRACE
     }
 
-    pub fn edit(
-        &mut self,
-        body: String,
-        now: OffsetDateTime,
-    ) -> Result<(), TransitionError> {
+    pub fn edit(&mut self, body: String, now: OffsetDateTime) -> Result<(), TransitionError> {
         if !self.within_edit_grace(now) {
             return Err(TransitionError::invalid("announcement", "edit_after_grace"));
         }

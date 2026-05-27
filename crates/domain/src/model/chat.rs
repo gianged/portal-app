@@ -37,12 +37,7 @@ impl DirectChannel {
     /// Sorts the user pair so (A, B) and (B, A) canonicalise to the same row,
     /// matching the `direct_channel_by_users` lookup table.
     #[must_use]
-    pub fn new(
-        id: ChannelId,
-        a: UserId,
-        b: UserId,
-        created_at: OffsetDateTime,
-    ) -> Self {
+    pub fn new(id: ChannelId, a: UserId, b: UserId, created_at: OffsetDateTime) -> Self {
         let (low, high) = if a.0 <= b.0 { (a, b) } else { (b, a) };
         Self {
             id,

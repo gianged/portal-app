@@ -37,11 +37,10 @@ pub(crate) fn row_to_channel(row: ChannelRow) -> Result<Channel, RepositoryError
     let (id, kind, name, group_id, user_a_id, user_b_id, created_at) = row;
     match kind.as_str() {
         KIND_GROUP => {
-            let group_id = group_id.ok_or_else(|| {
-                RepositoryError::Backend("group channel missing group_id".into())
-            })?;
-            let name = name
-                .ok_or_else(|| RepositoryError::Backend("group channel missing name".into()))?;
+            let group_id = group_id
+                .ok_or_else(|| RepositoryError::Backend("group channel missing group_id".into()))?;
+            let name =
+                name.ok_or_else(|| RepositoryError::Backend("group channel missing name".into()))?;
             Ok(Channel::Group(GroupChannel {
                 id: ChannelId(id),
                 group_id: GroupId(group_id),
@@ -90,7 +89,16 @@ pub(crate) type MessageRow = (
 );
 
 pub(crate) fn row_to_message(channel_id: ChannelId, row: MessageRow) -> Message {
-    let (message_id, sender_user_id, body, mentions, attachment_keys, is_announcement, edited_at, deleted_at) = row;
+    let (
+        message_id,
+        sender_user_id,
+        body,
+        mentions,
+        attachment_keys,
+        is_announcement,
+        edited_at,
+        deleted_at,
+    ) = row;
     let mentions = mentions
         .unwrap_or_default()
         .into_iter()

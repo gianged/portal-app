@@ -21,11 +21,7 @@ impl PresenceStore {
 
     /// Mark the user online for `ttl_secs` seconds. Heartbeat by calling
     /// again before the TTL expires; the value is opaque.
-    pub async fn set_online(
-        &self,
-        user: UserId,
-        ttl_secs: u64,
-    ) -> Result<(), RepositoryError> {
+    pub async fn set_online(&self, user: UserId, ttl_secs: u64) -> Result<(), RepositoryError> {
         let key = presence_key(user);
         let mut conn = self.conn.clone();
         conn.set_ex::<_, _, ()>(key, 1u8, ttl_secs)

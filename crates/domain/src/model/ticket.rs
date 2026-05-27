@@ -69,11 +69,9 @@ impl TicketStatus {
     pub const fn try_triage(self) -> Result<Self, TransitionError> {
         match self {
             Self::Open | Self::Reopened => Ok(Self::Triaged),
-            Self::Triaged
-            | Self::Assigned
-            | Self::InProgress
-            | Self::Resolved
-            | Self::Closed => Err(TransitionError::invalid(self.as_str(), "triaged")),
+            Self::Triaged | Self::Assigned | Self::InProgress | Self::Resolved | Self::Closed => {
+                Err(TransitionError::invalid(self.as_str(), "triaged"))
+            }
         }
     }
 
@@ -169,11 +167,7 @@ impl Ticket {
         Ok(())
     }
 
-    pub fn assign(
-        &mut self,
-        assignee: UserId,
-        now: OffsetDateTime,
-    ) -> Result<(), TransitionError> {
+    pub fn assign(&mut self, assignee: UserId, now: OffsetDateTime) -> Result<(), TransitionError> {
         self.status = self.status.try_assign()?;
         self.assignee_user_id = Some(assignee);
         self.updated_at = now;

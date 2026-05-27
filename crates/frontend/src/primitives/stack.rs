@@ -1,6 +1,9 @@
 use leptos::prelude::*;
 
-use crate::theme::{class, space::{D1, D2, D3, D5, D7}};
+use crate::theme::{
+    class,
+    space::{D1, D2, D3, D5, D7},
+};
 
 #[derive(Clone, Copy, Default)]
 pub enum Gap {

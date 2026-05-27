@@ -29,8 +29,5 @@ pub trait RequestRepository: Send + Sync {
         request_id: RequestId,
     ) -> Result<Vec<RequestAttachment>, RepositoryError>;
 
-    async fn save_attachment(
-        &self,
-        attachment: &RequestAttachment,
-    ) -> Result<(), RepositoryError>;
+    async fn save_attachment(&self, attachment: &RequestAttachment) -> Result<(), RepositoryError>;
 }

@@ -49,11 +49,7 @@ impl ChatService {
     /// Idempotent: returns an existing direct channel between the two users if
     /// one exists, otherwise creates one. The pair is canonicalised by
     /// `DirectChannel::new` so order doesn't matter.
-    pub async fn open_direct_channel(
-        &self,
-        actor: UserId,
-        other_user: UserId,
-    ) -> Result<Channel> {
+    pub async fn open_direct_channel(&self, actor: UserId, other_user: UserId) -> Result<Channel> {
         self.perms.require_active(actor).await?;
         if actor == other_user {
             return Err(Error::Validation("cannot_dm_self".into()));
@@ -76,7 +72,9 @@ impl ChatService {
         let direct = DirectChannel::new(id, actor, other_user, now);
         let channel = Channel::Direct(direct);
         self.chats.save_channel(&channel).await?;
-        self.perms.grant_direct_channel_participant(actor, id).await?;
+        self.perms
+            .grant_direct_channel_participant(actor, id)
+            .await?;
         self.perms
             .grant_direct_channel_participant(other_user, id)
             .await?;
@@ -105,18 +103,16 @@ impl ChatService {
         Ok(self.chats.list_messages(channel_id, before, limit).await?)
     }
 
-    pub async fn post_message(
-        &self,
-        actor: UserId,
-        cmd: PostMessageCommand,
-    ) -> Result<Message> {
+    pub async fn post_message(&self, actor: UserId, cmd: PostMessageCommand) -> Result<Message> {
         self.perms.require_active(actor).await?;
         let channel = self
             .chats
             .find_channel(cmd.channel_id)
             .await?
             .ok_or(Error::NotFound("channel"))?;
-        self.perms.require_can_post_in_channel(actor, &channel).await?;
+        self.perms
+            .require_can_post_in_channel(actor, &channel)
+            .await?;
 
         let now = OffsetDateTime::now_utc();
         let message = Message {
@@ -169,7 +165,10 @@ impl ChatService {
         let now = OffsetDateTime::now_utc();
         let is_sender = message.sender_user_id == actor;
         let within_grace = now - uuid_v7_created_at(message.id.0) <= MESSAGE_DELETE_GRACE;
-        let is_moderator = self.perms.user_is_channel_moderator(actor, &channel).await?;
+        let is_moderator = self
+            .perms
+            .user_is_channel_moderator(actor, &channel)
+            .await?;
 
         if !((is_sender && within_grace) || is_moderator) {
             return Err(Error::Forbidden);

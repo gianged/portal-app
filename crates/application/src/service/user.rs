@@ -243,7 +243,9 @@ fn hash_password(password: &str) -> Result<String> {
     let hash = Argon2::default()
         .hash_password(password.as_bytes(), &salt)
         .map_err(|e| {
-            Error::Repository(RepositoryError::Backend(format!("password hash failed: {e}")))
+            Error::Repository(RepositoryError::Backend(format!(
+                "password hash failed: {e}"
+            )))
         })?
         .to_string();
     Ok(hash)

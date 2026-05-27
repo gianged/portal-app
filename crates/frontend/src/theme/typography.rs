@@ -20,6 +20,5 @@ pub const SHADOW_XS: &str = "0 1px 2px rgba(13, 27, 62, 0.06)";
 pub const SHADOW_SM: &str = "0 1px 3px rgba(13, 27, 62, 0.08), 0 1px 2px rgba(13, 27, 62, 0.04)";
 pub const SHADOW_MD: &str = "0 4px 12px rgba(13, 27, 62, 0.08), 0 1px 3px rgba(13, 27, 62, 0.04)";
 pub const SHADOW_LG: &str = "0 12px 32px rgba(13, 27, 62, 0.12), 0 2px 6px rgba(13, 27, 62, 0.05)";
-pub const SHADOW_POP: &str =
-    "0 0 0 1px rgba(13, 27, 62, 0.04), 0 8px 24px rgba(13, 27, 62, 0.12)";
+pub const SHADOW_POP: &str = "0 0 0 1px rgba(13, 27, 62, 0.04), 0 8px 24px rgba(13, 27, 62, 0.12)";
 pub const RING: &str = "0 0 0 3px rgba(37, 99, 235, 0.22)";

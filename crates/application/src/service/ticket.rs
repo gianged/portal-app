@@ -159,11 +159,7 @@ impl TicketService {
         Ok(ticket)
     }
 
-    pub async fn reject_resolution(
-        &self,
-        actor: UserId,
-        ticket_id: TicketId,
-    ) -> Result<Ticket> {
+    pub async fn reject_resolution(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
         let mut ticket = self.load(ticket_id).await?;
         if ticket.requester_user_id != actor {
             return Err(Error::Forbidden);
@@ -195,11 +191,7 @@ impl TicketService {
         Ok(ticket)
     }
 
-    pub async fn list_open_for_triage(
-        &self,
-        actor: UserId,
-        limit: u32,
-    ) -> Result<Vec<Ticket>> {
+    pub async fn list_open_for_triage(&self, actor: UserId, limit: u32) -> Result<Vec<Ticket>> {
         self.perms.require_it_member(actor).await?;
         Ok(self.tickets.list_open_for_triage(limit).await?)
     }

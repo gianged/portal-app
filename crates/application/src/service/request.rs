@@ -45,11 +45,7 @@ impl RequestService {
         }
     }
 
-    pub async fn create(
-        &self,
-        actor: UserId,
-        cmd: CreateRequestCommand,
-    ) -> Result<Request> {
+    pub async fn create(&self, actor: UserId, cmd: CreateRequestCommand) -> Result<Request> {
         self.perms.require_active(actor).await?;
         self.perms
             .require_can_view_project(actor, cmd.project_id)
@@ -104,7 +100,8 @@ impl RequestService {
         self.perms
             .require_can_assign_request(actor, request.project_id)
             .await?;
-        self.assert_assignee_eligible(request.project_id, assignee).await?;
+        self.assert_assignee_eligible(request.project_id, assignee)
+            .await?;
         let from = request.status;
         let now = OffsetDateTime::now_utc();
         request.assign(assignee, now)?;
@@ -135,11 +132,7 @@ impl RequestService {
         Ok(request)
     }
 
-    pub async fn send_for_review(
-        &self,
-        actor: UserId,
-        request_id: RequestId,
-    ) -> Result<Request> {
+    pub async fn send_for_review(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let mut request = self.load(request_id).await?;
         if request.assignee_user_id != Some(actor) {
             return Err(Error::Forbidden);
@@ -232,7 +225,9 @@ impl RequestService {
         project_id: ProjectId,
         status: Option<RequestStatus>,
     ) -> Result<Vec<Request>> {
-        self.perms.require_can_view_project(actor, project_id).await?;
+        self.perms
+            .require_can_view_project(actor, project_id)
+            .await?;
         Ok(self.requests.list_for_project(project_id, status).await?)
     }
 
@@ -271,7 +266,10 @@ impl RequestService {
         let mut allowed: HashSet<_> = collaborators.into_iter().map(|c| c.group_id).collect();
         allowed.insert(project.owner_group_id);
 
-        let memberships = self.groups.list_active_memberships_for_user(assignee).await?;
+        let memberships = self
+            .groups
+            .list_active_memberships_for_user(assignee)
+            .await?;
         let in_allowed_group = memberships.iter().any(|m| allowed.contains(&m.group_id));
         if !in_allowed_group {
             return Err(Error::Conflict("assignee_not_eligible".into()));

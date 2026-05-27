@@ -32,10 +32,7 @@ pub trait ProjectRepository: Send + Sync {
         collaborator: &ProjectCollaborator,
     ) -> Result<(), RepositoryError>;
 
-    async fn delete_collaborator(
-        &self,
-        id: ProjectCollaboratorId,
-    ) -> Result<(), RepositoryError>;
+    async fn delete_collaborator(&self, id: ProjectCollaboratorId) -> Result<(), RepositoryError>;
 
     async fn find_invite(
         &self,

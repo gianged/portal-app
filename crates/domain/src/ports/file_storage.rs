@@ -8,12 +8,7 @@ use crate::error::StorageError;
 /// (the schema's `storage_key` columns).
 #[async_trait]
 pub trait FileStorage: Send + Sync {
-    async fn put(
-        &self,
-        key: &str,
-        content_type: &str,
-        bytes: Vec<u8>,
-    ) -> Result<(), StorageError>;
+    async fn put(&self, key: &str, content_type: &str, bytes: Vec<u8>) -> Result<(), StorageError>;
 
     async fn get(&self, key: &str) -> Result<Vec<u8>, StorageError>;
 

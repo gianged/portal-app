@@ -4,11 +4,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use domain::{
-    error::AuthzError,
-    ids::UserId,
-    ports::authz_client::AuthzClient,
-};
+use domain::{error::AuthzError, ids::UserId, ports::authz_client::AuthzClient};
 
 /// Configuration for the `OpenFGA` HTTP client.
 ///
@@ -103,12 +99,7 @@ impl OpenFgaAuthzClient {
 
 #[async_trait]
 impl AuthzClient for OpenFgaAuthzClient {
-    async fn check(
-        &self,
-        user: UserId,
-        relation: &str,
-        object: &str,
-    ) -> Result<bool, AuthzError> {
+    async fn check(&self, user: UserId, relation: &str, object: &str) -> Result<bool, AuthzError> {
         let req = CheckRequest {
             tuple_key: TupleKeyDto {
                 user: Self::user_key(user),

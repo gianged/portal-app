@@ -25,28 +25,88 @@ pub fn sidebar_sections() -> Vec<NavSection> {
         NavSection {
             label: "Workspace",
             items: vec![
-                NavItem { label: "Home", href: "/dashboard", count: None, active: true },
-                NavItem { label: "Inbox", href: "#", count: Some(3), active: false },
-                NavItem { label: "Announcements", href: "#", count: None, active: false },
+                NavItem {
+                    label: "Home",
+                    href: "/dashboard",
+                    count: None,
+                    active: true,
+                },
+                NavItem {
+                    label: "Inbox",
+                    href: "#",
+                    count: Some(3),
+                    active: false,
+                },
+                NavItem {
+                    label: "Announcements",
+                    href: "#",
+                    count: None,
+                    active: false,
+                },
             ],
         },
         NavSection {
             label: "Work",
             items: vec![
-                NavItem { label: "Groups", href: "#", count: None, active: false },
-                NavItem { label: "Projects", href: "#", count: Some(6), active: false },
-                NavItem { label: "Requests", href: "#", count: Some(7), active: false },
-                NavItem { label: "IT tickets", href: "#", count: Some(4), active: false },
-                NavItem { label: "Chat", href: "#", count: None, active: false },
-                NavItem { label: "Files", href: "#", count: None, active: false },
+                NavItem {
+                    label: "Groups",
+                    href: "#",
+                    count: None,
+                    active: false,
+                },
+                NavItem {
+                    label: "Projects",
+                    href: "#",
+                    count: Some(6),
+                    active: false,
+                },
+                NavItem {
+                    label: "Requests",
+                    href: "#",
+                    count: Some(7),
+                    active: false,
+                },
+                NavItem {
+                    label: "IT tickets",
+                    href: "#",
+                    count: Some(4),
+                    active: false,
+                },
+                NavItem {
+                    label: "Chat",
+                    href: "#",
+                    count: None,
+                    active: false,
+                },
+                NavItem {
+                    label: "Files",
+                    href: "#",
+                    count: None,
+                    active: false,
+                },
             ],
         },
         NavSection {
             label: "Admin",
             items: vec![
-                NavItem { label: "HR lifecycle", href: "#", count: None, active: false },
-                NavItem { label: "Permissions", href: "#", count: None, active: false },
-                NavItem { label: "Settings", href: "#", count: None, active: false },
+                NavItem {
+                    label: "HR lifecycle",
+                    href: "#",
+                    count: None,
+                    active: false,
+                },
+                NavItem {
+                    label: "Permissions",
+                    href: "#",
+                    count: None,
+                    active: false,
+                },
+                NavItem {
+                    label: "Settings",
+                    href: "#",
+                    count: None,
+                    active: false,
+                },
             ],
         },
     ]
@@ -290,10 +350,26 @@ pub fn StatTiles() -> impl IntoView {
     let row_cls = class("display: flex; align-items: baseline; gap: 8px;");
 
     let tiles = vec![
-        StatTile { label: "Pending review", value: 3, delta: "+1 today" },
-        StatTile { label: "Open requests", value: 7, delta: "2 high priority" },
-        StatTile { label: "Open IT tickets", value: 4, delta: "1 in triage" },
-        StatTile { label: "Group members", value: 11, delta: "1 starting Mon" },
+        StatTile {
+            label: "Pending review",
+            value: 3,
+            delta: "+1 today",
+        },
+        StatTile {
+            label: "Open requests",
+            value: 7,
+            delta: "2 high priority",
+        },
+        StatTile {
+            label: "Open IT tickets",
+            value: 4,
+            delta: "1 in triage",
+        },
+        StatTile {
+            label: "Group members",
+            value: 11,
+            delta: "1 starting Mon",
+        },
     ];
 
     view! {

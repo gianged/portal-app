@@ -51,8 +51,7 @@ struct Statements {
 }
 
 const CHANNEL_COLS: &str = "id, kind, name, group_id, user_a_id, user_b_id, created_at";
-const MESSAGE_COLS: &str =
-    "message_id, sender_user_id, body, mentions, attachment_keys, is_announcement, edited_at, deleted_at";
+const MESSAGE_COLS: &str = "message_id, sender_user_id, body, mentions, attachment_keys, is_announcement, edited_at, deleted_at";
 const ANNOUNCEMENT_COLS: &str = "message_id, sender_user_id, body, edited_at";
 
 pub struct ScyllaChatRepo {
@@ -68,9 +67,7 @@ impl ScyllaChatRepo {
         let stmts = Statements {
             find_channel: prepare(
                 &session,
-                format!(
-                    "SELECT {CHANNEL_COLS} FROM portal_chat.channels WHERE id = ?"
-                ),
+                format!("SELECT {CHANNEL_COLS} FROM portal_chat.channels WHERE id = ?"),
             )
             .await?,
             find_direct_channel_id: prepare(
@@ -209,10 +206,7 @@ fn backend<E: std::fmt::Display>(e: E) -> RepositoryError {
 
 #[async_trait]
 impl ChatRepository for ScyllaChatRepo {
-    async fn find_channel(
-        &self,
-        id: ChannelId,
-    ) -> Result<Option<Channel>, RepositoryError> {
+    async fn find_channel(&self, id: ChannelId) -> Result<Option<Channel>, RepositoryError> {
         let result = self
             .session
             .execute_unpaged(&self.stmts.find_channel, (id.0,))
@@ -426,10 +420,7 @@ impl ChatRepository for ScyllaChatRepo {
         Ok(out)
     }
 
-    async fn save_announcement(
-        &self,
-        announcement: &Announcement,
-    ) -> Result<(), RepositoryError> {
+    async fn save_announcement(&self, announcement: &Announcement) -> Result<(), RepositoryError> {
         let message_id = uuid_to_timeuuid(announcement.id.0);
         self.session
             .execute_unpaged(
@@ -460,16 +451,9 @@ impl ChatRepository for ScyllaChatRepo {
         batch.append_statement(self.stmts.delete_announcement_message.clone());
         let id_tuuid = uuid_to_timeuuid(message_id.0);
         self.session
-            .batch(
-                &batch,
-                (
-                    (channel_id.0, id_tuuid),
-                    (channel_id.0, id_tuuid),
-                ),
-            )
+            .batch(&batch, ((channel_id.0, id_tuuid), (channel_id.0, id_tuuid)))
             .await
             .map_err(backend)?;
         Ok(())
     }
 }
-

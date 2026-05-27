@@ -43,7 +43,9 @@ pub fn Input(
 
     let handle_input = move |ev: Event| {
         if let Some(cb) = on_input {
-            let target = ev.target().and_then(|t| t.dyn_into::<HtmlInputElement>().ok());
+            let target = ev
+                .target()
+                .and_then(|t| t.dyn_into::<HtmlInputElement>().ok());
             if let Some(el) = target {
                 cb.run(el.value());
             }
@@ -64,10 +66,7 @@ pub fn Input(
 }
 
 #[component]
-pub fn FieldLabel(
-    #[prop(into)] for_id: String,
-    children: Children,
-) -> impl IntoView {
+pub fn FieldLabel(#[prop(into)] for_id: String, children: Children) -> impl IntoView {
     let cls = class(format!(
         "display: block; font-family: {ff}; font-size: {fs}; font-weight: {fw}; \
          color: {c}; margin-bottom: {mb};",

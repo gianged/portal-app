@@ -41,6 +41,11 @@ CREATE SCHEMA IF NOT EXISTS ticket;
 -- -----------------------------------------------------------------------------
 
 -- auth
+CREATE TYPE auth.system_role AS ENUM (
+    'director',
+    'hr'
+);
+
 CREATE TYPE auth.user_status AS ENUM (
     'pending',
     'active',
@@ -198,6 +203,7 @@ CREATE TABLE auth.users (
     phone               TEXT,
     timezone            TEXT        NOT NULL DEFAULT 'UTC',
     status              auth.user_status NOT NULL DEFAULT 'pending',
+    system_role         auth.system_role,
     first_logged_in_at  TIMESTAMPTZ,
     deactivated_at      TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -666,6 +672,8 @@ COMMENT ON COLUMN auth.users.avatar_storage_key IS
     'MinIO object key for the user avatar; NULL until uploaded.';
 COMMENT ON COLUMN auth.users.status IS
     'pending = HR-created, not yet logged in; active = normal; deactivated = soft-deleted.';
+COMMENT ON COLUMN auth.users.system_role IS
+    'Org-wide identity orthogonal to per-group role. NULL for most users; director / hr carry one. IT staff are identified by membership in the group with kind=''it'', not via this column.';
 COMMENT ON COLUMN auth.users.first_logged_in_at IS
     'Set on the user''s first successful login; pending<->NULL.';
 
