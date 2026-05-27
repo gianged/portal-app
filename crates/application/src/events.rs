@@ -1,18 +1,15 @@
 use std::sync::Arc;
 
 use domain::{
-    announcement::Announcement,
-    chat::Message,
-    group::{Group, GroupRole},
     ids::{
         ChannelId, GroupId, MembershipId, MessageId, ProjectId, ProjectInviteId, RequestId,
         TicketId, UserId,
     },
+    model::{
+        Announcement, Group, GroupRole, Message, Project, ProjectInviteStatus, ProjectStatus,
+        Request, RequestStatus, Ticket, TicketPriority, TicketStatus, User,
+    },
     ports::event_publisher::EventPublisher,
-    project::{Project, ProjectInviteStatus, ProjectStatus},
-    request::{Request, RequestStatus},
-    ticket::{Ticket, TicketPriority, TicketStatus},
-    user::User,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;

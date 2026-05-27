@@ -17,7 +17,7 @@ The workspace is fully scaffolded — 7 crates, complete module trees, all depen
 
 ```
 crates/
-├── domain          Pure types + ports (traits). No async, no IO, no frameworks.
+├── domain          Pure types + repository/ports (traits). No async, no IO, no frameworks.
 ├── application     Business services. Depends only on `domain`. Async via tokio.
 ├── infrastructure  Adapters: sqlx/Postgres, scylla/Cassandra, redis, openfga, local fs.
 ├── shared          DTOs + validation. Compiles for native AND wasm32.
@@ -42,7 +42,7 @@ Rules:
 
 - `domain` — std + `serde` + `thiserror` + `time` + `uuid` only. No async traits, no `tokio`, no IO. Ports are plain traits.
 - `application` — consumes `domain` and orchestrates use cases. Depends on `async-trait` + `tokio`, never on a concrete database or HTTP framework.
-- `infrastructure` — implements the ports declared in `domain::ports`. The only crate allowed to import `sqlx`, `scylla`, `redis`, `openfga`, or filesystem APIs.
+- `infrastructure` — implements the repository traits declared in `domain::repository` and the other ports in `domain::ports`. The only crate allowed to import `sqlx`, `scylla`, `redis`, `openfga`, or filesystem APIs.
 - `shared` — must compile to `wasm32-unknown-unknown`. No `tokio`, no `sqlx`, no filesystem.
 - `frontend` — depends ONLY on `shared`. Never reach into `domain` or `application`.
 - `server` / `workers` — composition roots. They instantiate infrastructure adapters and inject them into application services.
@@ -113,7 +113,7 @@ Enforce at the type or database level whenever possible:
 
 ## When in doubt
 
-- New port/trait → declare in `domain::ports`, implement in `infrastructure`, inject through the relevant `application` service constructor.
+- New data-access trait → declare in `domain::repository`. New non-repository port (event publisher, file storage, authz client) → declare in `domain::ports`. Implement either in `infrastructure`, inject through the relevant `application` service constructor.
 - New HTTP route → handler in `server::routes`, request/response DTOs in `shared::dto`, validation in `shared::validation`.
 - New background job → register under `workers`, call into an `application` service.
 - New permission rule → model in the OpenFGA store, check via `domain::ports::authz_client`.

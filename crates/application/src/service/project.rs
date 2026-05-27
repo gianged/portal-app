@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use domain::{
     ids::{GroupId, ProjectCollaboratorId, ProjectId, ProjectInviteId, UserId},
-    ports::{
-        project_repository::ProjectRepository, request_repository::RequestRepository,
+    model::{
+        Project, ProjectCollaborator, ProjectInvite, ProjectInviteStatus, ProjectStatus,
+        RequestStatus,
     },
-    project::{Project, ProjectCollaborator, ProjectInvite, ProjectInviteStatus, ProjectStatus},
-    request::RequestStatus,
+    repository::{ProjectRepository, RequestRepository},
 };
 use time::OffsetDateTime;
 use uuid::Uuid;

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use domain::{ids::ProjectId, request::RequestPriority};
+use domain::{ids::ProjectId, model::RequestPriority};
 use time::OffsetDateTime;
 
 #[derive(Debug, Clone)]

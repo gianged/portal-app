@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use domain::{
     ids::{NotificationId, UserId},
-    notification::Notification,
-    ports::notification_repository::NotificationRepository,
+    model::Notification,
+    repository::NotificationRepository,
 };
 use time::OffsetDateTime;
 

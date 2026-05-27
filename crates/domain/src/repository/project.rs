@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use crate::{
     error::RepositoryError,
     ids::{GroupId, ProjectCollaboratorId, ProjectId, ProjectInviteId},
-    project::{Project, ProjectCollaborator, ProjectInvite},
+    model::{Project, ProjectCollaborator, ProjectInvite},
 };
 
 #[async_trait]

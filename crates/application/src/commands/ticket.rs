@@ -1,4 +1,4 @@
-use domain::ticket::TicketCategory;
+use domain::model::TicketCategory;
 
 #[derive(Debug, Clone)]
 pub struct RaiseTicketCommand {

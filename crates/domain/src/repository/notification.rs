@@ -4,7 +4,7 @@ use time::OffsetDateTime;
 use crate::{
     error::RepositoryError,
     ids::{NotificationId, UserId},
-    notification::Notification,
+    model::Notification,
 };
 
 #[async_trait]

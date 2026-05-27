@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
 use domain::{
-    chat::{Channel, ChannelMembership, DirectChannel, Message},
     ids::{ChannelId, MessageId, UserId},
-    ports::{chat_repository::ChatRepository, user_repository::UserRepository},
-    user::UserStatus,
+    model::{Channel, ChannelMembership, DirectChannel, Message, UserStatus},
+    repository::{ChatRepository, UserRepository},
 };
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;

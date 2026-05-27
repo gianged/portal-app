@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::{audit::AuditLog, error::RepositoryError};
+use crate::{error::RepositoryError, model::AuditLog};
 
 #[async_trait]
 pub trait AuditRepository: Send + Sync {

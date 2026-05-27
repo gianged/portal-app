@@ -23,7 +23,12 @@ If a piece of logic seems to need one of these, it belongs in `application` (orc
 
 ## Ports are traits
 
-A port is a trait declared under `crates/domain/src/ports/<name>.rs`. Use the `#[async_trait]` macro on every port. Native `async fn` in trait is stable (Rust 1.75+), but its desugared future is `!Send` by default and the trait is not `dyn`-compatible — both are blockers for the way services consume ports here (multi-threaded `tokio::spawn`, `Arc<dyn Trait>` for DI and test doubles).
+Ports split into two folders by role:
+
+- **Data-access ports** — repository traits — live under `crates/domain/src/repository/<entity>.rs` (e.g. `repository/user.rs` declares `UserRepository`). Re-exported flat from `domain::repository`, so call sites import as `use domain::repository::UserRepository`.
+- **Other infrastructure ports** — event publisher, file storage, authz client — live under `crates/domain/src/ports/<name>.rs` (e.g. `ports/authz_client.rs`). Imported as `use domain::ports::authz_client::AuthzClient`.
+
+Use the `#[async_trait]` macro on every port. Native `async fn` in trait is stable (Rust 1.75+), but its desugared future is `!Send` by default and the trait is not `dyn`-compatible — both are blockers for the way services consume ports here (multi-threaded `tokio::spawn`, `Arc<dyn Trait>` for DI and test doubles).
 
 ```rust
 use async_trait::async_trait;

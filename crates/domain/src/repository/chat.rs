@@ -2,10 +2,9 @@ use async_trait::async_trait;
 use time::OffsetDateTime;
 
 use crate::{
-    announcement::Announcement,
-    chat::{Channel, ChannelMembership, Message},
     error::RepositoryError,
     ids::{ChannelId, MessageId, UserId},
+    model::{Announcement, Channel, ChannelMembership, Message},
 };
 
 #[async_trait]

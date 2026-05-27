@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::{error::RepositoryError, ids::UserId, user::User};
+use crate::{error::RepositoryError, ids::UserId, model::User};
 
 #[async_trait]
 pub trait UserRepository: Send + Sync {

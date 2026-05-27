@@ -1,6 +1,6 @@
 use std::fmt;
 
-use domain::user::SystemRole;
+use domain::model::SystemRole;
 
 #[derive(Clone)]
 pub struct CreateUserCommand {

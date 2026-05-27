@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use crate::{
     error::RepositoryError,
     ids::{TicketId, UserId},
-    ticket::Ticket,
+    model::Ticket,
 };
 
 #[async_trait]

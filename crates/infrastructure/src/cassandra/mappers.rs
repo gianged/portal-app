@@ -5,13 +5,12 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use domain::{
-    announcement::Announcement,
-    chat::{
-        Channel, ChannelKind, ChannelMembership, DirectChannel, GeneralChannel, GroupChannel,
-        Message,
-    },
     error::RepositoryError,
     ids::{ChannelId, GroupId, MessageId, UserId},
+    model::{
+        Announcement, Channel, ChannelKind, ChannelMembership, DirectChannel, GeneralChannel,
+        GroupChannel, Message,
+    },
 };
 
 const KIND_GROUP: &str = "group";

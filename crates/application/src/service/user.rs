@@ -6,14 +6,9 @@ use argon2::{
 };
 use domain::{
     error::RepositoryError,
-    group::GroupRole,
     ids::UserId,
-    ports::{
-        group_repository::GroupRepository, request_repository::RequestRepository,
-        user_repository::UserRepository,
-    },
-    request::RequestStatus,
-    user::{User, UserStatus},
+    model::{GroupRole, RequestStatus, User, UserStatus},
+    repository::{GroupRepository, RequestRepository, UserRepository},
 };
 use time::OffsetDateTime;
 use uuid::Uuid;

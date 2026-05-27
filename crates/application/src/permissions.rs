@@ -1,15 +1,11 @@
 use std::sync::Arc;
 
 use domain::{
-    chat::Channel,
     error::AuthzError,
-    group::{GroupRole, Membership},
     ids::{ChannelId, GroupId, ProjectId, UserId},
-    ports::{
-        authz_client::AuthzClient, group_repository::GroupRepository,
-        user_repository::UserRepository,
-    },
-    user::{SystemRole, User, UserStatus},
+    model::{Channel, GroupRole, Membership, SystemRole, User, UserStatus},
+    ports::authz_client::AuthzClient,
+    repository::{GroupRepository, UserRepository},
 };
 
 use crate::error::{Error, Result};

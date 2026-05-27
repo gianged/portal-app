@@ -6,11 +6,11 @@ paths:
 
 # Infrastructure Adapter Rules
 
-`infrastructure` is the only crate where IO happens. Each module implements a port from `domain::ports` against a concrete backend. Treat backend errors as private: wrap them at the function boundary and never leak them upward.
+`infrastructure` is the only crate where IO happens. Each module implements a port from `domain::repository` (data-access traits) or `domain::ports` (event publisher, file storage, authz client) against a concrete backend. Treat backend errors as private: wrap them at the function boundary and never leak them upward.
 
 ## sqlx + PostgreSQL
 
-Repository pattern: `struct PgUserRepo { pool: PgPool }` implementing `domain::ports::UserRepository`.
+Repository pattern: `struct PgUserRepo { pool: PgPool }` implementing `domain::repository::UserRepository`.
 
 Query macros:
 

@@ -1,11 +1,3 @@
-pub mod audit_repository;
 pub mod authz_client;
-pub mod chat_repository;
 pub mod event_publisher;
 pub mod file_storage;
-pub mod group_repository;
-pub mod notification_repository;
-pub mod project_repository;
-pub mod request_repository;
-pub mod ticket_repository;
-pub mod user_repository;

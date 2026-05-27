@@ -2,11 +2,9 @@ use std::{collections::HashSet, sync::Arc};
 
 use domain::{
     ids::{ProjectId, RequestAttachmentId, RequestId, UserId},
-    ports::{
-        file_storage::FileStorage, group_repository::GroupRepository,
-        project_repository::ProjectRepository, request_repository::RequestRepository,
-    },
-    request::{Request, RequestAttachment, RequestStatus},
+    model::{Request, RequestAttachment, RequestStatus},
+    ports::file_storage::FileStorage,
+    repository::{GroupRepository, ProjectRepository, RequestRepository},
 };
 use time::OffsetDateTime;
 use uuid::Uuid;

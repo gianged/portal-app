@@ -9,11 +9,10 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use domain::{
-    announcement::Announcement,
-    chat::{Channel, ChannelKind, ChannelMembership, Message},
     error::RepositoryError,
     ids::{ChannelId, MessageId, UserId},
-    ports::chat_repository::ChatRepository,
+    model::{Announcement, Channel, ChannelKind, ChannelMembership, Message},
+    repository::ChatRepository,
 };
 
 use super::mappers::{

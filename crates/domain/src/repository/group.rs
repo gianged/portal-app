@@ -2,8 +2,8 @@ use async_trait::async_trait;
 
 use crate::{
     error::RepositoryError,
-    group::{Group, Membership},
     ids::{GroupId, UserId},
+    model::{Group, Membership},
 };
 
 #[async_trait]

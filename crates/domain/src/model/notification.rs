@@ -1,13 +1,11 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::{
-    ids::{
-        ChannelId, MessageId, NotificationId, ProjectId, ProjectInviteId, RequestId, TicketId,
-        UserId,
-    },
-    request::RequestStatus,
+use crate::ids::{
+    ChannelId, MessageId, NotificationId, ProjectId, ProjectInviteId, RequestId, TicketId, UserId,
 };
+
+use super::request::RequestStatus;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Notification {

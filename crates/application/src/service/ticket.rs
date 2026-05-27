@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use domain::{
     ids::{TicketId, UserId},
-    ports::ticket_repository::TicketRepository,
-    ticket::{Ticket, TicketPriority, TicketStatus},
+    model::{Ticket, TicketPriority, TicketStatus},
+    repository::TicketRepository,
 };
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;

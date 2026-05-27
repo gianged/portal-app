@@ -1,6 +1,6 @@
 use domain::{
-    group::{GroupKind, GroupRole},
     ids::{GroupId, UserId},
+    model::{GroupKind, GroupRole},
 };
 
 #[derive(Debug, Clone)]
