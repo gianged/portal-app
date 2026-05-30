@@ -16,7 +16,7 @@ pub struct LocalStorage {
 
 impl LocalStorage {
     #[must_use]
-    pub fn new(root: PathBuf, public_base: String) -> Self {
+    pub fn new(root: PathBuf, public_base: &str) -> Self {
         Self {
             root,
             // Trailing slash normalised away so presign URLs join cleanly.
@@ -43,7 +43,12 @@ impl LocalStorage {
 
 #[async_trait]
 impl FileStorage for LocalStorage {
-    async fn put(&self, key: &str, _content_type: &str, bytes: Vec<u8>) -> Result<(), StorageError> {
+    async fn put(
+        &self,
+        key: &str,
+        _content_type: &str,
+        bytes: Vec<u8>,
+    ) -> Result<(), StorageError> {
         // `content_type` is not persisted here; attachment MIME lives in Postgres.
         let path = self.resolve(key)?;
         if let Some(parent) = path.parent() {

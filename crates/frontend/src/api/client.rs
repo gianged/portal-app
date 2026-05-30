@@ -1,5 +1,6 @@
 use reqwasm::http::Request;
 use serde::{Serialize, de::DeserializeOwned};
+use shared::dto::common::ApiError;
 
 use crate::api::error::FrontendError;
 
@@ -36,7 +37,10 @@ where
 {
     let status = resp.status();
     if !(200..300).contains(&status) {
-        let message = resp.text().await.unwrap_or_default();
+        let body = resp.text().await.unwrap_or_default();
+        // The server returns a stable `{ code, message }` body; surface its
+        // message, falling back to the raw text if it isn't an `ApiError`.
+        let message = serde_json::from_str::<ApiError>(&body).map_or(body, |err| err.message);
         return Err(FrontendError::Http { status, message });
     }
     let parsed = resp.json::<T>().await?;

@@ -24,9 +24,7 @@ pub async fn build_session(hosts: &[String], keyspace: &str) -> Result<Arc<Sessi
     if hosts.is_empty() {
         return Err(SessionError::NoHosts);
     }
-    let session = SessionBuilder::new()
-        .known_nodes(hosts)
-        .build()
+    let session = Box::pin(SessionBuilder::new().known_nodes(hosts).build())
         .await
         .map_err(|e| SessionError::Connect(e.to_string()))?;
     session

@@ -13,9 +13,7 @@ pub struct PresenceStore {
 impl PresenceStore {
     pub async fn new(url: &str) -> Result<Self, RepositoryError> {
         let client = Client::open(url).map_err(backend)?;
-        let conn = ConnectionManager::new(client)
-            .await
-            .map_err(backend)?;
+        let conn = ConnectionManager::new(client).await.map_err(backend)?;
         Ok(Self { conn })
     }
 
@@ -33,9 +31,7 @@ impl PresenceStore {
     pub async fn is_online(&self, user: UserId) -> Result<bool, RepositoryError> {
         let key = presence_key(user);
         let mut conn = self.conn.clone();
-        conn.exists::<_, bool>(key)
-            .await
-            .map_err(backend)
+        conn.exists::<_, bool>(key).await.map_err(backend)
     }
 }
 

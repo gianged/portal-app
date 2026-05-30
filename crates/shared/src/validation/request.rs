@@ -7,8 +7,8 @@ use crate::{
 ///
 /// Returns [`SharedError::Validation`] when `title` is empty or longer than
 /// [`TITLE_MAX`].
-pub fn validate_ticket_title(title: &str) -> Result<(), SharedError> {
-    len_range("Ticket title", title, NAME_MIN, TITLE_MAX)
+pub fn validate_request_title(title: &str) -> Result<(), SharedError> {
+    len_range("Request title", title, NAME_MIN, TITLE_MAX)
 }
 
 /// Description may be empty.
@@ -17,6 +17,6 @@ pub fn validate_ticket_title(title: &str) -> Result<(), SharedError> {
 ///
 /// Returns [`SharedError::Validation`] when `description` exceeds
 /// [`DESCRIPTION_MAX`].
-pub fn validate_ticket_description(description: &str) -> Result<(), SharedError> {
-    max_len("Ticket description", description, DESCRIPTION_MAX)
+pub fn validate_request_description(description: &str) -> Result<(), SharedError> {
+    max_len("Request description", description, DESCRIPTION_MAX)
 }

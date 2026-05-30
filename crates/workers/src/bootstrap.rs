@@ -24,6 +24,6 @@ pub async fn connect(cfg: &Config) -> anyhow::Result<()> {
     let _publisher = RedisEventPublisher::new(&cfg.redis_url)
         .await
         .context("connecting redis (events)")?;
-    let _storage = LocalStorage::new(cfg.storage_root.clone(), cfg.storage_public_base.clone());
+    let _storage = LocalStorage::new(cfg.storage_root.clone(), &cfg.storage_public_base);
     Ok(())
 }

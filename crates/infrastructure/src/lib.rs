@@ -2,8 +2,8 @@
 // rustdoc block would only restate it. Keep the conversational doc style used elsewhere.
 #![allow(clippy::missing_errors_doc)]
 
-pub mod scylla;
 pub mod local_storage;
 pub mod openfga;
 pub mod postgres;
 pub mod redis;
+pub mod scylla;

@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use argon2::{
-    Argon2, PasswordHasher,
-    password_hash::{SaltString, rand_core::OsRng},
+    Argon2,
+    password_hash::{
+        Error as PwHashError, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
+        rand_core::OsRng,
+    },
 };
 use domain::{
     error::RepositoryError,
@@ -61,7 +64,7 @@ impl UserService {
             return Err(Error::Conflict("email_already_in_use".into()));
         }
 
-        let password_hash = hash_password(&cmd.password)?;
+        let password_hash = hash_password(cmd.password).await?;
         let user = User {
             id: UserId(Uuid::now_v7()),
             email: cmd.email,
@@ -238,15 +241,55 @@ impl UserService {
     }
 }
 
-fn hash_password(password: &str) -> Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
-    let hash = Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
-        .map_err(|e| {
+async fn hash_password(password: impl Into<String>) -> Result<String> {
+    // Argon2 is intentionally CPU-heavy (tens of ms). Run it on the blocking
+    // pool so it never stalls a tokio worker thread. The owned `String` is moved
+    // into the closure because `spawn_blocking` requires a `'static` body.
+    let password = password.into();
+    tokio::task::spawn_blocking(move || {
+        let salt = SaltString::generate(&mut OsRng);
+        let hash = Argon2::default()
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|e| {
+                Error::Repository(RepositoryError::Backend(format!(
+                    "password hash failed: {e}"
+                )))
+            })?
+            .to_string();
+        Ok(hash)
+    })
+    .await
+    .map_err(|e| {
+        Error::Repository(RepositoryError::Backend(format!(
+            "password hash task failed: {e}"
+        )))
+    })?
+}
+
+/// Verifies a candidate password against a stored PHC hash, off the async
+/// runtime (argon2 verification costs the same as hashing).
+async fn verify_password(hash: impl Into<String>, password: impl Into<String>) -> Result<bool> {
+    let hash = hash.into();
+    let password = password.into();
+    tokio::task::spawn_blocking(move || {
+        let parsed = PasswordHash::new(&hash).map_err(|e| {
             Error::Repository(RepositoryError::Backend(format!(
-                "password hash failed: {e}"
+                "invalid stored password hash: {e}"
             )))
-        })?
-        .to_string();
-    Ok(hash)
+        })?;
+        match Argon2::default().verify_password(password.as_bytes(), &parsed) {
+            Ok(()) => Ok(true),
+            // A mismatch is the expected "wrong password" path, not an error.
+            Err(PwHashError::Password) => Ok(false),
+            Err(e) => Err(Error::Repository(RepositoryError::Backend(format!(
+                "password verify failed: {e}"
+            )))),
+        }
+    })
+    .await
+    .map_err(|e| {
+        Error::Repository(RepositoryError::Backend(format!(
+            "password verify task failed: {e}"
+        )))
+    })?
 }

@@ -11,7 +11,7 @@ use super::client::OpenFgaConfig;
 /// the store has none yet). This replaces the one-shot `openfga-init.sh`
 /// bootstrap so the server is self-initialising.
 ///
-/// `model_json` is the authorization model in OpenFGA request-body shape
+/// `model_json` is the authorization model in `OpenFGA` request-body shape
 /// (`schema_version` + `type_definitions`), i.e. the contents of
 /// `infra/openfga/authorization-model.json`.
 pub async fn resolve_config(
@@ -27,8 +27,14 @@ pub async fn resolve_config(
         .map_err(|e| AuthzError::Backend(e.to_string()))?;
 
     let store_id = ensure_store(&http, &endpoint, store_name, bearer_token.as_deref()).await?;
-    let authorization_model_id =
-        ensure_model(&http, &endpoint, &store_id, model_json, bearer_token.as_deref()).await?;
+    let authorization_model_id = ensure_model(
+        &http,
+        &endpoint,
+        &store_id,
+        model_json,
+        bearer_token.as_deref(),
+    )
+    .await?;
 
     Ok(OpenFgaConfig {
         endpoint,
@@ -62,7 +68,7 @@ async fn ensure_store(
 }
 
 /// Returns the latest authorization-model id for the store, uploading
-/// `model_json` first when the store has no model yet. OpenFGA returns models
+/// `model_json` first when the store has no model yet. `OpenFGA` returns models
 /// newest-first, so the first entry is the latest.
 async fn ensure_model(
     http: &Client,

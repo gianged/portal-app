@@ -58,8 +58,11 @@ pub struct AppState {
 }
 
 /// Builds every infrastructure adapter, assembles the application services, and
-/// returns the HTTP router. OpenFGA is initialised here (get-or-create store +
+/// returns the HTTP router. `OpenFGA` is initialised here (get-or-create store +
 /// model), so no external bootstrap step is required.
+// Composition root: one linear list of adapter + service constructors; splitting
+// it would only scatter the wiring across helpers.
+#[allow(clippy::too_many_lines)]
 pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
     // Backends.
     let pool = build_pool(&cfg.database_url, cfg.pg_max_connections)
@@ -79,7 +82,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
         .context("connecting redis (rate limit)")?;
     let storage = Arc::new(LocalStorage::new(
         cfg.storage_root.clone(),
-        cfg.storage_public_base.clone(),
+        &cfg.storage_public_base,
     ));
 
     // Repositories (as port trait objects).
@@ -98,12 +101,14 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
     );
 
     // OpenFGA: resolve store + authorization model at startup.
-    let model_json = std::fs::read_to_string(&cfg.openfga_model_path).with_context(|| {
-        format!(
-            "reading openfga model from {}",
-            cfg.openfga_model_path.display()
-        )
-    })?;
+    let model_json = tokio::fs::read_to_string(&cfg.openfga_model_path)
+        .await
+        .with_context(|| {
+            format!(
+                "reading openfga model from {}",
+                cfg.openfga_model_path.display()
+            )
+        })?;
     let fga_config = openfga::resolve_config(
         &cfg.openfga_api_url,
         "portal",
@@ -170,7 +175,10 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             perms.clone(),
             events.clone(),
         )),
-        notification: Arc::new(NotificationService::new(notifications.clone(), perms.clone())),
+        notification: Arc::new(NotificationService::new(
+            notifications.clone(),
+            perms.clone(),
+        )),
         audit,
         presence: Arc::new(presence),
         rate_limiter: Arc::new(rate_limiter),

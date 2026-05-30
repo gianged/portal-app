@@ -23,9 +23,7 @@ pub struct RedisEventPublisher {
 impl RedisEventPublisher {
     pub async fn new(url: &str) -> Result<Self, EventError> {
         let client = Client::open(url).map_err(backend)?;
-        let conn = ConnectionManager::new(client)
-            .await
-            .map_err(backend)?;
+        let conn = ConnectionManager::new(client).await.map_err(backend)?;
         Ok(Self { conn })
     }
 }
@@ -53,15 +51,9 @@ pub async fn subscribe(
     topic: &str,
 ) -> Result<impl Stream<Item = Vec<u8>> + Send, EventError> {
     let client = Client::open(url).map_err(backend)?;
-    let mut pubsub = client
-        .get_async_pubsub()
-        .await
-        .map_err(backend)?;
+    let mut pubsub = client.get_async_pubsub().await.map_err(backend)?;
     let key = event_topic_key(topic);
-    pubsub
-        .subscribe(&key)
-        .await
-        .map_err(backend)?;
+    pubsub.subscribe(&key).await.map_err(backend)?;
     Ok(pubsub.into_on_message().filter_map(|msg| async move {
         match msg.get_payload::<Vec<u8>>() {
             Ok(payload) => Some(payload),

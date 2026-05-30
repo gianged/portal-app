@@ -27,9 +27,7 @@ const INCR_WITH_TTL: &str = "local v = redis.call('INCR', KEYS[1])\n\
 impl RateLimiter {
     pub async fn new(url: &str) -> Result<Self, RepositoryError> {
         let client = Client::open(url).map_err(backend)?;
-        let conn = ConnectionManager::new(client)
-            .await
-            .map_err(backend)?;
+        let conn = ConnectionManager::new(client).await.map_err(backend)?;
         Ok(Self {
             conn,
             window_secs: 60,
@@ -37,7 +35,7 @@ impl RateLimiter {
     }
 
     #[must_use]
-    pub fn with_window(mut self, window_secs: i64) -> Self {
+    pub const fn with_window(mut self, window_secs: i64) -> Self {
         self.window_secs = window_secs;
         self
     }
