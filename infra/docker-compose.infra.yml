@@ -9,10 +9,11 @@ name: portal
 # interchangeable — you can swap between this file and the full stack without
 # losing data.
 #
-# Run:    docker compose -f infra/docker-compose.infra.yml up -d
-# Init:   docker compose -f infra/docker-compose.infra.yml --profile init up openfga-init
-# Tear:   docker compose -f infra/docker-compose.infra.yml down          (keeps data)
-#         docker compose -f infra/docker-compose.infra.yml down -v       (WIPES data)
+# Bootstrap (first run / after down -v):
+#         cargo make bootstrap        (migrates OpenFGA, applies schemas, creates store)
+# Run:    cargo make up               (honors .env via --env-file)
+# Tear:   cargo make down             (keeps data)
+#         docker compose --env-file .env -f infra/docker-compose.infra.yml down -v   (WIPES data)
 
 services:
   # ---------------------------------------------------------------- Postgres
@@ -52,16 +53,6 @@ services:
       retries: 10
       start_period: 60s
 
-  scylla-init:
-    image: scylladb/scylla:5.4
-    restart: "no"
-    depends_on:
-      scylla:
-        condition: service_healthy
-    volumes:
-      - ./cassandra/schema.cql:/schema.cql:ro
-    entrypoint: ["sh", "-c", "cqlsh scylla -f /schema.cql && echo '[scylla-init] schema applied'"]
-
   # ------------------------------------------------------------------- Redis
   redis:
     image: redis:7-alpine
@@ -78,17 +69,6 @@ services:
       retries: 5
 
   # ---------------------------------------------------------------- OpenFGA
-  openfga-migrate:
-    image: openfga/openfga:v1.5.4
-    restart: "no"
-    command: migrate
-    environment:
-      OPENFGA_DATASTORE_ENGINE: postgres
-      OPENFGA_DATASTORE_URI: postgres://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@postgres:5432/openfga?sslmode=disable
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   openfga:
     image: openfga/openfga:v1.5.4
     restart: unless-stopped
@@ -104,21 +84,11 @@ services:
     ports:
       - "${OPENFGA_HTTP_HOST_PORT:-8088}:8080"
       - "${OPENFGA_GRPC_HOST_PORT:-8089}:8081"
+    # Datastore must be migrated first (cargo make bootstrap). Until then OpenFGA
+    # crash-loops; restart: unless-stopped recovers it once the migration runs.
     depends_on:
-      openfga-migrate:
-        condition: service_completed_successfully
-
-  openfga-init:
-    image: alpine/curl:8.10.1
-    restart: "no"
-    profiles: ["init"]
-    depends_on:
-      openfga:
-        condition: service_started
-    volumes:
-      - ./openfga:/openfga:ro
-      - openfga-config:/config
-    entrypoint: ["/bin/sh", "/openfga/openfga-init.sh"]
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres-data:

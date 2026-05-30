@@ -10,7 +10,7 @@ use domain::{
     repository::NotificationRepository,
 };
 
-use super::{enums::SqlNotificationKind, mappers::map_pg_error};
+use crate::postgres::{enums::SqlNotificationKind, mappers::map_pg_error};
 
 pub struct PgNotificationRepo {
     pool: PgPool,

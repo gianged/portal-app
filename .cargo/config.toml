@@ -1,2 +1,9 @@
 [target.wasm32-unknown-unknown]
 rustflags = ["--cfg=web_sys_unstable_apis"]
+
+[env]
+# Lets the compile-time sqlx query macros (and RustRover's analyzer) reach the
+# dev Postgres. Build-time only - the server/workers binaries still read their
+# own DATABASE_URL at runtime via dotenvy/config. No `force`, so a developer who
+# exports their own DATABASE_URL still wins.
+DATABASE_URL = "postgres://portal:portal@localhost:5432/portal"

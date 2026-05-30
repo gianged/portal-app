@@ -26,10 +26,10 @@ const INCR_WITH_TTL: &str = "local v = redis.call('INCR', KEYS[1])\n\
 
 impl RateLimiter {
     pub async fn new(url: &str) -> Result<Self, RepositoryError> {
-        let client = Client::open(url).map_err(|e| RepositoryError::Backend(e.to_string()))?;
+        let client = Client::open(url).map_err(backend)?;
         let conn = ConnectionManager::new(client)
             .await
-            .map_err(|e| RepositoryError::Backend(e.to_string()))?;
+            .map_err(backend)?;
         Ok(Self {
             conn,
             window_secs: 60,
@@ -37,7 +37,7 @@ impl RateLimiter {
     }
 
     #[must_use]
-    pub const fn with_window(mut self, window_secs: i64) -> Self {
+    pub fn with_window(mut self, window_secs: i64) -> Self {
         self.window_secs = window_secs;
         self
     }
@@ -57,11 +57,15 @@ impl RateLimiter {
             .arg(ttl)
             .invoke_async(&mut conn)
             .await
-            .map_err(|e| RepositoryError::Backend(e.to_string()))?;
+            .map_err(backend)?;
         Ok(count)
     }
 }
 
 fn rate_limit_key(bucket: &str, window: i64) -> String {
     format!("portal:ratelimit:{bucket}:{window}")
+}
+
+fn backend<E: std::fmt::Display>(e: E) -> RepositoryError {
+    RepositoryError::Backend(e.to_string())
 }

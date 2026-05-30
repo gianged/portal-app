@@ -1,7 +1,9 @@
 use std::{collections::HashSet, sync::Arc};
 
 use async_trait::async_trait;
-use scylla::{
+// `::scylla` (leading `::`) names the driver crate explicitly; a bare `scylla`
+// here is ambiguous with this crate's own `scylla` module.
+use ::scylla::{
     client::session::Session,
     statement::{batch::Batch, prepared::PreparedStatement},
 };
@@ -15,7 +17,7 @@ use domain::{
     repository::ChatRepository,
 };
 
-use super::mappers::{
+use crate::scylla::mappers::{
     AnnouncementRow, ChannelMembershipRow, ChannelRow, MessageRow, channel_kind_str,
     row_to_announcement, row_to_channel, row_to_membership, row_to_message, uuid_to_timeuuid,
 };

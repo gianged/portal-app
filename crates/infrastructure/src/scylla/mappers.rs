@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use scylla::value::CqlTimeuuid;
+use ::scylla::value::CqlTimeuuid;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -30,7 +30,7 @@ pub(crate) type ChannelRow = (
     OffsetDateTime,
 );
 
-// `user_a_id` / `user_b_id` mirror the Cassandra column names; renaming would
+// `user_a_id` / `user_b_id` mirror the CQL column names; renaming would
 // obscure the row layout.
 #[allow(clippy::similar_names)]
 pub(crate) fn row_to_channel(row: ChannelRow) -> Result<Channel, RepositoryError> {

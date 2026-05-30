@@ -21,8 +21,8 @@ pub async fn build_pool(database_url: &str, max_connections: u32) -> Result<PgPo
     PgPoolOptions::new()
         .max_connections(max_connections)
         .acquire_timeout(Duration::from_secs(30))
-        .idle_timeout(Duration::from_secs(10 * 60))
-        .max_lifetime(Duration::from_secs(30 * 60))
+        .idle_timeout(Duration::from_mins(10))
+        .max_lifetime(Duration::from_mins(30))
         .after_connect(|conn, _meta| {
             Box::pin(async move {
                 sqlx::query("SET statement_timeout = '5s'")

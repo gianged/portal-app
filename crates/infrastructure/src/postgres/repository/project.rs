@@ -10,7 +10,7 @@ use domain::{
     repository::ProjectRepository,
 };
 
-use super::{
+use crate::postgres::{
     enums::{SqlInviteStatus, SqlProjectStatus},
     mappers::map_pg_error,
 };

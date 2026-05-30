@@ -10,7 +10,7 @@ use domain::{
     repository::RequestRepository,
 };
 
-use super::{
+use crate::postgres::{
     enums::{SqlRequestPriority, SqlRequestStatus},
     mappers::map_pg_error,
 };

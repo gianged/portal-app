@@ -10,7 +10,7 @@ use domain::{
     repository::GroupRepository,
 };
 
-use super::{
+use crate::postgres::{
     enums::{SqlGroupKind, SqlGroupRole},
     mappers::map_pg_error,
 };

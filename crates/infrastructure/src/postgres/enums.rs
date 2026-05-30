@@ -100,6 +100,9 @@ impl From<SqlAuditAction> for AuditAction {
     }
 }
 
+// Write-only: the `kind` column is never selected on reads — `payload` JSONB
+// carries the tag and `Notification::kind()` derives the variant. No reverse
+// `From<SqlNotificationKind>` impl by design.
 #[derive(Debug, Clone, Copy, sqlx::Type)]
 #[sqlx(
     type_name = "notification.notification_kind",

@@ -10,7 +10,7 @@ use domain::{
     repository::UserRepository,
 };
 
-use super::{
+use crate::postgres::{
     enums::{SqlSystemRole, SqlUserStatus},
     mappers::map_pg_error,
 };

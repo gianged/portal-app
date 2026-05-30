@@ -22,7 +22,7 @@ Internal company portal for a single organization (100–1000 users). Project tr
 | Frontend | Leptos (CSR) compiled to WebAssembly |
 | Frontend build | Trunk |
 | Primary database | PostgreSQL via SQLx |
-| Chat history | Cassandra / ScyllaDB |
+| Chat history | ScyllaDB (Cassandra-compatible) |
 | Sessions, pub-sub, presence, rate limit | Redis |
 | Authorization | OpenFGA (ReBAC) |
 | Background jobs | Apalis |
@@ -37,7 +37,7 @@ portal-app/
 ├── crates/
 │   ├── domain/          Pure types, traits (ports). No async, no IO.
 │   ├── application/     Business logic services. Depends only on domain.
-│   ├── infrastructure/  Adapters: Postgres, Cassandra, Redis, OpenFGA, local storage.
+│   ├── infrastructure/  Adapters: Postgres, Scylla, Redis, OpenFGA, local storage.
 │   ├── server/          Axum HTTP + WebSocket binary.
 │   ├── workers/         Apalis background-job binary.
 │   ├── shared/          DTOs + validation shared by backend and frontend (native + WASM).

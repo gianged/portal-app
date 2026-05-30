@@ -1,14 +1,15 @@
 name: portal
 
-# Main stack: brings up Postgres + ScyllaDB + Redis + OpenFGA, plus the Rust
-# app (server, workers, frontend). Postgres + ScyllaDB schemas are
-# initialized on first run; daily backups are written to named volumes with
-# configurable retention.
+# Main stack: Postgres + ScyllaDB + Redis + OpenFGA, plus the Rust app
+# (server, workers, frontend). Daemons only — bootstrap (OpenFGA migrate,
+# schemas, store) and backups live in scripts/overlays, run on demand.
 #
+# Bootstrap (first run / after down -v):
+#         cargo make bootstrap
 # Run:    docker compose -f infra/docker-compose.yml up -d
-# Init:   docker compose -f infra/docker-compose.yml --profile init up openfga-init
+# Backup: cargo make backup        (on-demand host script -> ./backups)
 # Tear:   docker compose -f infra/docker-compose.yml down          (keeps data)
-#         docker compose -f infra/docker-compose.yml down -v       (WIPES data + backups)
+#         docker compose -f infra/docker-compose.yml down -v       (WIPES data)
 #
 # Overlay for dev (cargo-watch + trunk serve):
 #         docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up
@@ -33,25 +34,6 @@ services:
       timeout: 5s
       retries: 5
 
-  postgres-backup:
-    image: prodrigestivill/postgres-backup-local:16
-    restart: unless-stopped
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_DB: ${POSTGRES_DB:-portal},openfga
-      POSTGRES_USER: ${POSTGRES_USER:-portal}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-portal}
-      SCHEDULE: ${BACKUP_SCHEDULE:-@daily}
-      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
-      BACKUP_KEEP_WEEKS: ${BACKUP_KEEP_WEEKS:-0}
-      BACKUP_KEEP_MONTHS: ${BACKUP_KEEP_MONTHS:-0}
-      POSTGRES_EXTRA_OPTS: "-Z6 --blobs"
-    volumes:
-      - postgres-backups:/backups
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   # ---------------------------------------------------------------- ScyllaDB
   scylla:
     image: scylladb/scylla:5.4
@@ -65,44 +47,6 @@ services:
       timeout: 10s
       retries: 10
       start_period: 60s
-
-  scylla-init:
-    image: scylladb/scylla:5.4
-    restart: "no"
-    depends_on:
-      scylla:
-        condition: service_healthy
-    volumes:
-      - ./cassandra/schema.cql:/schema.cql:ro
-    entrypoint: ["sh", "-c", "cqlsh scylla -f /schema.cql && echo '[scylla-init] schema applied'"]
-
-  scylla-backup:
-    image: docker:27-cli
-    restart: unless-stopped
-    depends_on:
-      scylla:
-        condition: service_healthy
-    environment:
-      BACKUP_SCHEDULE: ${SCYLLA_BACKUP_CRON:-0 3 * * *}
-      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
-      KEYSPACE: ${CASSANDRA_KEYSPACE:-portal_chat}
-    volumes:
-      # SECURITY: the docker socket is mounted read-only so this sidecar can
-      # `docker exec` into the scylla container. Standard pattern for
-      # dev/staging; revisit before any prod-grade deployment.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - scylla-backups:/backups
-      - ./backup/scylla-backup.sh:/scylla-backup.sh:ro
-    entrypoint:
-      - sh
-      - -c
-      - |
-        set -eu
-        apk add --no-cache dcron findutils coreutils >/dev/null
-        chmod +x /scylla-backup.sh
-        echo "$$BACKUP_SCHEDULE /scylla-backup.sh >> /proc/1/fd/1 2>&1" | crontab -
-        echo "[scylla-backup] cron installed: $$BACKUP_SCHEDULE"
-        crond -f -l 8
 
   # ------------------------------------------------------------------- Redis
   redis:
@@ -118,17 +62,6 @@ services:
       retries: 5
 
   # ---------------------------------------------------------------- OpenFGA
-  openfga-migrate:
-    image: openfga/openfga:v1.5.4
-    restart: "no"
-    command: migrate
-    environment:
-      OPENFGA_DATASTORE_ENGINE: postgres
-      OPENFGA_DATASTORE_URI: postgres://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@postgres:5432/openfga?sslmode=disable
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   openfga:
     image: openfga/openfga:v1.5.4
     restart: unless-stopped
@@ -141,24 +74,12 @@ services:
       OPENFGA_HTTP_ADDR: 0.0.0.0:8080
       OPENFGA_GRPC_ADDR: 0.0.0.0:8081
       OPENFGA_PLAYGROUND_ENABLED: "false"
+    # Not exposed externally — only the in-network server/workers reach it (the
+    # dev overlay adds host ports). Datastore must be migrated first via
+    # `cargo make bootstrap`; until then OpenFGA crash-loops and restart recovers it.
     depends_on:
-      openfga-migrate:
-        condition: service_completed_successfully
-    # Intentionally NOT exposed externally in the main compose — only the
-    # in-network server/workers need to reach it. Dev overlay exposes ports
-    # for host-side debugging.
-
-  openfga-init:
-    image: alpine/curl:8.10.1
-    restart: "no"
-    profiles: ["init"]
-    depends_on:
-      openfga:
-        condition: service_started
-    volumes:
-      - ./openfga:/openfga:ro
-      - openfga-config:/config
-    entrypoint: ["/bin/sh", "/openfga/openfga-init.sh"]
+      postgres:
+        condition: service_healthy
 
   # ------------------------------------------------------------------ Server
   server:
@@ -172,10 +93,10 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@postgres:5432/${POSTGRES_DB:-portal}
       REDIS_URL: redis://redis:6379
-      CASSANDRA_HOSTS: scylla:9042
-      CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE:-portal_chat}
+      SCYLLA_HOSTS: scylla:9042
+      SCYLLA_KEYSPACE: ${SCYLLA_KEYSPACE:-portal_chat}
       OPENFGA_API_URL: http://openfga:8080
-      OPENFGA_STORE_ID: ${OPENFGA_STORE_ID:-}
+      OPENFGA_MODEL_PATH: /openfga/authorization-model.json
       STORAGE_ROOT: /app/storage
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
@@ -186,14 +107,14 @@ services:
       - "${SERVER_HOST_PORT:-8080}:8080"
     volumes:
       - ../storage:/app/storage
-      - openfga-config:/config:ro
+      - ./openfga:/openfga:ro
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      scylla-init:
-        condition: service_completed_successfully
+      scylla:
+        condition: service_healthy
       openfga:
         condition: service_started
     # No healthcheck yet — server::main is empty. Add a /health route and a
@@ -211,24 +132,24 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@postgres:5432/${POSTGRES_DB:-portal}
       REDIS_URL: redis://redis:6379
-      CASSANDRA_HOSTS: scylla:9042
-      CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE:-portal_chat}
+      SCYLLA_HOSTS: scylla:9042
+      SCYLLA_KEYSPACE: ${SCYLLA_KEYSPACE:-portal_chat}
       OPENFGA_API_URL: http://openfga:8080
-      OPENFGA_STORE_ID: ${OPENFGA_STORE_ID:-}
+      OPENFGA_MODEL_PATH: /openfga/authorization-model.json
       STORAGE_ROOT: /app/storage
       RUST_LOG: ${RUST_LOG:-info,portal=debug}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — set it in .env}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
     volumes:
       - ../storage:/app/storage
-      - openfga-config:/config:ro
+      - ./openfga:/openfga:ro
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      scylla-init:
-        condition: service_completed_successfully
+      scylla:
+        condition: service_healthy
       openfga:
         condition: service_started
 
@@ -246,8 +167,6 @@ services:
 
 volumes:
   postgres-data:
-  postgres-backups:
   scylla-data:
-  scylla-backups:
   redis-data:
   openfga-config:

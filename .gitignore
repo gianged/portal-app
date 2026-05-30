@@ -17,6 +17,9 @@ pkg/
 storage/uploads/*
 !storage/uploads/.gitkeep
 
+# Database backups (cargo make backup)
+/backups/
+
 # Secrets / keys
 *.key
 *.pem

@@ -22,10 +22,10 @@ pub struct RedisEventPublisher {
 
 impl RedisEventPublisher {
     pub async fn new(url: &str) -> Result<Self, EventError> {
-        let client = Client::open(url).map_err(|e| EventError::Backend(e.to_string()))?;
+        let client = Client::open(url).map_err(backend)?;
         let conn = ConnectionManager::new(client)
             .await
-            .map_err(|e| EventError::Backend(e.to_string()))?;
+            .map_err(backend)?;
         Ok(Self { conn })
     }
 }
@@ -37,7 +37,7 @@ impl EventPublisher for RedisEventPublisher {
         let mut conn = self.conn.clone();
         conn.publish::<_, _, ()>(key, payload)
             .await
-            .map_err(|e| EventError::Backend(e.to_string()))?;
+            .map_err(backend)?;
         Ok(())
     }
 }
@@ -52,17 +52,27 @@ pub async fn subscribe(
     url: &str,
     topic: &str,
 ) -> Result<impl Stream<Item = Vec<u8>> + Send, EventError> {
-    let client = Client::open(url).map_err(|e| EventError::Backend(e.to_string()))?;
+    let client = Client::open(url).map_err(backend)?;
     let mut pubsub = client
         .get_async_pubsub()
         .await
-        .map_err(|e| EventError::Backend(e.to_string()))?;
+        .map_err(backend)?;
     let key = event_topic_key(topic);
     pubsub
         .subscribe(&key)
         .await
-        .map_err(|e| EventError::Backend(e.to_string()))?;
-    Ok(pubsub
-        .into_on_message()
-        .filter_map(|msg| async move { msg.get_payload::<Vec<u8>>().ok() }))
+        .map_err(backend)?;
+    Ok(pubsub.into_on_message().filter_map(|msg| async move {
+        match msg.get_payload::<Vec<u8>>() {
+            Ok(payload) => Some(payload),
+            Err(e) => {
+                tracing::warn!(error = %e, "dropping malformed pubsub payload");
+                None
+            }
+        }
+    }))
+}
+
+fn backend<E: std::fmt::Display>(e: E) -> EventError {
+    EventError::Backend(e.to_string())
 }

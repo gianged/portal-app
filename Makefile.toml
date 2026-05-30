@@ -8,28 +8,60 @@
 #
 # Typical flow:
 #
-#   cargo make init       # bring up infra + bootstrap (idempotent — safe to re-run)
+#   cargo make bootstrap       # bring up infra + bootstrap (idempotent — safe to re-run)
 #   cargo make run-all
 #
+# Day-to-day: `cargo make up` / `cargo make down` (both honor .env via --env-file).
 # If something goes wrong, wipe volumes and re-init:
-#   docker compose -f infra/docker-compose.infra.yml down -v
-#   cargo make init
+#   docker compose --env-file .env -f infra/docker-compose.infra.yml down -v
+#   cargo make bootstrap
 
 [config]
 default_to_workspace = false
 skip_core_tasks = true
 
 # ---------------------------------------------------------------- Bootstrap
-# Single idempotent entry point:
-#   - First run: creates volumes, runs Postgres init scripts, applies Scylla
-#     schema, runs OpenFGA migrations, bootstraps the OpenFGA store.
-#   - Subsequent runs: no-op (init scripts only fire on empty volumes;
-#     openfga-init is idempotent — reuses the existing 'portal' store).
+# `cargo make bootstrap` runs infra/scripts/init.sh — one idempotent entry point:
+#   - First run: brings the stores up, runs the OpenFGA datastore migration,
+#     applies the Cassandra schema, starts OpenFGA, and creates the store.
+#   - Re-runs: no-op (Postgres init fires only on an empty volume; migrate +
+#     schema are IF NOT EXISTS; the store step skips when the id already exists).
+# `cargo make backup` dumps Postgres + ScyllaDB on demand to ./backups (host script).
 
-[tasks.init]
-description = "Bring up infra and bootstrap OpenFGA store (idempotent)."
+[tasks.bootstrap]
+description = "Bootstrap the dependency stack (idempotent): stores, OpenFGA migrate + store, schemas."
+command = "sh"
+args = ["infra/scripts/init.sh"]
+
+# Windows has no `sh` on PATH; cargo-make can't resolve it. Point straight at
+# Git Bash's sh (ships with Git for Windows) so this works without PATH changes.
+[tasks.bootstrap.windows]
+command = "C:\\Program Files\\Git\\usr\\bin\\sh.exe"
+args = ["infra/scripts/init.sh"]
+
+[tasks.backup]
+description = "Back up Postgres + ScyllaDB on demand to ./backups (BACKUP_DIR)."
+command = "sh"
+args = ["infra/scripts/backup.sh"]
+
+[tasks.backup.windows]
+command = "C:\\Program Files\\Git\\usr\\bin\\sh.exe"
+args = ["infra/scripts/backup.sh"]
+
+# ------------------------------------------------------------- Stack lifecycle
+# Day-to-day up/down of the infra stack. Both pass --env-file so Compose honors
+# the repo-root .env (POSTGRES_HOST_PORT, etc.). `cargo make bootstrap` is only
+# needed on first run or after `down -v`.
+
+[tasks.up]
+description = "Bring the dependency stack up in the background (honors repo-root .env)."
 command = "docker"
-args = ["compose", "-f", "infra/docker-compose.infra.yml", "--profile", "init", "up", "-d"]
+args = ["compose", "--env-file", ".env", "-f", "infra/docker-compose.infra.yml", "up", "-d", "--wait"]
+
+[tasks.down]
+description = "Stop the dependency stack, keeping data volumes."
+command = "docker"
+args = ["compose", "--env-file", ".env", "-f", "infra/docker-compose.infra.yml", "down"]
 
 # ---------------------------------------------------------------- Native services
 # Run the app on the host (not in containers) so breakpoints / hot-reload work

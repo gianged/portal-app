@@ -12,10 +12,10 @@ pub struct PresenceStore {
 
 impl PresenceStore {
     pub async fn new(url: &str) -> Result<Self, RepositoryError> {
-        let client = Client::open(url).map_err(|e| RepositoryError::Backend(e.to_string()))?;
+        let client = Client::open(url).map_err(backend)?;
         let conn = ConnectionManager::new(client)
             .await
-            .map_err(|e| RepositoryError::Backend(e.to_string()))?;
+            .map_err(backend)?;
         Ok(Self { conn })
     }
 
@@ -26,7 +26,7 @@ impl PresenceStore {
         let mut conn = self.conn.clone();
         conn.set_ex::<_, _, ()>(key, 1u8, ttl_secs)
             .await
-            .map_err(|e| RepositoryError::Backend(e.to_string()))?;
+            .map_err(backend)?;
         Ok(())
     }
 
@@ -35,10 +35,14 @@ impl PresenceStore {
         let mut conn = self.conn.clone();
         conn.exists::<_, bool>(key)
             .await
-            .map_err(|e| RepositoryError::Backend(e.to_string()))
+            .map_err(backend)
     }
 }
 
 fn presence_key(user: UserId) -> String {
     format!("portal:presence:user:{}", user.0)
+}
+
+fn backend<E: std::fmt::Display>(e: E) -> RepositoryError {
+    RepositoryError::Backend(e.to_string())
 }

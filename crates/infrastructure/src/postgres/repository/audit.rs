@@ -10,7 +10,7 @@ use domain::{
     repository::AuditRepository,
 };
 
-use super::{enums::SqlAuditAction, mappers::map_pg_error};
+use crate::postgres::{enums::SqlAuditAction, mappers::map_pg_error};
 
 pub struct PgAuditRepo {
     pool: PgPool,

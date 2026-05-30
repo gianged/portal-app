@@ -10,7 +10,7 @@ use domain::{
     repository::TicketRepository,
 };
 
-use super::{
+use crate::postgres::{
     enums::{SqlTicketCategory, SqlTicketPriority, SqlTicketStatus},
     mappers::map_pg_error,
 };

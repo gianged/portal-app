@@ -61,7 +61,7 @@ Migrations live under `migrations/` and run via `sqlx migrate run`.
 
 ## Cassandra / ScyllaDB
 
-The chat-history adapter lives under `crates/infrastructure/src/cassandra/`.
+The chat-history adapter lives under `crates/infrastructure/src/scylla/`.
 
 - One shared `Arc<scylla::Session>` initialised at startup, injected into the repo.
 - Prepare every statement at startup, store the `PreparedStatement` on the repo struct, reuse it. Never call `session.execute()` with a raw query string in a hot path.
