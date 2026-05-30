@@ -47,3 +47,9 @@ pub enum EventError {
     #[error("backend error: {0}")]
     Backend(String),
 }
+
+#[derive(Debug, Error)]
+pub enum JobError {
+    #[error("backend error: {0}")]
+    Backend(String),
+}

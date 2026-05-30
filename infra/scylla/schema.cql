@@ -148,3 +148,29 @@ CREATE TABLE IF NOT EXISTS direct_channel_by_users (
     channel_id     UUID,
     PRIMARY KEY ((user_low_id, user_high_id))
 );
+
+
+-- -----------------------------------------------------------------------------
+-- 7. group_channel_by_group
+--    Lookup: "which channel belongs to group G?" (1:1). Written when the group
+--    channel is created; read to subscribe members into channels_by_user when
+--    they join the group. Avoids a secondary index on channels.group_id.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS group_channel_by_group (
+    group_id       UUID,
+    channel_id     UUID,
+    PRIMARY KEY ((group_id))
+);
+
+
+-- -----------------------------------------------------------------------------
+-- 8. singleton_channel
+--    Lookup for org-wide singleton channels. Currently only 'general' (one row).
+--    Lets the bootstrap find-or-create the general channel without scanning
+--    channels by kind (which would need ALLOW FILTERING).
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS singleton_channel (
+    scope          TEXT,
+    channel_id     UUID,
+    PRIMARY KEY ((scope))
+);

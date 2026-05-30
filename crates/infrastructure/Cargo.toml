@@ -23,3 +23,5 @@ redis = { workspace = true }
 scylla = { workspace = true }
 reqwest = { workspace = true }
 futures = { workspace = true }
+apalis = { workspace = true }
+apalis-redis = { workspace = true }

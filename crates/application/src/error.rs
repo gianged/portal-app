@@ -1,4 +1,6 @@
-use domain::error::{AuthzError, EventError, RepositoryError, StorageError, TransitionError};
+use domain::error::{
+    AuthzError, EventError, JobError, RepositoryError, StorageError, TransitionError,
+};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -26,6 +28,8 @@ pub enum Error {
 
     #[error(transparent)]
     Event(#[from] EventError),
+    #[error(transparent)]
+    Job(#[from] JobError),
 }
 
 impl From<AuthzError> for Error {

@@ -58,6 +58,9 @@ impl TicketService {
             updated_at: now,
         };
         self.tickets.save(&ticket).await?;
+        // OpenFGA: requester + IT group + company drive the ticket viewer
+        // (incl. the Director branch).
+        self.perms.grant_ticket_created(actor, ticket.id).await?;
         self.events
             .emit(DomainEvent::TicketRaised {
                 ticket_id: ticket.id,
@@ -108,6 +111,9 @@ impl TicketService {
         let now = OffsetDateTime::now_utc();
         ticket.assign(assignee, now)?;
         self.tickets.save(&ticket).await?;
+        self.perms
+            .grant_ticket_assignee(assignee, ticket.id)
+            .await?;
         self.events
             .emit(DomainEvent::TicketAssigned {
                 ticket_id: ticket.id,
@@ -208,12 +214,8 @@ impl TicketService {
 
     pub async fn find(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
         let ticket = self.load(ticket_id).await?;
-        let is_requester = ticket.requester_user_id == actor;
-        let is_assignee = ticket.assignee_user_id == Some(actor);
-        let is_it = self.perms.is_it_member(actor).await?;
-        if !(is_requester || is_assignee || is_it) {
-            return Err(Error::Forbidden);
-        }
+        // viewer = requester or assignee or it_member or director from company.
+        self.perms.require_can_view_ticket(actor, ticket_id).await?;
         Ok(ticket)
     }
 

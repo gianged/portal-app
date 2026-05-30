@@ -4,7 +4,11 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use domain::{error::AuthzError, ids::UserId, ports::authz_client::AuthzClient};
+use domain::{
+    error::AuthzError,
+    ids::UserId,
+    ports::authz_client::{AuthzClient, RelationTuple},
+};
 
 /// Configuration for the `OpenFGA` HTTP client.
 ///
@@ -114,14 +118,14 @@ impl AuthzClient for OpenFgaAuthzClient {
 
     async fn write_tuple(
         &self,
-        user: UserId,
+        subject: &str,
         relation: &str,
         object: &str,
     ) -> Result<(), AuthzError> {
         let req = WriteRequest {
             writes: Some(TupleKeysDto {
                 tuple_keys: vec![TupleKeyDto {
-                    user: Self::user_key(user),
+                    user: subject.to_string(),
                     relation: relation.to_string(),
                     object: object.to_string(),
                 }],
@@ -135,7 +139,7 @@ impl AuthzClient for OpenFgaAuthzClient {
 
     async fn delete_tuple(
         &self,
-        user: UserId,
+        subject: &str,
         relation: &str,
         object: &str,
     ) -> Result<(), AuthzError> {
@@ -143,11 +147,38 @@ impl AuthzClient for OpenFgaAuthzClient {
             writes: None,
             deletes: Some(TupleKeysDto {
                 tuple_keys: vec![TupleKeyDto {
-                    user: Self::user_key(user),
+                    user: subject.to_string(),
                     relation: relation.to_string(),
                     object: object.to_string(),
                 }],
             }),
+            authorization_model_id: &self.authorization_model_id,
+        };
+        let _: serde_json::Value = self.post_json(self.store_url("write"), &req).await?;
+        Ok(())
+    }
+
+    async fn write_tuples(
+        &self,
+        writes: &[RelationTuple],
+        deletes: &[RelationTuple],
+    ) -> Result<(), AuthzError> {
+        if writes.is_empty() && deletes.is_empty() {
+            return Ok(());
+        }
+        let to_keys = |tuples: &[RelationTuple]| TupleKeysDto {
+            tuple_keys: tuples
+                .iter()
+                .map(|t| TupleKeyDto {
+                    user: t.subject.clone(),
+                    relation: t.relation.clone(),
+                    object: t.object.clone(),
+                })
+                .collect(),
+        };
+        let req = WriteRequest {
+            writes: (!writes.is_empty()).then(|| to_keys(writes)),
+            deletes: (!deletes.is_empty()).then(|| to_keys(deletes)),
             authorization_model_id: &self.authorization_model_id,
         };
         let _: serde_json::Value = self.post_json(self.store_url("write"), &req).await?;

@@ -2,40 +2,86 @@ use std::sync::Arc;
 
 use domain::{
     error::AuthzError,
-    ids::{ChannelId, GroupId, ProjectId, UserId},
+    ids::{ChannelId, GroupId, ProjectId, TicketId, UserId},
     model::{Channel, GroupRole, Membership, SystemRole, User, UserStatus},
-    ports::authz_client::AuthzClient,
+    ports::authz_client::{AuthzClient, RelationTuple},
     repository::{GroupRepository, UserRepository},
 };
 
 use crate::error::{Error, Result};
 
-// OpenFGA relation strings. Kept in one place so the vocabulary doesn't drift.
+// OpenFGA relation strings. These MUST match the relations declared in
+// infra/openfga/authorization-model.json exactly — a typo means OpenFGA answers
+// for a relation that doesn't exist (deny / error). The `authz_vocabulary` test
+// in this crate parses the model and guards against drift.
 const REL_MEMBER: &str = "member";
+const REL_DIRECT_MEMBER: &str = "direct_member";
 const REL_LEADER: &str = "leader";
 const REL_SUB_LEADER: &str = "sub_leader";
-const REL_CAN_VIEW: &str = "can_view";
-const REL_CAN_MANAGE: &str = "can_manage";
-const REL_CAN_ASSIGN: &str = "can_assign";
-const REL_PARTICIPANT: &str = "participant";
+const REL_VIEWER: &str = "viewer";
+const REL_CAN_ASSIGN_REQUEST: &str = "can_assign_request";
+const REL_HR: &str = "hr";
+const REL_DIRECTOR: &str = "director";
+const REL_COMPANY: &str = "company";
+const REL_OWNER_GROUP: &str = "owner_group";
+const REL_COLLABORATOR_GROUP: &str = "collaborator_group";
+const REL_PARENT_GROUP: &str = "parent_group";
+const REL_REQUESTER: &str = "requester";
+const REL_ASSIGNEE: &str = "assignee";
+const REL_IT_GROUP: &str = "it_group";
 
-fn obj_project(id: ProjectId) -> String {
-    format!("project:{}", id.0)
+/// The single `company` object. The portal is single-tenant, so one well-known
+/// id holds the org-wide `director`, `hr`, and `member` (wildcard) relations.
+/// The same string is used when granting org roles and when tying a resource to
+/// the company (`project#company`, `ticket#company`, …), so they resolve.
+const COMPANY_OBJECT: &str = "company:portal";
+/// Type-bound wildcard subject: every user. Backs `company#member`, which the
+/// general channel's viewer computes from.
+const USER_WILDCARD: &str = "user:*";
+
+fn subj_user(id: UserId) -> String {
+    format!("user:{}", id.0)
+}
+
+fn subj_group(id: GroupId) -> String {
+    format!("group:{}", id.0)
 }
 
 fn obj_group(id: GroupId) -> String {
     format!("group:{}", id.0)
 }
 
-fn obj_channel(id: ChannelId) -> String {
-    format!("channel:{}", id.0)
+fn obj_project(id: ProjectId) -> String {
+    format!("project:{}", id.0)
+}
+
+fn obj_ticket(id: TicketId) -> String {
+    format!("ticket:{}", id.0)
+}
+
+fn obj_group_channel(id: ChannelId) -> String {
+    format!("group_channel:{}", id.0)
+}
+
+fn obj_general_channel(id: ChannelId) -> String {
+    format!("general_channel:{}", id.0)
 }
 
 fn role_relation(role: GroupRole) -> &'static str {
     match role {
         GroupRole::Leader => REL_LEADER,
         GroupRole::SubLeader => REL_SUB_LEADER,
-        GroupRole::Member => REL_MEMBER,
+        // `group#member` is a computed union (direct_member or leader or
+        // sub_leader) and so is NOT directly assignable; plain members are
+        // written to `direct_member`, which the union folds back in.
+        GroupRole::Member => REL_DIRECT_MEMBER,
+    }
+}
+
+fn company_role_relation(role: SystemRole) -> &'static str {
+    match role {
+        SystemRole::Hr => REL_HR,
+        SystemRole::Director => REL_DIRECTOR,
     }
 }
 
@@ -157,32 +203,35 @@ impl Permissions {
         }
     }
 
-    pub async fn user_can_view_project(&self, actor: UserId, project: ProjectId) -> Result<bool> {
-        let allowed = self
-            .authz
-            .check(actor, REL_CAN_VIEW, &obj_project(project))
-            .await?;
-        Ok(allowed)
-    }
+    // --- Resource read gates ---
+    //
+    // Read authorization for projects, requests, tickets, and group channels
+    // goes through the OpenFGA `viewer` relation. This is the single place the
+    // Director "reads everything except direct messages" rule (invariant 10)
+    // takes effect: each `viewer` unions in `director from company`, and the
+    // org `company#director` tuple is seeded alongside the user's system role.
+    // Write/management gates stay as the role checks above — they are correct
+    // and avoid a network Check per mutation.
 
-    pub async fn require_can_view_project(&self, actor: UserId, project: ProjectId) -> Result<()> {
-        if self.user_can_view_project(actor, project).await? {
+    /// Run an `OpenFGA` check and map a negative result to `Forbidden`. Shared by
+    /// the resource read gates below.
+    async fn require_relation(&self, actor: UserId, relation: &str, object: &str) -> Result<()> {
+        if self.authz.check(actor, relation, object).await? {
             Ok(())
         } else {
             Err(Error::Forbidden)
         }
     }
 
-    pub async fn require_can_manage_project(
-        &self,
-        actor: UserId,
-        project: ProjectId,
-    ) -> Result<()> {
-        let allowed = self
+    pub async fn user_can_view_project(&self, actor: UserId, project: ProjectId) -> Result<bool> {
+        Ok(self
             .authz
-            .check(actor, REL_CAN_MANAGE, &obj_project(project))
-            .await?;
-        if allowed {
+            .check(actor, REL_VIEWER, &obj_project(project))
+            .await?)
+    }
+
+    pub async fn require_can_view_project(&self, actor: UserId, project: ProjectId) -> Result<()> {
+        if self.user_can_view_project(actor, project).await? {
             Ok(())
         } else {
             Err(Error::Forbidden)
@@ -194,24 +243,31 @@ impl Permissions {
         actor: UserId,
         project: ProjectId,
     ) -> Result<()> {
-        let allowed = self
-            .authz
-            .check(actor, REL_CAN_ASSIGN, &obj_project(project))
-            .await?;
-        if allowed {
-            Ok(())
-        } else {
-            Err(Error::Forbidden)
-        }
+        self.require_relation(actor, REL_CAN_ASSIGN_REQUEST, &obj_project(project))
+            .await
+    }
+
+    pub async fn require_can_view_ticket(&self, actor: UserId, ticket: TicketId) -> Result<()> {
+        self.require_relation(actor, REL_VIEWER, &obj_ticket(ticket))
+            .await
     }
 
     pub async fn require_can_view_channel(&self, actor: UserId, channel: &Channel) -> Result<()> {
         match channel {
-            Channel::Group(c) => self.require_group_member(actor, c.group_id).await,
+            // Group-channel reads go through OpenFGA so Directors (viewer unions
+            // `director from company`) can read any group's chat, not just their
+            // own groups'.
+            Channel::Group(c) => {
+                self.require_relation(actor, REL_VIEWER, &obj_group_channel(c.id))
+                    .await
+            }
             Channel::General(_) => {
                 self.require_active(actor).await?;
                 Ok(())
             }
+            // Direct channels are participant-only, enforced by identity — no
+            // OpenFGA branch, so there is no path for a Director backdoor
+            // (invariant 10).
             Channel::Direct(c) => {
                 if actor == c.user_low_id || actor == c.user_high_id {
                     Ok(())
@@ -268,45 +324,180 @@ impl Permissions {
         }
     }
 
+    // --- Tuple writes ---
+    //
+    // All grants funnel through the generalized AuthzClient. Helpers take domain
+    // types and format the `ReBAC` ids here, so services never touch raw tuple
+    // strings and infra never sees domain ids.
+
     pub async fn grant_group_membership(&self, member: &Membership) -> Result<()> {
         self.authz
             .write_tuple(
-                member.user_id,
+                &subj_user(member.user_id),
                 role_relation(member.role),
                 &obj_group(member.group_id),
             )
             .await
-            .map_err(map_authz_write)?;
-        Ok(())
+            .map_err(map_authz_write)
     }
 
     pub async fn revoke_group_membership(&self, member: &Membership) -> Result<()> {
         self.authz
             .delete_tuple(
-                member.user_id,
+                &subj_user(member.user_id),
                 role_relation(member.role),
                 &obj_group(member.group_id),
             )
             .await
-            .map_err(map_authz_write)?;
-        Ok(())
+            .map_err(map_authz_write)
     }
 
-    pub async fn grant_direct_channel_participant(
+    /// Mirror a user's org-wide `SystemRole` into `company#hr` / `company#director`
+    /// so the model's `... or director from company` viewer branches resolve.
+    pub async fn grant_company_role(&self, user: UserId, role: SystemRole) -> Result<()> {
+        self.authz
+            .write_tuple(
+                &subj_user(user),
+                company_role_relation(role),
+                COMPANY_OBJECT,
+            )
+            .await
+            .map_err(map_authz_write)
+    }
+
+    pub async fn revoke_company_role(&self, user: UserId, role: SystemRole) -> Result<()> {
+        self.authz
+            .delete_tuple(
+                &subj_user(user),
+                company_role_relation(role),
+                COMPANY_OBJECT,
+            )
+            .await
+            .map_err(map_authz_write)
+    }
+
+    /// Seed the `company#member` wildcard (`user:*`) once at startup. Idempotent:
+    /// re-writing the identical tuple is a no-op in `OpenFGA`.
+    pub async fn seed_company_member_wildcard(&self) -> Result<()> {
+        self.authz
+            .write_tuple(USER_WILDCARD, REL_MEMBER, COMPANY_OBJECT)
+            .await
+            .map_err(map_authz_write)
+    }
+
+    /// On project creation: tie it to its owner group and the company singleton,
+    /// atomically so a half-written project can't exist.
+    pub async fn grant_project_created(
         &self,
-        user: UserId,
-        channel: ChannelId,
+        owner_group: GroupId,
+        project: ProjectId,
+    ) -> Result<()> {
+        let object = obj_project(project);
+        let writes = [
+            RelationTuple::new(subj_group(owner_group), REL_OWNER_GROUP, object.clone()),
+            RelationTuple::new(COMPANY_OBJECT, REL_COMPANY, object),
+        ];
+        self.authz
+            .write_tuples(&writes, &[])
+            .await
+            .map_err(map_authz_write)
+    }
+
+    pub async fn grant_project_collaborator(
+        &self,
+        group: GroupId,
+        project: ProjectId,
     ) -> Result<()> {
         self.authz
-            .write_tuple(user, REL_PARTICIPANT, &obj_channel(channel))
+            .write_tuple(
+                &subj_group(group),
+                REL_COLLABORATOR_GROUP,
+                &obj_project(project),
+            )
             .await
-            .map_err(map_authz_write)?;
-        Ok(())
+            .map_err(map_authz_write)
     }
 
-    // TODO: project owner/collaborator tuple writes require userset-form
-    // identifiers ("group:G#member") which the current AuthzClient port does
-    // not expose. Add when the port is extended.
+    pub async fn revoke_project_collaborator(
+        &self,
+        group: GroupId,
+        project: ProjectId,
+    ) -> Result<()> {
+        self.authz
+            .delete_tuple(
+                &subj_group(group),
+                REL_COLLABORATOR_GROUP,
+                &obj_project(project),
+            )
+            .await
+            .map_err(map_authz_write)
+    }
+
+    /// On ticket creation: requester, the IT group (drives `it_member`), and the
+    /// company singleton (drives the Director viewer branch). The IT group is
+    /// resolved here so callers don't need a `GroupRepository`.
+    pub async fn grant_ticket_created(&self, requester: UserId, ticket: TicketId) -> Result<()> {
+        let object = obj_ticket(ticket);
+        let mut writes = vec![
+            RelationTuple::new(subj_user(requester), REL_REQUESTER, object.clone()),
+            RelationTuple::new(COMPANY_OBJECT, REL_COMPANY, object.clone()),
+        ];
+        // If the IT group isn't provisioned yet, the requester and Directors can
+        // still view the ticket; only the IT-member branch is deferred.
+        if let Some(it_group) = self.groups.find_it_group().await? {
+            writes.push(RelationTuple::new(
+                subj_group(it_group.id),
+                REL_IT_GROUP,
+                object,
+            ));
+        }
+        self.authz
+            .write_tuples(&writes, &[])
+            .await
+            .map_err(map_authz_write)
+    }
+
+    pub async fn grant_ticket_assignee(&self, assignee: UserId, ticket: TicketId) -> Result<()> {
+        self.authz
+            .write_tuple(&subj_user(assignee), REL_ASSIGNEE, &obj_ticket(ticket))
+            .await
+            .map_err(map_authz_write)
+    }
+
+    /// Tie a group to the company singleton (so org-wide branches resolve).
+    pub async fn grant_group_created(&self, group: GroupId) -> Result<()> {
+        self.authz
+            .write_tuple(COMPANY_OBJECT, REL_COMPANY, &obj_group(group))
+            .await
+            .map_err(map_authz_write)
+    }
+
+    /// On group-channel creation: tie it to its parent group (drives
+    /// `parent_member`) and the company singleton.
+    pub async fn grant_group_channel_created(
+        &self,
+        group: GroupId,
+        channel: ChannelId,
+    ) -> Result<()> {
+        let object = obj_group_channel(channel);
+        let writes = [
+            RelationTuple::new(subj_group(group), REL_PARENT_GROUP, object.clone()),
+            RelationTuple::new(COMPANY_OBJECT, REL_COMPANY, object),
+        ];
+        self.authz
+            .write_tuples(&writes, &[])
+            .await
+            .map_err(map_authz_write)
+    }
+
+    /// Tie the general channel to the company singleton; its viewer is
+    /// `member from company`, i.e. every user.
+    pub async fn grant_general_channel_company(&self, channel: ChannelId) -> Result<()> {
+        self.authz
+            .write_tuple(COMPANY_OBJECT, REL_COMPANY, &obj_general_channel(channel))
+            .await
+            .map_err(map_authz_write)
+    }
 }
 
 /// `AuthzError::Denied` on a tuple-write means the authz backend rejected the
@@ -316,5 +507,116 @@ fn map_authz_write(err: AuthzError) -> Error {
     match err {
         AuthzError::Denied => Error::Conflict("authz_write_denied".into()),
         AuthzError::Backend(msg) => Error::Repository(domain::error::RepositoryError::Backend(msg)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Vocabulary guard: the relation strings this module sends to `OpenFGA` must
+    //! line up with the loaded authorization model, or every check silently
+    //! denies (the original bug: `can_view` vs `viewer`). These tests parse the
+    //! real model file and fail at `cargo test` if the two ever drift.
+    use std::collections::HashSet;
+
+    use serde_json::Value;
+
+    const MODEL_JSON: &str = include_str!("../../../infra/openfga/authorization-model.json");
+
+    fn model() -> Value {
+        serde_json::from_str(MODEL_JSON).expect("authorization-model.json is valid JSON")
+    }
+
+    fn type_def(model: &Value, ty: &str) -> Value {
+        model["type_definitions"]
+            .as_array()
+            .expect("type_definitions array")
+            .iter()
+            .find(|t| t["type"] == ty)
+            .unwrap_or_else(|| panic!("type `{ty}` missing from model"))
+            .clone()
+    }
+
+    /// All relations declared on a type (computed or directly assignable).
+    fn relations(model: &Value, ty: &str) -> HashSet<String> {
+        type_def(model, ty)["relations"]
+            .as_object()
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Only the directly-assignable relations — the model lists exactly these
+    /// under `metadata.relations` (they carry `directly_related_user_types`).
+    /// Writing a tuple to any other relation is rejected by `OpenFGA`.
+    fn assignable(model: &Value, ty: &str) -> HashSet<String> {
+        type_def(model, ty)["metadata"]["relations"]
+            .as_object()
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn check_relations_exist_in_model() {
+        let m = model();
+        let checks = [
+            ("project", super::REL_VIEWER),
+            ("project", super::REL_CAN_ASSIGN_REQUEST),
+            ("ticket", super::REL_VIEWER),
+            ("group_channel", super::REL_VIEWER),
+        ];
+        for (ty, rel) in checks {
+            assert!(
+                relations(&m, ty).contains(rel),
+                "check relation `{rel}` does not exist on type `{ty}` in the model"
+            );
+        }
+    }
+
+    #[test]
+    fn written_relations_are_directly_assignable() {
+        let m = model();
+        let writes = [
+            ("group", super::REL_LEADER),
+            ("group", super::REL_SUB_LEADER),
+            ("group", super::REL_DIRECT_MEMBER),
+            ("group", super::REL_COMPANY),
+            ("company", super::REL_HR),
+            ("company", super::REL_DIRECTOR),
+            ("company", super::REL_MEMBER),
+            ("project", super::REL_OWNER_GROUP),
+            ("project", super::REL_COLLABORATOR_GROUP),
+            ("project", super::REL_COMPANY),
+            ("ticket", super::REL_REQUESTER),
+            ("ticket", super::REL_ASSIGNEE),
+            ("ticket", super::REL_IT_GROUP),
+            ("ticket", super::REL_COMPANY),
+            ("group_channel", super::REL_PARENT_GROUP),
+            ("group_channel", super::REL_COMPANY),
+            ("general_channel", super::REL_COMPANY),
+        ];
+        for (ty, rel) in writes {
+            assert!(
+                assignable(&m, ty).contains(rel),
+                "written relation `{rel}` on type `{ty}` is not directly assignable \
+                 (OpenFGA would reject the write) — e.g. `member` is computed, write `direct_member`"
+            );
+        }
+    }
+
+    #[test]
+    fn director_reads_all_resources_except_direct_messages() {
+        // Invariant 10: Directors read everything non-direct; DMs stay private.
+        let m = model();
+        for ty in ["project", "ticket", "group_channel"] {
+            let viewer = type_def(&m, ty)["relations"]["viewer"].to_string();
+            assert!(
+                viewer.contains("director"),
+                "type `{ty}` viewer must union `director from company`"
+            );
+        }
+        let direct = type_def(&m, "direct_channel")["relations"]["viewer"].to_string();
+        assert!(
+            !direct.contains("director"),
+            "direct_channel viewer must NOT include director (invariant 10)"
+        );
     }
 }

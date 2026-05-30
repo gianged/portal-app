@@ -35,7 +35,12 @@ futures = "0.3"
 dotenvy = "0.15"
 
 # workers
+# 0.7 is the latest stable apalis line. apalis-redis pulls its own redis 0.32
+# transitively; that coexists with the workspace's redis 1.x (the two are used
+# independently — apalis-redis encapsulates its client, and our JobQueue port is
+# byte-based), so the versions need not unify.
 apalis = "0.7"
+apalis-redis = "0.7"
 
 # frontend
 leptos = { version = "0.8", features = ["csr"] }

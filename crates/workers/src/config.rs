@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use anyhow::Context;
 
 /// Worker configuration, parsed once from the environment at startup. Workers
@@ -10,8 +8,6 @@ pub struct Config {
     pub redis_url: String,
     pub scylla_hosts: Vec<String>,
     pub scylla_keyspace: String,
-    pub storage_root: PathBuf,
-    pub storage_public_base: String,
 }
 
 pub fn from_env() -> anyhow::Result<Config> {
@@ -29,8 +25,6 @@ pub fn from_env() -> anyhow::Result<Config> {
         redis_url: required("REDIS_URL")?,
         scylla_hosts,
         scylla_keyspace: optional("SCYLLA_KEYSPACE", "portal_chat"),
-        storage_root: optional("STORAGE_ROOT", "./storage/uploads").into(),
-        storage_public_base: optional("STORAGE_PUBLIC_BASE", "http://localhost:8080"),
     })
 }
 

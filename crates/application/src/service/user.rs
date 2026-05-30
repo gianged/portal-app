@@ -10,8 +10,8 @@ use argon2::{
 use domain::{
     error::RepositoryError,
     ids::UserId,
-    model::{GroupRole, RequestStatus, User, UserStatus},
-    repository::{GroupRepository, RequestRepository, UserRepository},
+    model::{ChannelKind, GroupRole, RequestStatus, User, UserStatus},
+    repository::{ChatRepository, GroupRepository, RequestRepository, UserRepository},
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -34,6 +34,7 @@ pub struct UserService {
     users: Arc<dyn UserRepository>,
     groups: Arc<dyn GroupRepository>,
     requests: Arc<dyn RequestRepository>,
+    chats: Arc<dyn ChatRepository>,
     perms: Arc<Permissions>,
     events: Arc<EventBus>,
 }
@@ -44,6 +45,7 @@ impl UserService {
         users: Arc<dyn UserRepository>,
         groups: Arc<dyn GroupRepository>,
         requests: Arc<dyn RequestRepository>,
+        chats: Arc<dyn ChatRepository>,
         perms: Arc<Permissions>,
         events: Arc<EventBus>,
     ) -> Self {
@@ -51,9 +53,28 @@ impl UserService {
             users,
             groups,
             requests,
+            chats,
             perms,
             events,
         }
+    }
+
+    /// Ensure the user sees the company-wide general channel. No-op if the
+    /// general channel hasn't been bootstrapped yet.
+    async fn subscribe_to_general(&self, user_id: UserId) -> Result<()> {
+        if let Some(channel) = self.chats.find_general_channel().await? {
+            self.chats
+                .subscribe_member(user_id, channel.id(), ChannelKind::General)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn unsubscribe_from_general(&self, user_id: UserId) -> Result<()> {
+        if let Some(channel) = self.chats.find_general_channel().await? {
+            self.chats.unsubscribe_member(user_id, channel.id()).await?;
+        }
+        Ok(())
     }
 
     pub async fn create_user(&self, actor: UserId, cmd: CreateUserCommand) -> Result<User> {
@@ -82,6 +103,11 @@ impl UserService {
         };
 
         self.users.save(&user).await?;
+        // Mirror an org role (HR/Director) into company tuples so the model's
+        // `... or director from company` viewer branches resolve.
+        if let Some(role) = user.system_role {
+            self.perms.grant_company_role(user.id, role).await?;
+        }
         self.events
             .emit(DomainEvent::UserCreated {
                 user_id: user.id,
@@ -105,6 +131,7 @@ impl UserService {
             .ok_or(Error::NotFound("user"))?;
         user.activate(now, now)?;
         self.users.save(&user).await?;
+        self.subscribe_to_general(user.id).await?;
         self.events
             .emit(DomainEvent::UserActivated {
                 user_id: user.id,
@@ -147,6 +174,12 @@ impl UserService {
             self.groups.save_membership(&membership).await?;
             self.perms.revoke_group_membership(&membership).await?;
         }
+        // Drop org-role tuples too; a deactivated HR/Director loses access until
+        // reactivated.
+        if let Some(role) = user.system_role {
+            self.perms.revoke_company_role(target, role).await?;
+        }
+        self.unsubscribe_from_general(target).await?;
         self.events
             .emit(DomainEvent::UserDeactivated {
                 user_id: user.id,
@@ -170,6 +203,10 @@ impl UserService {
             .ok_or(Error::NotFound("user"))?;
         user.reactivate(now)?;
         self.users.save(&user).await?;
+        if let Some(role) = user.system_role {
+            self.perms.grant_company_role(target, role).await?;
+        }
+        self.subscribe_to_general(target).await?;
         self.events
             .emit(DomainEvent::UserReactivated {
                 user_id: user.id,

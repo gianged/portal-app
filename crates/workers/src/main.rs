@@ -1,6 +1,13 @@
 mod bootstrap;
+mod cleanup;
 mod config;
+mod notifications;
 mod telemetry;
+mod uploads;
+
+use apalis::prelude::*;
+
+use crate::bootstrap::WorkerContext;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -9,10 +16,20 @@ async fn main() -> anyhow::Result<()> {
     telemetry::init();
 
     let cfg = config::from_env()?;
-    bootstrap::connect(&cfg).await?;
+    let WorkerContext { fanout, storage } = bootstrap::build(&cfg).await?;
 
-    tracing::info!("workers ready (no jobs registered yet)");
-    // Idle until shut down; the apalis Monitor replaces this when jobs land.
-    std::future::pending::<()>().await;
+    // One worker consuming the durable `notifications` queue the server enqueues.
+    let worker = WorkerBuilder::new("notifications")
+        .data(fanout)
+        .backend(storage)
+        .build_fn(notifications::handle);
+
+    tracing::info!("workers ready: consuming notification jobs");
+    Monitor::new()
+        .register(worker)
+        .run_with_signal(tokio::signal::ctrl_c())
+        .await?;
+
+    tracing::info!("workers shut down");
     Ok(())
 }

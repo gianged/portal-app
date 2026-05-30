@@ -3,8 +3,8 @@ use time::OffsetDateTime;
 
 use crate::{
     error::RepositoryError,
-    ids::{ChannelId, MessageId, UserId},
-    model::{Announcement, Channel, ChannelMembership, Message},
+    ids::{ChannelId, GroupId, MessageId, UserId},
+    model::{Announcement, Channel, ChannelKind, ChannelMembership, Message},
 };
 
 #[async_trait]
@@ -20,6 +20,32 @@ pub trait ChatRepository: Send + Sync {
     ) -> Result<Option<Channel>, RepositoryError>;
 
     async fn save_channel(&self, channel: &Channel) -> Result<(), RepositoryError>;
+
+    /// The group's channel (1:1 with the group), used to subscribe members when
+    /// they join. Looked up via the `group_channel_by_group` table.
+    async fn find_group_channel(
+        &self,
+        group_id: GroupId,
+    ) -> Result<Option<Channel>, RepositoryError>;
+
+    /// The single company-wide general channel, if it has been created.
+    async fn find_general_channel(&self) -> Result<Option<Channel>, RepositoryError>;
+
+    /// Add a `channels_by_user` row so `channel_id` appears in the user's channel
+    /// list. Idempotent — re-subscribing an existing member is harmless.
+    async fn subscribe_member(
+        &self,
+        user_id: UserId,
+        channel_id: ChannelId,
+        kind: ChannelKind,
+    ) -> Result<(), RepositoryError>;
+
+    /// Remove the user's `channels_by_user` row (e.g. on membership deactivation).
+    async fn unsubscribe_member(
+        &self,
+        user_id: UserId,
+        channel_id: ChannelId,
+    ) -> Result<(), RepositoryError>;
 
     async fn list_channels_for_user(
         &self,

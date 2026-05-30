@@ -9,7 +9,7 @@ use domain::{
         Announcement, Group, GroupRole, Message, Project, ProjectInviteStatus, ProjectStatus,
         Request, RequestStatus, Ticket, TicketPriority, TicketStatus, User,
     },
-    ports::event_publisher::EventPublisher,
+    ports::{event_publisher::EventPublisher, job_queue::JobQueue},
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -260,14 +260,30 @@ impl DomainEvent {
     }
 }
 
+/// Topics whose events can produce notifications. Only these are mirrored onto
+/// the durable job queue for the worker to fan out; the rest (`portal.user`,
+/// `portal.group`) are still broadcast for real-time consumers but never queued.
+const NOTIFY_TOPICS: &[&str] = &[
+    "portal.ticket",
+    "portal.announcement",
+    "portal.request",
+    "portal.project",
+    "portal.chat",
+];
+
+/// Dispatches every [`DomainEvent`] to two sinks: a broadcast publisher (Redis
+/// pub/sub, for real-time WebSocket fan-out) and a durable job queue (apalis,
+/// for background processing such as notifications). The same serialised bytes
+/// feed both.
 pub struct EventBus {
     publisher: Arc<dyn EventPublisher>,
+    jobs: Arc<dyn JobQueue>,
 }
 
 impl EventBus {
     #[must_use]
-    pub fn new(publisher: Arc<dyn EventPublisher>) -> Self {
-        Self { publisher }
+    pub fn new(publisher: Arc<dyn EventPublisher>, jobs: Arc<dyn JobQueue>) -> Self {
+        Self { publisher, jobs }
     }
 
     /// # Panics
@@ -280,6 +296,9 @@ impl EventBus {
         let payload = serde_json::to_vec(&event)
             .expect("DomainEvent variants only contain serde-derivable types");
         self.publisher.publish(topic, &payload).await?;
+        if NOTIFY_TOPICS.contains(&topic) {
+            self.jobs.enqueue("notifications", &payload).await?;
+        }
         Ok(())
     }
 }

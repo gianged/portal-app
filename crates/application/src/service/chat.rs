@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use domain::{
     ids::{ChannelId, MessageId, UserId},
-    model::{Channel, ChannelMembership, DirectChannel, Message, UserStatus},
+    model::{Channel, ChannelKind, ChannelMembership, DirectChannel, Message, UserStatus},
     repository::{ChatRepository, UserRepository},
 };
 use time::{Duration, OffsetDateTime};
@@ -72,11 +72,15 @@ impl ChatService {
         let direct = DirectChannel::new(id, actor, other_user, now);
         let channel = Channel::Direct(direct);
         self.chats.save_channel(&channel).await?;
-        self.perms
-            .grant_direct_channel_participant(actor, id)
+        // Subscribe both participants so the channel shows up in their lists.
+        // Direct-channel read access is enforced by identity (see
+        // `Permissions::require_can_view_channel`), not OpenFGA, so there is no
+        // participant tuple to write — and thus no Director backdoor.
+        self.chats
+            .subscribe_member(actor, id, ChannelKind::Direct)
             .await?;
-        self.perms
-            .grant_direct_channel_participant(other_user, id)
+        self.chats
+            .subscribe_member(other_user, id, ChannelKind::Direct)
             .await?;
         Ok(channel)
     }

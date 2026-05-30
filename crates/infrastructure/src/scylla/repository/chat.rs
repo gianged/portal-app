@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use domain::{
     error::RepositoryError,
-    ids::{ChannelId, MessageId, UserId},
+    ids::{ChannelId, GroupId, MessageId, UserId},
     model::{Announcement, Channel, ChannelKind, ChannelMembership, Message},
     repository::ChatRepository,
 };
@@ -35,7 +35,14 @@ struct Statements {
     insert_general_channel: PreparedStatement,
     insert_direct_channel: PreparedStatement,
     insert_direct_channel_lookup: PreparedStatement,
+    // Partition: group_id — group->channel lookup (1:1) for member subscription.
+    insert_group_channel_lookup: PreparedStatement,
+    find_group_channel_id: PreparedStatement,
+    // Partition: scope — org-wide singleton channel lookup ('general').
+    insert_singleton_channel: PreparedStatement,
+    find_general_channel_id: PreparedStatement,
     insert_channel_by_user: PreparedStatement,
+    delete_channel_by_user: PreparedStatement,
     // Partition: user_id — list a user's joined channels with read marker.
     list_channels_for_user: PreparedStatement,
     update_last_read: PreparedStatement,
@@ -102,10 +109,36 @@ impl ScyllaChatRepo {
                  (user_low_id, user_high_id, channel_id) VALUES (?, ?, ?)",
             )
             .await?,
+            insert_group_channel_lookup: prepare(
+                &session,
+                "INSERT INTO portal_chat.group_channel_by_group \
+                 (group_id, channel_id) VALUES (?, ?)",
+            )
+            .await?,
+            find_group_channel_id: prepare(
+                &session,
+                "SELECT channel_id FROM portal_chat.group_channel_by_group WHERE group_id = ?",
+            )
+            .await?,
+            insert_singleton_channel: prepare(
+                &session,
+                "INSERT INTO portal_chat.singleton_channel (scope, channel_id) VALUES (?, ?)",
+            )
+            .await?,
+            find_general_channel_id: prepare(
+                &session,
+                "SELECT channel_id FROM portal_chat.singleton_channel WHERE scope = 'general'",
+            )
+            .await?,
             insert_channel_by_user: prepare(
                 &session,
                 "INSERT INTO portal_chat.channels_by_user \
                  (user_id, channel_id, kind, last_read_at) VALUES (?, ?, ?, ?)",
+            )
+            .await?,
+            delete_channel_by_user: prepare(
+                &session,
+                "DELETE FROM portal_chat.channels_by_user WHERE user_id = ? AND channel_id = ?",
             )
             .await?,
             list_channels_for_user: prepare(
@@ -242,25 +275,37 @@ impl ChatRepository for ScyllaChatRepo {
     async fn save_channel(&self, channel: &Channel) -> Result<(), RepositoryError> {
         match channel {
             Channel::Group(c) => {
+                // Keep the canonical row and the group->channel lookup consistent.
+                let mut batch = Batch::default();
+                batch.append_statement(self.stmts.insert_group_channel.clone());
+                batch.append_statement(self.stmts.insert_group_channel_lookup.clone());
                 self.session
-                    .execute_unpaged(
-                        &self.stmts.insert_group_channel,
-                        (c.id.0, &c.name, c.group_id.0, c.created_at),
+                    .batch(
+                        &batch,
+                        (
+                            (c.id.0, &c.name, c.group_id.0, c.created_at),
+                            (c.group_id.0, c.id.0),
+                        ),
                     )
                     .await
                     .map_err(backend)?;
             }
             Channel::General(c) => {
+                // Register the singleton so find_general_channel can resolve it.
+                let mut batch = Batch::default();
+                batch.append_statement(self.stmts.insert_general_channel.clone());
+                batch.append_statement(self.stmts.insert_singleton_channel.clone());
                 self.session
-                    .execute_unpaged(&self.stmts.insert_general_channel, (c.id.0, c.created_at))
+                    .batch(&batch, ((c.id.0, c.created_at), ("general", c.id.0)))
                     .await
                     .map_err(backend)?;
             }
             Channel::Direct(c) => {
                 // Logged batch: the lookup table and the per-user index must
                 // stay consistent with the canonical row in `channels`. Group
-                // memberships for group/general channels are populated by event
-                // handlers reacting to Postgres membership changes — not here.
+                // and general channel members are subscribed into channels_by_user
+                // by the application (Permissions/ChatService) when memberships
+                // change — direct channels seed both participants here.
                 let mut batch = Batch::default();
                 batch.append_statement(self.stmts.insert_direct_channel.clone());
                 batch.append_statement(self.stmts.insert_direct_channel_lookup.clone());
@@ -281,6 +326,71 @@ impl ChatRepository for ScyllaChatRepo {
                     .map_err(backend)?;
             }
         }
+        Ok(())
+    }
+
+    async fn find_group_channel(
+        &self,
+        group_id: GroupId,
+    ) -> Result<Option<Channel>, RepositoryError> {
+        let result = self
+            .session
+            .execute_unpaged(&self.stmts.find_group_channel_id, (group_id.0,))
+            .await
+            .map_err(backend)?;
+        let rows = result.into_rows_result().map_err(backend)?;
+        let Some((channel_id,)) = rows.maybe_first_row::<(Uuid,)>().map_err(backend)? else {
+            return Ok(None);
+        };
+        self.find_channel(ChannelId(channel_id)).await
+    }
+
+    async fn find_general_channel(&self) -> Result<Option<Channel>, RepositoryError> {
+        let result = self
+            .session
+            .execute_unpaged(&self.stmts.find_general_channel_id, ())
+            .await
+            .map_err(backend)?;
+        let rows = result.into_rows_result().map_err(backend)?;
+        let Some((channel_id,)) = rows.maybe_first_row::<(Uuid,)>().map_err(backend)? else {
+            return Ok(None);
+        };
+        self.find_channel(ChannelId(channel_id)).await
+    }
+
+    async fn subscribe_member(
+        &self,
+        user_id: UserId,
+        channel_id: ChannelId,
+        kind: ChannelKind,
+    ) -> Result<(), RepositoryError> {
+        self.session
+            .execute_unpaged(
+                &self.stmts.insert_channel_by_user,
+                (
+                    user_id.0,
+                    channel_id.0,
+                    channel_kind_str(kind),
+                    None::<OffsetDateTime>,
+                ),
+            )
+            .await
+            .map_err(backend)?;
+        Ok(())
+    }
+
+    async fn unsubscribe_member(
+        &self,
+        user_id: UserId,
+        channel_id: ChannelId,
+    ) -> Result<(), RepositoryError> {
+        self.session
+            .execute_unpaged(
+                &self.stmts.delete_channel_by_user,
+                (user_id.0, channel_id.0),
+            )
+            .await
+            .map_err(backend)?;
         Ok(())
     }
 

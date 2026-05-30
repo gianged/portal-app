@@ -20,6 +20,7 @@ use domain::{
     },
 };
 use infrastructure::{
+    jobs::{ApalisNotificationQueue, notification_storage},
     local_storage::LocalStorage,
     openfga::{self, OpenFgaAuthzClient},
     postgres::{
@@ -126,7 +127,17 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
         groups.clone(),
         Arc::new(authz),
     ));
-    let events = Arc::new(EventBus::new(Arc::new(publisher)));
+
+    // Idempotent org bootstrap: company singleton tuples + general channel.
+    application::bootstrap::seed_company(chats.as_ref(), perms.as_ref())
+        .await
+        .context("seeding company singleton")?;
+    let jobs = ApalisNotificationQueue::new(
+        notification_storage(&cfg.redis_url)
+            .await
+            .context("connecting apalis redis (jobs)")?,
+    );
+    let events = Arc::new(EventBus::new(Arc::new(publisher), Arc::new(jobs)));
     let storage_port: Arc<dyn FileStorage> = storage.clone();
 
     // Application services, each built per its own constructor.
@@ -135,6 +146,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             users.clone(),
             groups.clone(),
             requests.clone(),
+            chats.clone(),
             perms.clone(),
             events.clone(),
         )),

@@ -69,6 +69,11 @@ impl ProjectService {
             updated_at: now,
         };
         self.projects.save_project(&project).await?;
+        // OpenFGA: bind the project to its owner group (drives owner_member /
+        // viewer) and the company singleton (Director viewer branch).
+        self.perms
+            .grant_project_created(project.owner_group_id, project.id)
+            .await?;
         self.events
             .emit(DomainEvent::ProjectCreated {
                 project_id: project.id,
@@ -219,6 +224,12 @@ impl ProjectService {
         };
         self.projects.save_collaborator(&collaborator).await?;
         self.projects.save_invite(&invite).await?;
+        // OpenFGA: the invited group's members become collaborator_member ->
+        // viewer on the project. Subsequent membership changes propagate
+        // automatically via the group's member tuples.
+        self.perms
+            .grant_project_collaborator(invite.invited_group_id, invite.project_id)
+            .await?;
         self.events
             .emit(DomainEvent::ProjectInviteResponded {
                 invite_id: invite.id,
@@ -307,6 +318,9 @@ impl ProjectService {
             .find(|c| c.group_id == group_id)
             .ok_or(Error::NotFound("collaborator"))?;
         self.projects.delete_collaborator(collaborator.id).await?;
+        self.perms
+            .revoke_project_collaborator(group_id, project_id)
+            .await?;
         let now = OffsetDateTime::now_utc();
         self.events
             .emit(DomainEvent::ProjectCollaboratorRemoved {

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use domain::{
     ids::{ChannelId, GroupId, MembershipId, UserId},
-    model::{Channel, Group, GroupChannel, GroupRole, Membership, ProjectStatus},
+    model::{Channel, ChannelKind, Group, GroupChannel, GroupRole, Membership, ProjectStatus},
     repository::{ChatRepository, GroupRepository, ProjectRepository},
 };
 use time::OffsetDateTime;
@@ -55,13 +55,21 @@ impl GroupService {
         };
         self.groups.save_group(&group).await?;
 
+        let channel_id = ChannelId(Uuid::now_v7());
         let channel = Channel::Group(GroupChannel {
-            id: ChannelId(Uuid::now_v7()),
+            id: channel_id,
             group_id: group.id,
             name: cmd.name,
             created_at: now,
         });
         self.chats.save_channel(&channel).await?;
+
+        // OpenFGA: tie the group and its channel to the company singleton so the
+        // org-wide (Director) viewer branches resolve.
+        self.perms.grant_group_created(group.id).await?;
+        self.perms
+            .grant_group_channel_created(group.id, channel_id)
+            .await?;
 
         self.events
             .emit(DomainEvent::GroupCreated {
@@ -145,6 +153,13 @@ impl GroupService {
         };
         self.groups.save_membership(&membership).await?;
         self.perms.grant_group_membership(&membership).await?;
+        // Subscribe the new member to the group channel so it appears in their
+        // channel list (channels_by_user is per-user denormalised in Scylla).
+        if let Some(channel) = self.chats.find_group_channel(cmd.group_id).await? {
+            self.chats
+                .subscribe_member(cmd.user_id, channel.id(), ChannelKind::Group)
+                .await?;
+        }
         self.events
             .emit(DomainEvent::MembershipAdded {
                 membership_id: membership.id,
@@ -232,6 +247,9 @@ impl GroupService {
         self.perms.revoke_group_membership(&membership).await?;
         membership.deactivate(now);
         self.groups.save_membership(&membership).await?;
+        if let Some(channel) = self.chats.find_group_channel(group_id).await? {
+            self.chats.unsubscribe_member(user_id, channel.id()).await?;
+        }
 
         self.events
             .emit(DomainEvent::MembershipDeactivated {
