@@ -1,3 +1,7 @@
+mod fanout;
+
+pub use fanout::NotificationFanout;
+
 use std::sync::Arc;
 
 use domain::{
