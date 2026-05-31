@@ -274,4 +274,12 @@ impl RequestRepository for PgRequestRepo {
         .map_err(map_pg_error)?;
         Ok(())
     }
+
+    async fn list_all_attachment_keys(&self) -> Result<Vec<String>, RepositoryError> {
+        let rows = sqlx::query!(r#"SELECT storage_key FROM project.request_attachments"#)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_pg_error)?;
+        Ok(rows.into_iter().map(|r| r.storage_key).collect())
+    }
 }

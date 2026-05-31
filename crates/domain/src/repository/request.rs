@@ -30,4 +30,8 @@ pub trait RequestRepository: Send + Sync {
     ) -> Result<Vec<RequestAttachment>, RepositoryError>;
 
     async fn save_attachment(&self, attachment: &RequestAttachment) -> Result<(), RepositoryError>;
+
+    /// Every attachment's storage key across all requests. Backs the upload
+    /// orphan-sweep job.
+    async fn list_all_attachment_keys(&self) -> Result<Vec<String>, RepositoryError>;
 }

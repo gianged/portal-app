@@ -1,3 +1,5 @@
+use std::pin::Pin;
+
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use redis::{AsyncCommands, Client, aio::ConnectionManager};
@@ -49,20 +51,24 @@ impl EventPublisher for RedisEventPublisher {
 pub async fn subscribe(
     url: &str,
     topic: &str,
-) -> Result<impl Stream<Item = Vec<u8>> + Send, EventError> {
+) -> Result<Pin<Box<dyn Stream<Item = Vec<u8>> + Send>>, EventError> {
     let client = Client::open(url).map_err(backend)?;
     let mut pubsub = client.get_async_pubsub().await.map_err(backend)?;
     let key = event_topic_key(topic);
     pubsub.subscribe(&key).await.map_err(backend)?;
-    Ok(pubsub.into_on_message().filter_map(|msg| async move {
-        match msg.get_payload::<Vec<u8>>() {
-            Ok(payload) => Some(payload),
-            Err(e) => {
-                tracing::warn!(error = %e, "dropping malformed pubsub payload");
-                None
+    // Boxed so the returned stream is `'static` (it owns its connection) rather
+    // than borrowing the `url`/`topic` lifetimes the opaque type would capture.
+    Ok(Box::pin(pubsub.into_on_message().filter_map(
+        |msg| async move {
+            match msg.get_payload::<Vec<u8>>() {
+                Ok(payload) => Some(payload),
+                Err(e) => {
+                    tracing::warn!(error = %e, "dropping malformed pubsub payload");
+                    None
+                }
             }
-        }
-    }))
+        },
+    )))
 }
 
 fn backend<E: std::fmt::Display>(e: E) -> EventError {

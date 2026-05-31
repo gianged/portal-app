@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
-    commands::request::{AddAttachmentCommand, CreateRequestCommand},
+    commands::request::{AddAttachmentCommand, CreateRequestCommand, UpdateRequestCommand},
     error::{Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
@@ -45,6 +45,10 @@ impl RequestService {
         }
     }
 
+    /// Creates a new request in `Draft` status under the given project.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or cannot view the project, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn create(&self, actor: UserId, cmd: CreateRequestCommand) -> Result<Request> {
         self.perms.require_active(actor).await?;
         self.perms
@@ -77,6 +81,10 @@ impl RequestService {
         Ok(request)
     }
 
+    /// Submits a draft request for assignment. Creator-only.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the creator, `Transition` if the request is not in a submittable state, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn submit(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let mut request = self.load(request_id).await?;
         if request.creator_user_id != actor {
@@ -90,6 +98,10 @@ impl RequestService {
         Ok(request)
     }
 
+    /// Assigns the request to an eligible assignee.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the request or its project does not exist, `Forbidden` if the actor cannot assign requests on the project, `Conflict` if the assignee is inactive or not a member of the owner or a collaborator group, `Transition` if the request is not in an assignable state, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn assign(
         &self,
         actor: UserId,
@@ -119,6 +131,10 @@ impl RequestService {
         Ok(request)
     }
 
+    /// Starts work on an assigned request. Assignee-only.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the assignee, `Transition` if the request is not in a startable state, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn start(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let mut request = self.load(request_id).await?;
         if request.assignee_user_id != Some(actor) {
@@ -132,6 +148,10 @@ impl RequestService {
         Ok(request)
     }
 
+    /// Sends an in-progress request for review. Assignee-only.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the assignee, `Transition` if the request is not in a reviewable state, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn send_for_review(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let mut request = self.load(request_id).await?;
         if request.assignee_user_id != Some(actor) {
@@ -145,6 +165,10 @@ impl RequestService {
         Ok(request)
     }
 
+    /// Approves a request under review, completing it.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is neither the creator nor able to assign requests on the project, `Transition` if the request is not under review, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn approve(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let mut request = self.load(request_id).await?;
         self.require_approver(actor, &request).await?;
@@ -156,6 +180,10 @@ impl RequestService {
         Ok(request)
     }
 
+    /// Rejects a request under review, sending it back.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is neither the creator nor able to assign requests on the project, `Transition` if the request is not under review, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn reject(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let mut request = self.load(request_id).await?;
         self.require_approver(actor, &request).await?;
@@ -167,6 +195,10 @@ impl RequestService {
         Ok(request)
     }
 
+    /// Cancels a request. Allowed for the creator, the assignee, or anyone who can assign requests on the project.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is none of the creator, assignee, or an assigner on the project, `Transition` if the request cannot be cancelled from its current state, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn cancel(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let mut request = self.load(request_id).await?;
         let is_creator = request.creator_user_id == actor;
@@ -184,6 +216,10 @@ impl RequestService {
         Ok(request)
     }
 
+    /// Uploads an attachment to the request and records its metadata.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor cannot view the project, `Validation` if the attachment size exceeds the representable limit, `Storage` if writing the file fails, or a repository error if the datastore is unavailable.
     pub async fn add_attachment(
         &self,
         actor: UserId,
@@ -219,6 +255,10 @@ impl RequestService {
         Ok(attachment)
     }
 
+    /// Lists requests under a project, optionally filtered by status.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor cannot view the project, or a repository or authz-backed repository error if the datastore is unavailable.
     pub async fn list_for_project(
         &self,
         actor: UserId,
@@ -231,6 +271,10 @@ impl RequestService {
         Ok(self.requests.list_for_project(project_id, status).await?)
     }
 
+    /// Lists requests assigned to the actor, optionally filtered by status.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active, or a repository or authz-backed repository error if the datastore is unavailable.
     pub async fn list_for_assignee(
         &self,
         actor: UserId,
@@ -238,6 +282,84 @@ impl RequestService {
     ) -> Result<Vec<Request>> {
         self.perms.require_active(actor).await?;
         Ok(self.requests.list_for_assignee(actor, status).await?)
+    }
+
+    /// Single request, gated by project-view access (same gate as listing).
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor cannot view the project, or a repository or authz-backed repository error if the datastore is unavailable.
+    pub async fn find(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
+        let request = self.load(request_id).await?;
+        self.perms
+            .require_can_view_project(actor, request.project_id)
+            .await?;
+        Ok(request)
+    }
+
+    /// Lists the attachments on a request.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor cannot view the project, or a repository or authz-backed repository error if the datastore is unavailable.
+    pub async fn list_attachments(
+        &self,
+        actor: UserId,
+        request_id: RequestId,
+    ) -> Result<Vec<RequestAttachment>> {
+        let request = self.load(request_id).await?;
+        self.perms
+            .require_can_view_project(actor, request.project_id)
+            .await?;
+        Ok(self.requests.list_attachments(request_id).await?)
+    }
+
+    /// Edit request metadata. Creator-only, and only before work starts
+    /// (`Draft`/`Submitted`); once assigned the request is frozen to edits here.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the creator, `Conflict` if the request is no longer editable (past `Draft`/`Submitted`), or a repository or event error if the datastore or event bus is unavailable.
+    pub async fn update_metadata(
+        &self,
+        actor: UserId,
+        request_id: RequestId,
+        cmd: UpdateRequestCommand,
+    ) -> Result<Request> {
+        let mut request = self.load(request_id).await?;
+        if request.creator_user_id != actor {
+            return Err(Error::Forbidden);
+        }
+        if !matches!(
+            request.status,
+            RequestStatus::Draft | RequestStatus::Submitted
+        ) {
+            return Err(Error::Conflict("request_not_editable".into()));
+        }
+        let before = request.clone();
+        let now = OffsetDateTime::now_utc();
+        if let Some(title) = cmd.title {
+            request.title = title;
+        }
+        if let Some(description) = cmd.description {
+            request.description = description;
+        }
+        if let Some(priority) = cmd.priority {
+            request.priority = priority;
+        }
+        if let Some(due_at) = cmd.due_at {
+            request.due_at = Some(due_at);
+        }
+        request.updated_at = now;
+        self.requests.save(&request).await?;
+        self.events
+            .emit(DomainEvent::RequestMetadataUpdated {
+                request_id: request.id,
+                project_id: request.project_id,
+                actor,
+                at: now,
+                before,
+                after: request.clone(),
+            })
+            .await?;
+        Ok(request)
     }
 
     async fn require_approver(&self, actor: UserId, request: &Request) -> Result<()> {

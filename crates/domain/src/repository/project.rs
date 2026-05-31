@@ -44,5 +44,10 @@ pub trait ProjectRepository: Send + Sync {
         group_id: GroupId,
     ) -> Result<Vec<ProjectInvite>, RepositoryError>;
 
+    async fn list_pending_invites_for_project(
+        &self,
+        project_id: ProjectId,
+    ) -> Result<Vec<ProjectInvite>, RepositoryError>;
+
     async fn save_invite(&self, invite: &ProjectInvite) -> Result<(), RepositoryError>;
 }

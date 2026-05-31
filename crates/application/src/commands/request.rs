@@ -12,6 +12,16 @@ pub struct CreateRequestCommand {
     pub due_at: Option<OffsetDateTime>,
 }
 
+/// `None` leaves the field unchanged. `due_at` clearing is not expressible here;
+/// a present `Some(_)` overwrites, absent leaves untouched.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateRequestCommand {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub priority: Option<RequestPriority>,
+    pub due_at: Option<OffsetDateTime>,
+}
+
 pub struct AddAttachmentCommand {
     pub filename: String,
     pub content_type: String,

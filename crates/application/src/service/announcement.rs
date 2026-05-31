@@ -35,6 +35,12 @@ impl AnnouncementService {
         }
     }
 
+    /// Posts an announcement to a channel the actor may announce in.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or cannot announce in the
+    /// channel, `NotFound` if the channel does not exist, a repository error if
+    /// the datastore is unavailable, or an event error if the event bus fails.
     pub async fn post(&self, actor: UserId, cmd: PostAnnouncementCommand) -> Result<Announcement> {
         self.perms.require_active(actor).await?;
         let channel = self
@@ -83,6 +89,13 @@ impl AnnouncementService {
         Ok(announcement)
     }
 
+    /// Edits an announcement the actor authored, within the edit grace period.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or is not the author,
+    /// `NotFound` if the announcement does not exist, `Transition` if the edit
+    /// grace period has elapsed, a repository error if the datastore is
+    /// unavailable, or an event error if the event bus fails.
     pub async fn edit(
         &self,
         actor: UserId,
@@ -114,6 +127,13 @@ impl AnnouncementService {
         Ok(announcement)
     }
 
+    /// Deletes an announcement. The author or any HR user may delete it.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or is neither the author
+    /// nor HR, `NotFound` if the announcement does not exist, a repository error
+    /// if the datastore or authz backend is unavailable, or an event error if the
+    /// event bus fails.
     pub async fn delete(
         &self,
         actor: UserId,
@@ -144,6 +164,12 @@ impl AnnouncementService {
         Ok(())
     }
 
+    /// Lists announcements in a channel the actor may view.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or cannot view the channel,
+    /// `NotFound` if the channel does not exist, or a repository error if the
+    /// datastore is unavailable.
     pub async fn list_for_channel(
         &self,
         actor: UserId,

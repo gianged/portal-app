@@ -19,6 +19,15 @@ use crate::{
 /// Group-channel leaders bypass this grace and can delete anytime.
 const MESSAGE_DELETE_GRACE: Duration = Duration::minutes(15);
 
+/// A channel-list row enriched with its latest-activity timestamp and an unread
+/// flag (latest message newer than the member's `last_read_at`).
+#[derive(Debug, Clone)]
+pub struct ChannelOverview {
+    pub membership: ChannelMembership,
+    pub last_message_at: Option<OffsetDateTime>,
+    pub unread: bool,
+}
+
 pub struct ChatService {
     chats: Arc<dyn ChatRepository>,
     users: Arc<dyn UserRepository>,
@@ -42,6 +51,10 @@ impl ChatService {
         }
     }
 
+    /// Looks up a channel by id, returning `None` if it does not exist.
+    ///
+    /// # Errors
+    /// Returns a repository error if the datastore is unavailable.
     pub async fn find_channel(&self, id: ChannelId) -> Result<Option<Channel>> {
         Ok(self.chats.find_channel(id).await?)
     }
@@ -49,6 +62,12 @@ impl ChatService {
     /// Idempotent: returns an existing direct channel between the two users if
     /// one exists, otherwise creates one. The pair is canonicalised by
     /// `DirectChannel::new` so order doesn't matter.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active, `Validation` if the actor
+    /// targets themselves, `NotFound` if the other user does not exist, `Conflict`
+    /// if the recipient is not active, or a repository error if the datastore is
+    /// unavailable.
     pub async fn open_direct_channel(&self, actor: UserId, other_user: UserId) -> Result<Channel> {
         self.perms.require_active(actor).await?;
         if actor == other_user {
@@ -85,11 +104,54 @@ impl ChatService {
         Ok(channel)
     }
 
+    /// Lists the channels the actor is subscribed to.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active, or a repository error if
+    /// the datastore is unavailable.
     pub async fn list_channels(&self, actor: UserId) -> Result<Vec<ChannelMembership>> {
         self.perms.require_active(actor).await?;
         Ok(self.chats.list_channels_for_user(actor).await?)
     }
 
+    /// Channel list with per-channel unread state and last-activity time. Reads
+    /// the single latest message per channel (`list_messages(_, None, 1)`); an
+    /// N-read pass that is acceptable at this scale.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active, or a repository error if
+    /// the datastore is unavailable.
+    pub async fn channel_overviews(&self, actor: UserId) -> Result<Vec<ChannelOverview>> {
+        let memberships = self.list_channels(actor).await?;
+        let mut out = Vec::with_capacity(memberships.len());
+        for membership in memberships {
+            let latest = self
+                .chats
+                .list_messages(membership.channel_id, None, 1)
+                .await?
+                .into_iter()
+                .next();
+            let last_message_at = latest.as_ref().map(|m| uuid_v7_created_at(m.id.0));
+            let unread = match (last_message_at, membership.last_read_at) {
+                (Some(at), Some(read)) => at > read,
+                (Some(_), None) => true,
+                (None, _) => false,
+            };
+            out.push(ChannelOverview {
+                membership,
+                last_message_at,
+                unread,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Lists messages in a channel the actor may view, newest first.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or cannot view the channel,
+    /// `NotFound` if the channel does not exist, or a repository error if the
+    /// datastore is unavailable.
     pub async fn list_messages(
         &self,
         actor: UserId,
@@ -107,6 +169,12 @@ impl ChatService {
         Ok(self.chats.list_messages(channel_id, before, limit).await?)
     }
 
+    /// Posts a message to a channel the actor may post in.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or cannot post in the
+    /// channel, `NotFound` if the channel does not exist, a repository error if
+    /// the datastore is unavailable, or an event error if the event bus fails.
     pub async fn post_message(&self, actor: UserId, cmd: PostMessageCommand) -> Result<Message> {
         self.perms.require_active(actor).await?;
         let channel = self
@@ -144,6 +212,14 @@ impl ChatService {
         Ok(message)
     }
 
+    /// Deletes a message. The sender may delete within the grace window;
+    /// channel moderators may delete at any time.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or is neither the sender
+    /// within the grace window nor a channel moderator, `NotFound` if the channel
+    /// or message does not exist, a repository error if the datastore is
+    /// unavailable, or an event error if the event bus fails.
     pub async fn delete_message(
         &self,
         actor: UserId,
@@ -191,6 +267,61 @@ impl ChatService {
         Ok(())
     }
 
+    /// Edit a regular message. Sender-only (moderators delete, they don't
+    /// rewrite others' words) and only within the post grace window. Announcements
+    /// have their own edit path and are rejected here.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or is not the sender within
+    /// the grace window, `NotFound` if the message does not exist, `Conflict` if
+    /// the message is deleted or is an announcement, a repository error if the
+    /// datastore is unavailable, or an event error if the event bus fails.
+    pub async fn edit_message(
+        &self,
+        actor: UserId,
+        channel_id: ChannelId,
+        message_id: MessageId,
+        body: String,
+    ) -> Result<Message> {
+        self.perms.require_active(actor).await?;
+        let mut message = self
+            .chats
+            .find_message(channel_id, message_id)
+            .await?
+            .ok_or(Error::NotFound("message"))?;
+        if message.is_deleted() {
+            return Err(Error::Conflict("message_deleted".into()));
+        }
+        if message.is_announcement {
+            return Err(Error::Conflict("cannot_edit_announcement".into()));
+        }
+
+        let now = OffsetDateTime::now_utc();
+        let within_grace = now - uuid_v7_created_at(message.id.0) <= MESSAGE_DELETE_GRACE;
+        if message.sender_user_id != actor || !within_grace {
+            return Err(Error::Forbidden);
+        }
+
+        message.edit(body, now);
+        self.chats.save_message(&message).await?;
+        self.events
+            .emit(DomainEvent::MessageEdited {
+                message_id,
+                channel_id,
+                actor,
+                at: now,
+                after: message.clone(),
+            })
+            .await?;
+        Ok(message)
+    }
+
+    /// Marks the channel read for the actor up to the current time.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or cannot view the channel,
+    /// `NotFound` if the channel does not exist, or a repository error if the
+    /// datastore is unavailable.
     pub async fn mark_read(&self, actor: UserId, channel_id: ChannelId) -> Result<()> {
         self.perms.require_active(actor).await?;
         let channel = self

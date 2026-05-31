@@ -17,14 +17,47 @@ use shared::dto::common::ApiError;
 pub enum AppError {
     #[error(transparent)]
     Domain(#[from] application::Error),
+    #[error(transparent)]
+    Auth(#[from] AuthError),
     #[error("validation failed: {0}")]
     Validation(String),
+}
+
+/// Authentication / session failures, surfaced as `401 Unauthorized`. Kept
+/// distinct from `application::Error::Forbidden` (403): a 401 means "we don't
+/// know who you are" (no/!invalid session, bad credentials), a 403 means "we
+/// know who you are, but you may not do this".
+#[derive(Debug, thiserror::Error)]
+pub enum AuthError {
+    #[error("authentication required")]
+    Missing,
+    #[error("invalid or expired session")]
+    Invalid,
+    #[error("invalid email or password")]
+    InvalidCredentials,
 }
 
 impl AppError {
     fn parts(&self) -> (StatusCode, &'static str, String) {
         match self {
             Self::Validation(message) => (StatusCode::BAD_REQUEST, "validation", message.clone()),
+            Self::Auth(err) => match err {
+                AuthError::Missing => (
+                    StatusCode::UNAUTHORIZED,
+                    "unauthenticated",
+                    "authentication required".to_owned(),
+                ),
+                AuthError::Invalid => (
+                    StatusCode::UNAUTHORIZED,
+                    "unauthenticated",
+                    "invalid or expired session".to_owned(),
+                ),
+                AuthError::InvalidCredentials => (
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_credentials",
+                    "invalid email or password".to_owned(),
+                ),
+            },
             Self::Domain(err) => match err {
                 application::Error::NotFound(what) => (
                     StatusCode::NOT_FOUND,

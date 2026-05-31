@@ -24,9 +24,11 @@ tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 argon2 = "0.5"
 password-hash = { version = "0.5", features = ["getrandom"] }
-axum = { version = "0.8", features = ["ws", "macros"] }
+axum = { version = "0.8", features = ["ws", "macros", "multipart"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
+jsonwebtoken = { version = "10", default-features = false, features = ["hmac"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "cors"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "limit"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
 redis = { version = "1", features = ["tokio-comp", "connection-manager"] }
 scylla = { version = "1", features = ["time-03", "rustls-023"] }

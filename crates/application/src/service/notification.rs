@@ -30,6 +30,11 @@ impl NotificationService {
         }
     }
 
+    /// Lists the actor's notifications, optionally only unread ones.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active, or a repository error if
+    /// the datastore is unavailable.
     pub async fn list_for_user(
         &self,
         actor: UserId,
@@ -43,11 +48,22 @@ impl NotificationService {
             .await?)
     }
 
+    /// Counts the actor's unread notifications.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active, or a repository error if
+    /// the datastore is unavailable.
     pub async fn count_unread(&self, actor: UserId) -> Result<u64> {
         self.perms.require_active(actor).await?;
         Ok(self.notifications.count_unread(actor).await?)
     }
 
+    /// Marks one of the actor's notifications read.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or is not the recipient,
+    /// `NotFound` if the notification does not exist, or a repository error if the
+    /// datastore is unavailable.
     pub async fn mark_read(&self, actor: UserId, notification_id: NotificationId) -> Result<()> {
         self.perms.require_active(actor).await?;
         let notification = self

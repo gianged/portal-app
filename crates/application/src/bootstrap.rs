@@ -23,6 +23,9 @@ const GENERAL_CHANNEL_ID: Uuid = Uuid::from_u128(0x0000_0000_0000_7000_8000_0000
 /// - the general channel's `company` tuple, so its viewer resolves.
 ///
 /// Safe to call on every boot: each step is a no-op when already applied.
+///
+/// # Errors
+/// Returns `Conflict` if the authz backend rejects a tuple write, or a repository error if the chat datastore or authz backend is unavailable.
 pub async fn seed_company(chats: &dyn ChatRepository, perms: &Permissions) -> Result<()> {
     perms.seed_company_member_wildcard().await?;
 

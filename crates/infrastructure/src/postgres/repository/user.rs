@@ -189,4 +189,16 @@ impl UserRepository for PgUserRepo {
         .map_err(map_pg_error)?;
         Ok(())
     }
+
+    async fn list_avatar_keys(&self) -> Result<Vec<String>, RepositoryError> {
+        let rows = sqlx::query!(
+            r#"SELECT avatar_storage_key AS "avatar_storage_key!"
+               FROM auth.users
+               WHERE avatar_storage_key IS NOT NULL"#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_pg_error)?;
+        Ok(rows.into_iter().map(|r| r.avatar_storage_key).collect())
+    }
 }

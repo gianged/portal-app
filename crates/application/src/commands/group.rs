@@ -16,3 +16,10 @@ pub struct AddMembershipCommand {
     pub user_id: UserId,
     pub role: GroupRole,
 }
+
+/// `None` leaves the field unchanged.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateGroupMetadataCommand {
+    pub name: Option<String>,
+    pub description: Option<String>,
+}

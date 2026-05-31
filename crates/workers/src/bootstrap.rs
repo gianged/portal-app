@@ -3,12 +3,16 @@ use std::sync::Arc;
 use anyhow::Context;
 use apalis_redis::RedisStorage;
 
-use application::NotificationFanout;
-use domain::repository::{
-    ChatRepository, GroupRepository, NotificationRepository, RequestRepository, UserRepository,
+use application::{MaintenanceService, NotificationFanout};
+use domain::{
+    ports::file_storage::FileStorage,
+    repository::{
+        ChatRepository, GroupRepository, NotificationRepository, RequestRepository, UserRepository,
+    },
 };
 use infrastructure::{
     jobs::{NotificationEnvelope, notification_storage},
+    local_storage::LocalStorage,
     postgres::{PgGroupRepo, PgNotificationRepo, PgRequestRepo, PgUserRepo, build_pool},
     scylla::{ScyllaChatRepo, build_session},
 };
@@ -19,6 +23,7 @@ use crate::config::Config;
 pub struct WorkerContext {
     pub fanout: Arc<NotificationFanout>,
     pub storage: RedisStorage<NotificationEnvelope>,
+    pub maintenance: Arc<MaintenanceService>,
 }
 
 /// Builds the infrastructure adapters, wires the notification fan-out service,
@@ -43,6 +48,18 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
             .await
             .context("preparing scylla statements")?,
     );
+    let file_storage: Arc<dyn FileStorage> = Arc::new(LocalStorage::new(
+        cfg.storage_root.clone(),
+        &cfg.storage_public_base,
+    ));
+
+    // Built before the fan-out moves the repo handles below.
+    let maintenance = Arc::new(MaintenanceService::new(
+        notifications.clone(),
+        requests.clone(),
+        users.clone(),
+        file_storage,
+    ));
 
     let fanout = Arc::new(NotificationFanout::new(
         notifications,
@@ -56,5 +73,9 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         .await
         .context("connecting apalis redis (jobs)")?;
 
-    Ok(WorkerContext { fanout, storage })
+    Ok(WorkerContext {
+        fanout,
+        storage,
+        maintenance,
+    })
 }

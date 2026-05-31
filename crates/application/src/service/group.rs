@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use domain::{
     ids::{ChannelId, GroupId, MembershipId, UserId},
@@ -9,7 +9,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
-    commands::group::{AddMembershipCommand, CreateGroupCommand},
+    commands::group::{AddMembershipCommand, CreateGroupCommand, UpdateGroupMetadataCommand},
     error::{Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
@@ -41,6 +41,12 @@ impl GroupService {
         }
     }
 
+    /// Creates a group and its group channel.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not HR, a repository error if the
+    /// datastore or authz backend is unavailable, or an event error if the event
+    /// bus fails.
     pub async fn create_group(&self, actor: UserId, cmd: CreateGroupCommand) -> Result<Group> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
@@ -82,6 +88,13 @@ impl GroupService {
         Ok(group)
     }
 
+    /// Signals deletion of a group; the row removal happens via the emitted event.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not HR, `NotFound` if the group does
+    /// not exist, `Conflict` if the group still owns active projects, a repository
+    /// error if the datastore is unavailable, or an event error if the event bus
+    /// fails.
     pub async fn delete_group(&self, actor: UserId, group_id: GroupId) -> Result<()> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
@@ -117,6 +130,14 @@ impl GroupService {
         Ok(())
     }
 
+    /// Adds a user to a group with the requested role.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not HR, `NotFound` if the group does
+    /// not exist, `Conflict` if the user is already an active member or the role
+    /// is `Leader` while the group already has one, a repository error if the
+    /// datastore or authz backend is unavailable, or an event error if the event
+    /// bus fails.
     pub async fn add_membership(
         &self,
         actor: UserId,
@@ -173,6 +194,14 @@ impl GroupService {
         Ok(membership)
     }
 
+    /// Changes a member's role within a group.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not HR, `NotFound` if the membership
+    /// does not exist, `Conflict` if the membership is inactive, the change would
+    /// demote the last leader, or the group already has a leader when promoting,
+    /// a repository error if the datastore or authz backend is unavailable, or an
+    /// event error if the event bus fails.
     pub async fn change_role(
         &self,
         actor: UserId,
@@ -223,6 +252,13 @@ impl GroupService {
         Ok(membership)
     }
 
+    /// Deactivates a user's membership in a group.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not HR, `NotFound` if the membership
+    /// does not exist, `Conflict` if the member is the last leader (transfer
+    /// leadership first), a repository error if the datastore or authz backend is
+    /// unavailable, or an event error if the event bus fails.
     pub async fn deactivate_membership(
         &self,
         actor: UserId,
@@ -263,6 +299,14 @@ impl GroupService {
         Ok(())
     }
 
+    /// Transfers leadership of a group from one active member to another.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not HR, `Validation` if the source and
+    /// target are the same user, `NotFound` if either membership does not exist,
+    /// `Conflict` if the source is not an active leader or the target is inactive,
+    /// a repository error if the datastore or authz backend is unavailable, or an
+    /// event error if the event bus fails.
     pub async fn transfer_leadership(
         &self,
         actor: UserId,
@@ -341,10 +385,110 @@ impl GroupService {
         Ok(())
     }
 
+    /// Looks up a group by id, returning `None` if it does not exist.
+    ///
+    /// # Errors
+    /// Returns a repository error if the datastore is unavailable.
     pub async fn find(&self, id: GroupId) -> Result<Option<Group>> {
         Ok(self.groups.find_group(id).await?)
     }
 
+    /// Org-wide group directory; any active user may read it.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active, or a repository error if
+    /// the datastore is unavailable.
+    pub async fn list_all(&self, actor: UserId) -> Result<Vec<Group>> {
+        self.perms.require_active(actor).await?;
+        Ok(self.groups.list_all().await?)
+    }
+
+    /// Updates a group's name and/or description.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not HR, `NotFound` if the group does
+    /// not exist, a repository error if the datastore is unavailable, or an event
+    /// error if the event bus fails.
+    pub async fn update_metadata(
+        &self,
+        actor: UserId,
+        group_id: GroupId,
+        cmd: UpdateGroupMetadataCommand,
+    ) -> Result<Group> {
+        self.perms.require_hr(actor).await?;
+        let mut group = self
+            .groups
+            .find_group(group_id)
+            .await?
+            .ok_or(Error::NotFound("group"))?;
+        let before = group.clone();
+        let now = OffsetDateTime::now_utc();
+        if let Some(name) = cmd.name {
+            group.name = name;
+        }
+        if let Some(description) = cmd.description {
+            group.description = description;
+        }
+        group.updated_at = now;
+        self.groups.save_group(&group).await?;
+        self.events
+            .emit(DomainEvent::GroupMetadataUpdated {
+                group_id: group.id,
+                actor,
+                at: now,
+                before,
+                after: group.clone(),
+            })
+            .await?;
+        Ok(group)
+    }
+
+    /// Active membership count for the group (for directory/detail headers).
+    ///
+    /// # Errors
+    /// Returns a repository error if the datastore is unavailable.
+    pub async fn active_member_count(&self, group_id: GroupId) -> Result<u32> {
+        let memberships = self.groups.list_memberships_for_group(group_id).await?;
+        let count = memberships.iter().filter(|m| m.is_active()).count();
+        Ok(u32::try_from(count).unwrap_or(u32::MAX))
+    }
+
+    /// Active memberships for a batch of users, grouped by user. Backs the
+    /// display-role resolution for denormalized user summaries (no auth gate:
+    /// it only enriches already-authorized responses).
+    ///
+    /// # Errors
+    /// Returns a repository error if the datastore is unavailable.
+    pub async fn active_memberships_for_users(
+        &self,
+        user_ids: &[UserId],
+    ) -> Result<HashMap<UserId, Vec<Membership>>> {
+        let memberships = self
+            .groups
+            .list_active_memberships_for_users(user_ids)
+            .await?;
+        let mut map: HashMap<UserId, Vec<Membership>> = HashMap::new();
+        for m in memberships {
+            map.entry(m.user_id).or_default().push(m);
+        }
+        Ok(map)
+    }
+
+    /// Id of the single `GroupKind::It` group, if one exists.
+    ///
+    /// # Errors
+    /// Returns a repository error if the datastore is unavailable.
+    pub async fn it_group_id(&self) -> Result<Option<GroupId>> {
+        Ok(self.groups.find_it_group().await?.map(|g| g.id))
+    }
+
+    /// Lists the membership roster for a group. Members of the group, HR, and
+    /// Directors may read it.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or is not a member, HR, or
+    /// Director, or a repository error if the datastore or authz backend is
+    /// unavailable.
     pub async fn list_memberships(
         &self,
         actor: UserId,

@@ -49,6 +49,10 @@ impl ProjectService {
         }
     }
 
+    /// Creates a new project owned by the given group, in `Planning` status.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not a leader of the owner group, or a repository, event, or authz-backed repository error if the datastore or event bus is unavailable.
     pub async fn create_project(
         &self,
         actor: UserId,
@@ -86,6 +90,10 @@ impl ProjectService {
         Ok(project)
     }
 
+    /// Updates the project's name and/or description.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader or sub-leader of the owner group, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn update_metadata(
         &self,
         actor: UserId,
@@ -118,18 +126,34 @@ impl ProjectService {
         Ok(project)
     }
 
+    /// Transitions the project to `Active`.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the project is not in an activatable state, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn activate(&self, actor: UserId, project_id: ProjectId) -> Result<Project> {
         self.transition(actor, project_id, Project::activate).await
     }
 
+    /// Transitions the project to `OnHold`.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the project cannot be put on hold from its current state, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn hold(&self, actor: UserId, project_id: ProjectId) -> Result<Project> {
         self.transition(actor, project_id, Project::hold).await
     }
 
+    /// Resumes an on-hold project back to `Active`.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the project is not on hold, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn resume(&self, actor: UserId, project_id: ProjectId) -> Result<Project> {
         self.transition(actor, project_id, Project::resume).await
     }
 
+    /// Transitions the project to `Completed` and cascade-cancels its open requests.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the project cannot be completed from its current state (or an open request cannot be cancelled), or a repository or event error if the datastore or event bus is unavailable.
     pub async fn complete(&self, actor: UserId, project_id: ProjectId) -> Result<Project> {
         let project = self
             .transition(actor, project_id, Project::complete)
@@ -138,12 +162,20 @@ impl ProjectService {
         Ok(project)
     }
 
+    /// Transitions the project to `Cancelled` and cascade-cancels its open requests.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the project cannot be cancelled from its current state (or an open request cannot be cancelled), or a repository or event error if the datastore or event bus is unavailable.
     pub async fn cancel(&self, actor: UserId, project_id: ProjectId) -> Result<Project> {
         let project = self.transition(actor, project_id, Project::cancel).await?;
         self.cascade_cancel_open_requests(actor, project_id).await?;
         Ok(project)
     }
 
+    /// Invites a group to collaborate on the project, creating a pending invite.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Validation` if the target group is the owner group, `Conflict` if the project is not active or the group is already a collaborator or already has a pending invite, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn invite_group(
         &self,
         actor: UserId,
@@ -199,6 +231,10 @@ impl ProjectService {
         Ok(invite)
     }
 
+    /// Accepts a pending invite, adding the invited group as a collaborator.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the invite does not exist, `Forbidden` if the actor is not a leader of the invited group, `Transition` if the invite is not pending, or a repository, event, or authz-backed repository error if the datastore or event bus is unavailable.
     pub async fn accept_invite(
         &self,
         actor: UserId,
@@ -243,6 +279,10 @@ impl ProjectService {
         Ok(invite)
     }
 
+    /// Declines a pending invite on behalf of the invited group.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the invite does not exist, `Forbidden` if the actor is not a leader of the invited group, `Transition` if the invite is not pending, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn decline_invite(
         &self,
         actor: UserId,
@@ -272,6 +312,10 @@ impl ProjectService {
         Ok(invite)
     }
 
+    /// Revokes a pending invite on behalf of the project's owner group.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the invite or its project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the invite is not pending, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn revoke_invite(
         &self,
         actor: UserId,
@@ -302,6 +346,10 @@ impl ProjectService {
         Ok(invite)
     }
 
+    /// Removes a collaborator group from the project.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the project does not exist or the group is not a collaborator, `Forbidden` if the actor is not a leader of the owner group, or a repository, event, or authz-backed repository error if the datastore or event bus is unavailable.
     pub async fn remove_collaborator(
         &self,
         actor: UserId,
@@ -333,12 +381,20 @@ impl ProjectService {
         Ok(())
     }
 
+    /// Finds a project the actor is permitted to view.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor cannot view it, or a repository or authz-backed repository error if the datastore is unavailable.
     pub async fn find(&self, actor: UserId, id: ProjectId) -> Result<Project> {
         let project = self.load(id).await?;
         self.perms.require_can_view_project(actor, id).await?;
         Ok(project)
     }
 
+    /// Lists the project's collaborator groups.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor cannot view the project, or a repository or authz-backed repository error if the datastore is unavailable.
     pub async fn list_collaborators(
         &self,
         actor: UserId,
@@ -350,6 +406,10 @@ impl ProjectService {
         Ok(self.projects.list_collaborators(project_id).await?)
     }
 
+    /// Lists projects owned by the given group.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not a member of the group, or a repository or authz-backed repository error if the datastore is unavailable.
     pub async fn list_for_owner_group(
         &self,
         actor: UserId,
@@ -359,6 +419,10 @@ impl ProjectService {
         Ok(self.projects.list_for_owner_group(group_id).await?)
     }
 
+    /// Lists pending invites addressed to the given group.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not a leader or sub-leader of the group, or a repository or authz-backed repository error if the datastore is unavailable.
     pub async fn list_pending_invites_for_group(
         &self,
         actor: UserId,
@@ -370,6 +434,24 @@ impl ProjectService {
         Ok(self
             .projects
             .list_pending_invites_for_group(group_id)
+            .await?)
+    }
+
+    /// Lists pending invites issued for the given project.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor cannot view the project, or a repository or authz-backed repository error if the datastore is unavailable.
+    pub async fn list_pending_invites_for_project(
+        &self,
+        actor: UserId,
+        project_id: ProjectId,
+    ) -> Result<Vec<ProjectInvite>> {
+        self.perms
+            .require_can_view_project(actor, project_id)
+            .await?;
+        Ok(self
+            .projects
+            .list_pending_invites_for_project(project_id)
             .await?)
     }
 

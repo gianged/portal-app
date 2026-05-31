@@ -4,7 +4,12 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tokio::fs;
 
-use domain::{error::StorageError, ports::file_storage::FileStorage};
+use time::OffsetDateTime;
+
+use domain::{
+    error::StorageError,
+    ports::file_storage::{FileStorage, StorageObject},
+};
 
 /// Local-filesystem implementation of [`FileStorage`]. Objects are written
 /// under `root` (configured as `STORAGE_ROOT`). Keys are validated to stay
@@ -38,6 +43,26 @@ impl LocalStorage {
             return Err(StorageError::Backend(format!("empty storage key: {key}")));
         }
         Ok(self.root.join(safe))
+    }
+
+    /// Inverse of `resolve`: maps an absolute path under `root` back to a
+    /// forward-slash storage key.
+    fn key_for(&self, path: &Path) -> Result<String, StorageError> {
+        let rel = path
+            .strip_prefix(&self.root)
+            .map_err(|_| StorageError::Backend("path escaped storage root".into()))?;
+        let key = rel
+            .components()
+            .filter_map(|c| match c {
+                Component::Normal(s) => s.to_str(),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("/");
+        if key.is_empty() {
+            return Err(StorageError::Backend("empty storage key".into()));
+        }
+        Ok(key)
     }
 }
 
@@ -86,5 +111,46 @@ impl FileStorage for LocalStorage {
         // an expiry once the file route exists; `_ttl` is accepted but unenforced.
         self.resolve(key)?;
         Ok(format!("{}/files/{key}", self.public_base))
+    }
+
+    async fn list(&self, prefix: &str) -> Result<Vec<StorageObject>, StorageError> {
+        let base = if prefix.is_empty() {
+            self.root.clone()
+        } else {
+            self.resolve(prefix)?
+        };
+        let mut objects = Vec::new();
+        let mut stack = vec![base];
+        while let Some(dir) = stack.pop() {
+            let mut entries = match fs::read_dir(&dir).await {
+                Ok(entries) => entries,
+                // A missing prefix directory simply yields no objects.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(StorageError::Backend(e.to_string())),
+            };
+            while let Some(entry) = entries
+                .next_entry()
+                .await
+                .map_err(|e| StorageError::Backend(e.to_string()))?
+            {
+                let meta = entry
+                    .metadata()
+                    .await
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+                if meta.is_dir() {
+                    stack.push(entry.path());
+                } else if meta.is_file() {
+                    let modified = meta
+                        .modified()
+                        .map_err(|e| StorageError::Backend(e.to_string()))?;
+                    objects.push(StorageObject {
+                        key: self.key_for(&entry.path())?,
+                        modified_at: OffsetDateTime::from(modified),
+                        size: meta.len(),
+                    });
+                }
+            }
+        }
+        Ok(objects)
     }
 }

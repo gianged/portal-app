@@ -155,4 +155,16 @@ impl NotificationRepository for PgNotificationRepo {
         .map_err(map_pg_error)?;
         Ok(())
     }
+
+    async fn delete_read_before(&self, cutoff: OffsetDateTime) -> Result<u64, RepositoryError> {
+        let result = sqlx::query!(
+            r#"DELETE FROM notification.notifications
+               WHERE read_at IS NOT NULL AND read_at < $1"#,
+            cutoff,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(map_pg_error)?;
+        Ok(result.rows_affected())
+    }
 }

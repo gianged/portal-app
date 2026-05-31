@@ -28,4 +28,8 @@ pub trait NotificationRepository: Send + Sync {
         id: NotificationId,
         at: OffsetDateTime,
     ) -> Result<(), RepositoryError>;
+
+    /// Deletes read notifications whose `read_at` is older than `cutoff`,
+    /// returning the number removed. Backs the maintenance retention sweep.
+    async fn delete_read_before(&self, cutoff: OffsetDateTime) -> Result<u64, RepositoryError>;
 }

@@ -39,6 +39,10 @@ impl TicketService {
         }
     }
 
+    /// Raises a new IT ticket in `Open` status.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active, or a repository, event, or authz-backed repository error if the datastore or event bus is unavailable.
     pub async fn raise(&self, actor: UserId, cmd: RaiseTicketCommand) -> Result<Ticket> {
         self.perms.require_active(actor).await?;
         let now = OffsetDateTime::now_utc();
@@ -72,6 +76,10 @@ impl TicketService {
         Ok(ticket)
     }
 
+    /// Triages an open ticket, setting its priority. IT-only.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not an IT member, `NotFound` if the ticket does not exist, `Transition` if the ticket is not in a triageable state, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn triage(
         &self,
         actor: UserId,
@@ -96,6 +104,10 @@ impl TicketService {
         Ok(ticket)
     }
 
+    /// Assigns a ticket to an IT member.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not an IT member, `Conflict` if the assignee is not an IT member, `NotFound` if the ticket does not exist, `Transition` if the ticket is not in an assignable state, or a repository, event, or authz-backed repository error if the datastore or event bus is unavailable.
     pub async fn assign(
         &self,
         actor: UserId,
@@ -126,6 +138,10 @@ impl TicketService {
         Ok(ticket)
     }
 
+    /// Starts work on an assigned ticket. Assignee-only.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the ticket does not exist, `Forbidden` if the actor is not the assignee, `Transition` if the ticket is not in a startable state, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn start(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
         let mut ticket = self.load(ticket_id).await?;
         if ticket.assignee_user_id != Some(actor) {
@@ -139,6 +155,10 @@ impl TicketService {
         Ok(ticket)
     }
 
+    /// Marks an in-progress ticket as resolved. Assignee-only.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the ticket does not exist, `Forbidden` if the actor is not the assignee, `Transition` if the ticket is not in a resolvable state, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn resolve(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
         let mut ticket = self.load(ticket_id).await?;
         if ticket.assignee_user_id != Some(actor) {
@@ -152,6 +172,10 @@ impl TicketService {
         Ok(ticket)
     }
 
+    /// Closes a resolved ticket. Requester-only.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the ticket does not exist, `Forbidden` if the actor is not the requester, `Transition` if the ticket is not in a closable state, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn close(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
         let mut ticket = self.load(ticket_id).await?;
         if ticket.requester_user_id != actor {
@@ -165,6 +189,10 @@ impl TicketService {
         Ok(ticket)
     }
 
+    /// Rejects a ticket's resolution, sending it back to the assignee. Requester-only.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the ticket does not exist, `Forbidden` if the actor is not the requester, `Transition` if the ticket is not in a resolved state, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn reject_resolution(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
         let mut ticket = self.load(ticket_id).await?;
         if ticket.requester_user_id != actor {
@@ -178,6 +206,10 @@ impl TicketService {
         Ok(ticket)
     }
 
+    /// Reopens a closed ticket within the 7-day reopen window. Requester-only.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the ticket does not exist, `Forbidden` if the actor is not the requester, `Conflict` if the ticket is not closed or the 7-day reopen window has expired, `Transition` if the ticket is not in a reopenable state, or a repository or event error if the datastore or event bus is unavailable.
     pub async fn reopen(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
         let mut ticket = self.load(ticket_id).await?;
         if ticket.requester_user_id != actor {
@@ -197,21 +229,37 @@ impl TicketService {
         Ok(ticket)
     }
 
+    /// Lists open tickets awaiting triage, up to `limit`. IT-only.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not an IT member, or a repository or authz-backed repository error if the datastore is unavailable.
     pub async fn list_open_for_triage(&self, actor: UserId, limit: u32) -> Result<Vec<Ticket>> {
         self.perms.require_it_member(actor).await?;
         Ok(self.tickets.list_open_for_triage(limit).await?)
     }
 
+    /// Lists tickets assigned to the actor. IT-only.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not an IT member, or a repository or authz-backed repository error if the datastore is unavailable.
     pub async fn list_for_assignee(&self, actor: UserId) -> Result<Vec<Ticket>> {
         self.perms.require_it_member(actor).await?;
         Ok(self.tickets.list_for_assignee(actor).await?)
     }
 
+    /// Lists tickets raised by the actor.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active, or a repository or authz-backed repository error if the datastore is unavailable.
     pub async fn list_for_requester(&self, actor: UserId) -> Result<Vec<Ticket>> {
         self.perms.require_active(actor).await?;
         Ok(self.tickets.list_for_requester(actor).await?)
     }
 
+    /// Finds a ticket the actor is permitted to view.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the ticket does not exist, `Forbidden` if the actor cannot view it, or a repository or authz-backed repository error if the datastore is unavailable.
     pub async fn find(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
         let ticket = self.load(ticket_id).await?;
         // viewer = requester or assignee or it_member or director from company.

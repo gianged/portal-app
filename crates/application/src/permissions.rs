@@ -113,6 +113,9 @@ impl Permissions {
     }
 
     /// Loads the actor and verifies they are `Active`. Use to gate any write.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the actor does not exist, `Forbidden` if the actor is not active, or a repository error if the datastore is unavailable.
     pub async fn require_active(&self, actor: UserId) -> Result<User> {
         let user = self.load_user(actor).await?;
         if user.status == UserStatus::Active {
@@ -122,21 +125,37 @@ impl Permissions {
         }
     }
 
+    /// Reports whether the actor holds the org-wide `Director` system role.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the actor does not exist, or a repository error if the datastore is unavailable.
     pub async fn is_director(&self, actor: UserId) -> Result<bool> {
         let user = self.load_user(actor).await?;
         Ok(matches!(user.system_role, Some(SystemRole::Director)))
     }
 
+    /// Reports whether the actor holds the org-wide `Hr` system role.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the actor does not exist, or a repository error if the datastore is unavailable.
     pub async fn is_hr(&self, actor: UserId) -> Result<bool> {
         let user = self.load_user(actor).await?;
         Ok(matches!(user.system_role, Some(SystemRole::Hr)))
     }
 
+    /// Reports whether the given user's status is `Active`.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the user does not exist, or a repository error if the datastore is unavailable.
     pub async fn is_user_active(&self, user_id: UserId) -> Result<bool> {
         let user = self.load_user(user_id).await?;
         Ok(user.status == UserStatus::Active)
     }
 
+    /// Verifies the actor is active and holds the org-wide `Hr` system role.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the actor does not exist, `Forbidden` if the actor is inactive or is not `Hr`, or a repository error if the datastore is unavailable.
     pub async fn require_hr(&self, actor: UserId) -> Result<()> {
         let user = self.require_active(actor).await?;
         if matches!(user.system_role, Some(SystemRole::Hr)) {
@@ -146,6 +165,10 @@ impl Permissions {
         }
     }
 
+    /// Verifies the actor is active and holds the org-wide `Director` system role.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the actor does not exist, `Forbidden` if the actor is inactive or is not `Director`, or a repository error if the datastore is unavailable.
     pub async fn require_director(&self, actor: UserId) -> Result<()> {
         let user = self.require_active(actor).await?;
         if matches!(user.system_role, Some(SystemRole::Director)) {
@@ -156,6 +179,9 @@ impl Permissions {
     }
 
     /// Returns the actor's role in `group` only if their membership is active.
+    ///
+    /// # Errors
+    /// Returns a repository error if the datastore is unavailable.
     pub async fn group_role(&self, actor: UserId, group: GroupId) -> Result<Option<GroupRole>> {
         let Some(membership) = self.groups.find_membership(group, actor).await? else {
             return Ok(None);
@@ -167,6 +193,10 @@ impl Permissions {
         }
     }
 
+    /// Verifies the actor is the active leader of `group`.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not the group's active leader, or a repository error if the datastore is unavailable.
     pub async fn require_group_leader(&self, actor: UserId, group: GroupId) -> Result<()> {
         match self.group_role(actor, group).await? {
             Some(GroupRole::Leader) => Ok(()),
@@ -174,6 +204,10 @@ impl Permissions {
         }
     }
 
+    /// Verifies the actor is the active leader or sub-leader of `group`.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not an active leader or sub-leader of the group, or a repository error if the datastore is unavailable.
     pub async fn require_group_leader_or_sub(&self, actor: UserId, group: GroupId) -> Result<()> {
         match self.group_role(actor, group).await? {
             Some(GroupRole::Leader | GroupRole::SubLeader) => Ok(()),
@@ -181,6 +215,10 @@ impl Permissions {
         }
     }
 
+    /// Verifies the actor holds any active role in `group`.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor has no active membership in the group, or a repository error if the datastore is unavailable.
     pub async fn require_group_member(&self, actor: UserId, group: GroupId) -> Result<()> {
         match self.group_role(actor, group).await? {
             Some(_) => Ok(()),
@@ -188,6 +226,10 @@ impl Permissions {
         }
     }
 
+    /// Reports whether the actor holds any active role in the IT group.
+    ///
+    /// # Errors
+    /// Returns a repository error if the datastore is unavailable.
     pub async fn is_it_member(&self, actor: UserId) -> Result<bool> {
         let Some(it_group) = self.groups.find_it_group().await? else {
             return Ok(false);
@@ -195,6 +237,10 @@ impl Permissions {
         Ok(self.group_role(actor, it_group.id).await?.is_some())
     }
 
+    /// Verifies the actor holds an active role in the IT group.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not an active IT-group member, or a repository error if the datastore is unavailable.
     pub async fn require_it_member(&self, actor: UserId) -> Result<()> {
         if self.is_it_member(actor).await? {
             Ok(())
@@ -223,6 +269,10 @@ impl Permissions {
         }
     }
 
+    /// Reports whether the actor has the `viewer` relation on `project`.
+    ///
+    /// # Errors
+    /// Returns a repository error if the authz backend is unavailable.
     pub async fn user_can_view_project(&self, actor: UserId, project: ProjectId) -> Result<bool> {
         Ok(self
             .authz
@@ -230,6 +280,10 @@ impl Permissions {
             .await?)
     }
 
+    /// Verifies the actor can view `project`.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor cannot view the project, or a repository error if the authz backend is unavailable.
     pub async fn require_can_view_project(&self, actor: UserId, project: ProjectId) -> Result<()> {
         if self.user_can_view_project(actor, project).await? {
             Ok(())
@@ -238,6 +292,10 @@ impl Permissions {
         }
     }
 
+    /// Verifies the actor can assign requests within `project`.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor cannot assign requests in the project, or a repository error if the authz backend is unavailable.
     pub async fn require_can_assign_request(
         &self,
         actor: UserId,
@@ -247,11 +305,21 @@ impl Permissions {
             .await
     }
 
+    /// Verifies the actor can view `ticket`.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor cannot view the ticket, or a repository error if the authz backend is unavailable.
     pub async fn require_can_view_ticket(&self, actor: UserId, ticket: TicketId) -> Result<()> {
         self.require_relation(actor, REL_VIEWER, &obj_ticket(ticket))
             .await
     }
 
+    /// Verifies the actor can read `channel`: group channels resolve through the
+    /// authz `viewer` relation, the general channel requires an active user, and
+    /// direct channels are restricted to their two participants.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor cannot view the channel, `NotFound` if the actor does not exist (general channel path), or a repository error if the datastore or authz backend is unavailable.
     pub async fn require_can_view_channel(&self, actor: UserId, channel: &Channel) -> Result<()> {
         match channel {
             // Group-channel reads go through OpenFGA so Directors (viewer unions
@@ -278,6 +346,12 @@ impl Permissions {
         }
     }
 
+    /// Verifies the actor may post in `channel`: group members may post in their
+    /// group channel, `Hr` may post in the general channel, and direct channels
+    /// are restricted to their two participants.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor may not post in the channel, `NotFound` if the actor does not exist (general channel path), or a repository error if the datastore is unavailable.
     pub async fn require_can_post_in_channel(
         &self,
         actor: UserId,
@@ -296,6 +370,12 @@ impl Permissions {
         }
     }
 
+    /// Verifies the actor may post an announcement in `channel`: group leaders or
+    /// sub-leaders for their group channel, `Hr` for the general channel; direct
+    /// channels never permit announcements.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor may not announce in the channel, `NotFound` if the actor does not exist (general channel path), or a repository error if the datastore is unavailable.
     pub async fn require_can_announce_in_channel(
         &self,
         actor: UserId,
@@ -310,6 +390,9 @@ impl Permissions {
 
     /// Group-channel leaders can delete any message in their channel at any
     /// time. Other channels have no moderator beyond the sender.
+    ///
+    /// # Errors
+    /// Returns a repository error if the datastore is unavailable.
     pub async fn user_is_channel_moderator(
         &self,
         actor: UserId,
@@ -330,6 +413,10 @@ impl Permissions {
     // types and format the `ReBAC` ids here, so services never touch raw tuple
     // strings and infra never sees domain ids.
 
+    /// Writes the authz tuple granting `member` their role in the group.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the write, or a repository error if the authz backend is unavailable.
     pub async fn grant_group_membership(&self, member: &Membership) -> Result<()> {
         self.authz
             .write_tuple(
@@ -341,6 +428,10 @@ impl Permissions {
             .map_err(map_authz_write)
     }
 
+    /// Deletes the authz tuple for `member`'s role in the group.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the delete, or a repository error if the authz backend is unavailable.
     pub async fn revoke_group_membership(&self, member: &Membership) -> Result<()> {
         self.authz
             .delete_tuple(
@@ -354,6 +445,9 @@ impl Permissions {
 
     /// Mirror a user's org-wide `SystemRole` into `company#hr` / `company#director`
     /// so the model's `... or director from company` viewer branches resolve.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the write, or a repository error if the authz backend is unavailable.
     pub async fn grant_company_role(&self, user: UserId, role: SystemRole) -> Result<()> {
         self.authz
             .write_tuple(
@@ -365,6 +459,10 @@ impl Permissions {
             .map_err(map_authz_write)
     }
 
+    /// Removes a user's org-wide `SystemRole` tuple from the company singleton.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the delete, or a repository error if the authz backend is unavailable.
     pub async fn revoke_company_role(&self, user: UserId, role: SystemRole) -> Result<()> {
         self.authz
             .delete_tuple(
@@ -378,6 +476,9 @@ impl Permissions {
 
     /// Seed the `company#member` wildcard (`user:*`) once at startup. Idempotent:
     /// re-writing the identical tuple is a no-op in `OpenFGA`.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the write, or a repository error if the authz backend is unavailable.
     pub async fn seed_company_member_wildcard(&self) -> Result<()> {
         self.authz
             .write_tuple(USER_WILDCARD, REL_MEMBER, COMPANY_OBJECT)
@@ -387,6 +488,9 @@ impl Permissions {
 
     /// On project creation: tie it to its owner group and the company singleton,
     /// atomically so a half-written project can't exist.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the write, or a repository error if the authz backend is unavailable.
     pub async fn grant_project_created(
         &self,
         owner_group: GroupId,
@@ -403,6 +507,10 @@ impl Permissions {
             .map_err(map_authz_write)
     }
 
+    /// Writes the authz tuple making `group` a collaborator on `project`.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the write, or a repository error if the authz backend is unavailable.
     pub async fn grant_project_collaborator(
         &self,
         group: GroupId,
@@ -418,6 +526,10 @@ impl Permissions {
             .map_err(map_authz_write)
     }
 
+    /// Deletes the authz tuple making `group` a collaborator on `project`.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the delete, or a repository error if the authz backend is unavailable.
     pub async fn revoke_project_collaborator(
         &self,
         group: GroupId,
@@ -436,6 +548,9 @@ impl Permissions {
     /// On ticket creation: requester, the IT group (drives `it_member`), and the
     /// company singleton (drives the Director viewer branch). The IT group is
     /// resolved here so callers don't need a `GroupRepository`.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the write, or a repository error if the datastore or authz backend is unavailable.
     pub async fn grant_ticket_created(&self, requester: UserId, ticket: TicketId) -> Result<()> {
         let object = obj_ticket(ticket);
         let mut writes = vec![
@@ -457,6 +572,10 @@ impl Permissions {
             .map_err(map_authz_write)
     }
 
+    /// Writes the authz tuple assigning `ticket` to `assignee`.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the write, or a repository error if the authz backend is unavailable.
     pub async fn grant_ticket_assignee(&self, assignee: UserId, ticket: TicketId) -> Result<()> {
         self.authz
             .write_tuple(&subj_user(assignee), REL_ASSIGNEE, &obj_ticket(ticket))
@@ -465,6 +584,9 @@ impl Permissions {
     }
 
     /// Tie a group to the company singleton (so org-wide branches resolve).
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the write, or a repository error if the authz backend is unavailable.
     pub async fn grant_group_created(&self, group: GroupId) -> Result<()> {
         self.authz
             .write_tuple(COMPANY_OBJECT, REL_COMPANY, &obj_group(group))
@@ -474,6 +596,9 @@ impl Permissions {
 
     /// On group-channel creation: tie it to its parent group (drives
     /// `parent_member`) and the company singleton.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the write, or a repository error if the authz backend is unavailable.
     pub async fn grant_group_channel_created(
         &self,
         group: GroupId,
@@ -492,6 +617,9 @@ impl Permissions {
 
     /// Tie the general channel to the company singleton; its viewer is
     /// `member from company`, i.e. every user.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the write, or a repository error if the authz backend is unavailable.
     pub async fn grant_general_channel_company(&self, channel: ChannelId) -> Result<()> {
         self.authz
             .write_tuple(COMPANY_OBJECT, REL_COMPANY, &obj_general_channel(channel))

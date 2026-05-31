@@ -11,4 +11,7 @@ pub trait UserRepository: Send + Sync {
     async fn list_active(&self, limit: u32, offset: u32) -> Result<Vec<User>, RepositoryError>;
 
     async fn save(&self, user: &User) -> Result<(), RepositoryError>;
+
+    /// Every non-null avatar storage key. Backs the upload orphan-sweep job.
+    async fn list_avatar_keys(&self) -> Result<Vec<String>, RepositoryError>;
 }

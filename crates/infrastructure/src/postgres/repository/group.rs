@@ -96,6 +96,25 @@ impl GroupRepository for PgGroupRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    async fn list_all(&self) -> Result<Vec<Group>, RepositoryError> {
+        let rows = sqlx::query_as!(
+            GroupRow,
+            r#"SELECT
+                 id,
+                 name,
+                 description,
+                 kind AS "kind: SqlGroupKind",
+                 created_at,
+                 updated_at
+               FROM org.groups
+               ORDER BY name"#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_pg_error)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
     async fn find_it_group(&self) -> Result<Option<Group>, RepositoryError> {
         // The uq_groups_one_it partial unique index guarantees at most one row.
         let it = SqlGroupKind::from(GroupKind::It);
@@ -214,6 +233,33 @@ impl GroupRepository for PgGroupRepo {
                WHERE user_id = $1 AND deactivated_at IS NULL
                ORDER BY joined_at"#,
             user_id.0,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_pg_error)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    async fn list_active_memberships_for_users(
+        &self,
+        user_ids: &[UserId],
+    ) -> Result<Vec<Membership>, RepositoryError> {
+        let ids: Vec<Uuid> = user_ids.iter().map(|u| u.0).collect();
+        let rows = sqlx::query_as!(
+            MembershipRow,
+            r#"SELECT
+                 id,
+                 group_id,
+                 user_id,
+                 role AS "role: SqlGroupRole",
+                 joined_at,
+                 deactivated_at,
+                 created_at,
+                 updated_at
+               FROM org.memberships
+               WHERE user_id = ANY($1) AND deactivated_at IS NULL
+               ORDER BY joined_at"#,
+            &ids,
         )
         .fetch_all(&self.pool)
         .await

@@ -31,7 +31,7 @@ use infrastructure::{
     scylla::{ScyllaChatRepo, build_session},
 };
 
-use crate::config::Config;
+use crate::{auth::TokenService, config::Config, realtime::Realtime, routes};
 
 /// Dependency-injection seam shared by every handler. Cheap to clone — every
 /// field is an `Arc`.
@@ -50,6 +50,10 @@ pub struct AppState {
     pub chat: Arc<ChatService>,
     pub announcement: Arc<AnnouncementService>,
     pub notification: Arc<NotificationService>,
+    // Session-cookie tokens + the real-time pub/sub handle, consumed by the auth
+    // middleware and the chat WebSocket respectively.
+    pub token: Arc<TokenService>,
+    pub realtime: Realtime,
     // Adapters not yet behind an application service; wired for the handlers,
     // middleware, and audit wiring that land with the HTTP routes.
     pub audit: Arc<dyn AuditRepository>,
@@ -72,9 +76,11 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
     let session = build_session(&cfg.scylla_hosts, &cfg.scylla_keyspace)
         .await
         .context("building scylla session")?;
-    let publisher = RedisEventPublisher::new(&cfg.redis_url)
-        .await
-        .context("connecting redis (events)")?;
+    let publisher = Arc::new(
+        RedisEventPublisher::new(&cfg.redis_url)
+            .await
+            .context("connecting redis (events)")?,
+    );
     let presence = PresenceStore::new(&cfg.redis_url)
         .await
         .context("connecting redis (presence)")?;
@@ -137,8 +143,16 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             .await
             .context("connecting apalis redis (jobs)")?,
     );
-    let events = Arc::new(EventBus::new(Arc::new(publisher), Arc::new(jobs)));
+    let events = Arc::new(EventBus::new(publisher.clone(), Arc::new(jobs)));
     let storage_port: Arc<dyn FileStorage> = storage.clone();
+
+    // Cookie-session tokens and the real-time pub/sub handle (chat WebSocket).
+    let token = Arc::new(TokenService::new(
+        &cfg.jwt_secret,
+        cfg.session_ttl_secs,
+        cfg.cookie_secure,
+    ));
+    let realtime = Realtime::new(publisher, cfg.redis_url.clone());
 
     // Application services, each built per its own constructor.
     let state = AppState {
@@ -191,14 +205,44 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             notifications.clone(),
             perms.clone(),
         )),
+        token,
+        realtime,
         audit,
         presence: Arc::new(presence),
         rate_limiter: Arc::new(rate_limiter),
         storage,
     };
 
+    // Protected API: every route requires a valid session. `route_layer` keeps
+    // the auth check off unmatched paths (they 404 rather than 401).
+    let protected = routes::auth::me_router()
+        .merge(routes::users::router())
+        .merge(routes::groups::router())
+        .merge(routes::projects::router())
+        .merge(routes::requests::router())
+        .merge(routes::tickets::router())
+        .merge(routes::chat::router())
+        .merge(routes::chat_ws::router())
+        .merge(routes::announcements::router())
+        .merge(routes::notifications::router())
+        .merge(routes::files::router())
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::middleware::auth::require_auth,
+        ));
+
+    // Public API: login / logout carry no session yet.
+    let api = routes::auth::public_router().merge(protected);
+
     Ok(Router::new()
         .route("/healthz", get(healthz))
+        .nest("/api/v1", api)
+        // Applied outermost-to-innermost: trace wraps request-id wraps the
+        // router (whose protected sub-tree adds the per-route auth layer above).
+        .layer(axum::middleware::from_fn(
+            crate::middleware::request_id::propagate,
+        ))
+        .layer(crate::middleware::trace::layer())
         .with_state(state))
 }
 

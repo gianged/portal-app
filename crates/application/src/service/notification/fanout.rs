@@ -51,6 +51,10 @@ impl NotificationFanout {
 
     /// Dispatch one event. Variants that do not produce notifications are a
     /// no-op. The originating actor/sender is never notified of their own action.
+    ///
+    /// # Errors
+    /// Returns a repository error if resolving recipients (channels, groups,
+    /// users, or the originating request) or persisting any notification fails.
     pub async fn handle(&self, event: &DomainEvent) -> Result<()> {
         match event {
             DomainEvent::AnnouncementPosted {

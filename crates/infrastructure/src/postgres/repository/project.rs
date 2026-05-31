@@ -310,6 +310,35 @@ impl ProjectRepository for PgProjectRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    async fn list_pending_invites_for_project(
+        &self,
+        project_id: ProjectId,
+    ) -> Result<Vec<ProjectInvite>, RepositoryError> {
+        let pending = SqlInviteStatus::from(domain::model::ProjectInviteStatus::Pending);
+        let rows = sqlx::query_as!(
+            InviteRow,
+            r#"SELECT
+                 id,
+                 project_id,
+                 invited_by_user_id,
+                 invited_group_id,
+                 responded_by_user_id,
+                 status AS "status: SqlInviteStatus",
+                 responded_at,
+                 created_at,
+                 updated_at
+               FROM project.project_invites
+               WHERE project_id = $1 AND status = $2
+               ORDER BY created_at DESC"#,
+            project_id.0,
+            pending as SqlInviteStatus,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_pg_error)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
     async fn save_invite(&self, invite: &ProjectInvite) -> Result<(), RepositoryError> {
         let status = SqlInviteStatus::from(invite.status);
         sqlx::query!(

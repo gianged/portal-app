@@ -137,6 +137,9 @@ impl UserRepository for FakeUsers {
     async fn save(&self, _user: &User) -> Result<(), RepositoryError> {
         Ok(())
     }
+    async fn list_avatar_keys(&self) -> Result<Vec<String>, RepositoryError> {
+        Ok(Vec::new())
+    }
 }
 
 #[derive(Default)]
@@ -156,6 +159,9 @@ impl GroupRepository for FakeGroups {
             .iter()
             .find(|g| g.id == id)
             .cloned())
+    }
+    async fn list_all(&self) -> Result<Vec<Group>, RepositoryError> {
+        Ok(self.groups.lock().unwrap().clone())
     }
     async fn find_it_group(&self) -> Result<Option<Group>, RepositoryError> {
         Ok(self.it_group.lock().unwrap().clone())
@@ -194,6 +200,19 @@ impl GroupRepository for FakeGroups {
         _user_id: UserId,
     ) -> Result<Vec<Membership>, RepositoryError> {
         Ok(Vec::new())
+    }
+    async fn list_active_memberships_for_users(
+        &self,
+        user_ids: &[UserId],
+    ) -> Result<Vec<Membership>, RepositoryError> {
+        Ok(self
+            .memberships
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|m| m.deactivated_at.is_none() && user_ids.contains(&m.user_id))
+            .cloned()
+            .collect())
     }
     async fn save_membership(&self, membership: &Membership) -> Result<(), RepositoryError> {
         self.memberships.lock().unwrap().push(membership.clone());
@@ -251,6 +270,12 @@ impl ProjectRepository for FakeProjects {
     ) -> Result<Vec<ProjectInvite>, RepositoryError> {
         Ok(Vec::new())
     }
+    async fn list_pending_invites_for_project(
+        &self,
+        _project_id: ProjectId,
+    ) -> Result<Vec<ProjectInvite>, RepositoryError> {
+        Ok(Vec::new())
+    }
     async fn save_invite(&self, _invite: &ProjectInvite) -> Result<(), RepositoryError> {
         Ok(())
     }
@@ -292,6 +317,9 @@ impl RequestRepository for FakeRequests {
         _attachment: &RequestAttachment,
     ) -> Result<(), RepositoryError> {
         Ok(())
+    }
+    async fn list_all_attachment_keys(&self) -> Result<Vec<String>, RepositoryError> {
+        Ok(Vec::new())
     }
 }
 

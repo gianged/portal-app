@@ -24,6 +24,9 @@ pub struct Config {
     pub server_addr: SocketAddr,
     pub jwt_secret: String,
     pub session_ttl_secs: u64,
+    /// `Secure` attribute on the session cookie. Defaults to `true`; set
+    /// `COOKIE_SECURE=false` for plain-HTTP local development.
+    pub cookie_secure: bool,
 }
 
 pub fn from_env() -> anyhow::Result<Config> {
@@ -61,10 +64,13 @@ pub fn from_env() -> anyhow::Result<Config> {
             .ok()
             .filter(|s| !s.is_empty()),
         storage_root: optional("STORAGE_ROOT", "./storage/uploads").into(),
-        storage_public_base: optional("STORAGE_PUBLIC_BASE", "http://localhost:8080"),
+        storage_public_base: optional("STORAGE_PUBLIC_BASE", "http://localhost:8080/api/v1"),
         server_addr,
         jwt_secret: required("JWT_SECRET")?,
         session_ttl_secs: session_ttl_hours * 3600,
+        cookie_secure: optional("COOKIE_SECURE", "true")
+            .parse()
+            .context("invalid COOKIE_SECURE (expected true/false)")?,
     })
 }
 

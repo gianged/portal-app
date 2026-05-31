@@ -1,3 +1,6 @@
+pub mod auth;
+pub mod files;
+
 pub mod announcements;
 pub mod chat;
 pub mod chat_ws;

@@ -63,6 +63,13 @@ pub enum DomainEvent {
         at: OffsetDateTime,
         before: Group,
     },
+    GroupMetadataUpdated {
+        group_id: GroupId,
+        actor: UserId,
+        at: OffsetDateTime,
+        before: Group,
+        after: Group,
+    },
     MembershipAdded {
         membership_id: MembershipId,
         group_id: GroupId,
@@ -145,6 +152,14 @@ pub enum DomainEvent {
         at: OffsetDateTime,
         after: Request,
     },
+    RequestMetadataUpdated {
+        request_id: RequestId,
+        project_id: ProjectId,
+        actor: UserId,
+        at: OffsetDateTime,
+        before: Request,
+        after: Request,
+    },
     RequestAssigned {
         request_id: RequestId,
         project_id: ProjectId,
@@ -195,6 +210,13 @@ pub enum DomainEvent {
         at: OffsetDateTime,
         after: Message,
     },
+    MessageEdited {
+        message_id: MessageId,
+        channel_id: ChannelId,
+        actor: UserId,
+        at: OffsetDateTime,
+        after: Message,
+    },
     MessageDeleted {
         message_id: MessageId,
         channel_id: ChannelId,
@@ -235,6 +257,7 @@ impl DomainEvent {
             | Self::UserProfileUpdated { .. } => "portal.user",
             Self::GroupCreated { .. }
             | Self::GroupDeleted { .. }
+            | Self::GroupMetadataUpdated { .. }
             | Self::MembershipAdded { .. }
             | Self::MembershipRoleChanged { .. }
             | Self::MembershipDeactivated { .. }
@@ -246,13 +269,16 @@ impl DomainEvent {
             | Self::ProjectInviteResponded { .. }
             | Self::ProjectCollaboratorRemoved { .. } => "portal.project",
             Self::RequestCreated { .. }
+            | Self::RequestMetadataUpdated { .. }
             | Self::RequestAssigned { .. }
             | Self::RequestStatusChanged { .. } => "portal.request",
             Self::TicketRaised { .. }
             | Self::TicketTriaged { .. }
             | Self::TicketAssigned { .. }
             | Self::TicketStatusChanged { .. } => "portal.ticket",
-            Self::MessagePosted { .. } | Self::MessageDeleted { .. } => "portal.chat",
+            Self::MessagePosted { .. }
+            | Self::MessageEdited { .. }
+            | Self::MessageDeleted { .. } => "portal.chat",
             Self::AnnouncementPosted { .. }
             | Self::AnnouncementEdited { .. }
             | Self::AnnouncementDeleted { .. } => "portal.announcement",
@@ -286,6 +312,12 @@ impl EventBus {
         Self { publisher, jobs }
     }
 
+    /// Publishes `event` to the broadcast publisher and, for notify topics, also
+    /// enqueues it on the durable job queue.
+    ///
+    /// # Errors
+    /// Returns an `Event` error if publishing to the broadcast publisher fails, or a `Job` error if enqueuing onto the job queue fails.
+    ///
     /// # Panics
     ///
     /// Panics only if `serde_json::to_vec` fails for `DomainEvent`, which would
