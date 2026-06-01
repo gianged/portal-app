@@ -6,10 +6,6 @@ use anyhow::Context;
 /// Runtime configuration, parsed once from the environment at startup. This is
 /// the only place the server reads env vars; everything else receives a typed
 /// `Config`.
-///
-/// `dead_code` is allowed because a few fields (`jwt_secret`, `session_ttl_secs`)
-/// feed the auth middleware / login handler that land with the HTTP routes.
-#[allow(dead_code)]
 pub struct Config {
     pub database_url: String,
     pub pg_max_connections: u32,
@@ -27,6 +23,15 @@ pub struct Config {
     /// `Secure` attribute on the session cookie. Defaults to `true`; set
     /// `COOKIE_SECURE=false` for plain-HTTP local development.
     pub cookie_secure: bool,
+    /// Per-window request ceilings for the rate-limit middleware: `auth_rate_limit`
+    /// gates unauthenticated `/login` per client IP, `api_rate_limit` gates the
+    /// protected API per user. `rate_limit_window_secs` is the fixed window width.
+    pub auth_rate_limit: u64,
+    pub api_rate_limit: u64,
+    pub rate_limit_window_secs: i64,
+    /// Origins allowed to call the API with credentials (the WASM frontend).
+    /// Credentialed CORS forbids a wildcard, so these are enumerated.
+    pub cors_allowed_origins: Vec<String>,
 }
 
 pub fn from_env() -> anyhow::Result<Config> {
@@ -45,6 +50,12 @@ pub fn from_env() -> anyhow::Result<Config> {
     let session_ttl_hours: u64 = optional("SESSION_TTL_HOURS", "24")
         .parse()
         .context("invalid SESSION_TTL_HOURS")?;
+
+    let cors_allowed_origins = optional("CORS_ALLOWED_ORIGINS", "http://localhost:8080")
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
 
     Ok(Config {
         database_url: required("DATABASE_URL")?,
@@ -71,6 +82,16 @@ pub fn from_env() -> anyhow::Result<Config> {
         cookie_secure: optional("COOKIE_SECURE", "true")
             .parse()
             .context("invalid COOKIE_SECURE (expected true/false)")?,
+        auth_rate_limit: optional("AUTH_RATE_LIMIT", "10")
+            .parse()
+            .context("invalid AUTH_RATE_LIMIT")?,
+        api_rate_limit: optional("API_RATE_LIMIT", "120")
+            .parse()
+            .context("invalid API_RATE_LIMIT")?,
+        rate_limit_window_secs: optional("RATE_LIMIT_WINDOW_SECS", "60")
+            .parse()
+            .context("invalid RATE_LIMIT_WINDOW_SECS")?,
+        cors_allowed_origins,
     })
 }
 

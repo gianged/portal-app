@@ -785,3 +785,77 @@ pub fn post_announcement_command(req: PostAnnouncementRequest) -> PostAnnounceme
         body: req.body,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_role_outranks_group_and_it_membership() {
+        // A director who also leads a team still surfaces as Director; HR likewise.
+        assert_eq!(
+            resolve_user_role(
+                Some(model::SystemRole::Director),
+                &[model::GroupRole::Leader],
+                true,
+            ),
+            UserRole::Director,
+        );
+        assert_eq!(
+            resolve_user_role(Some(model::SystemRole::Hr), &[model::GroupRole::Member], false),
+            UserRole::Hr,
+        );
+    }
+
+    #[test]
+    fn it_membership_outranks_group_role() {
+        assert_eq!(
+            resolve_user_role(None, &[model::GroupRole::Leader], true),
+            UserRole::It,
+        );
+    }
+
+    #[test]
+    fn group_roles_resolve_in_precedence_order() {
+        assert_eq!(
+            resolve_user_role(None, &[model::GroupRole::Leader], false),
+            UserRole::GroupLeader,
+        );
+        assert_eq!(
+            resolve_user_role(None, &[model::GroupRole::SubLeader], false),
+            UserRole::GroupSubLeader,
+        );
+        assert_eq!(
+            resolve_user_role(None, &[model::GroupRole::Member], false),
+            UserRole::Member,
+        );
+        // Leader wins when a user holds several group roles at once.
+        assert_eq!(
+            resolve_user_role(
+                None,
+                &[model::GroupRole::Member, model::GroupRole::Leader],
+                false,
+            ),
+            UserRole::GroupLeader,
+        );
+    }
+
+    #[test]
+    fn no_roles_default_to_member() {
+        assert_eq!(resolve_user_role(None, &[], false), UserRole::Member);
+    }
+
+    #[test]
+    fn unknown_user_summary_is_a_renderable_placeholder() {
+        let summary = unknown_user_summary(ids::UserId(uuid::Uuid::nil()));
+        assert_eq!(summary.full_name, "Unknown user");
+        assert_eq!(summary.role, UserRole::Member);
+        assert!(summary.avatar_storage_key.is_none());
+    }
+
+    #[test]
+    fn unknown_group_summary_is_a_renderable_placeholder() {
+        let summary = unknown_group_summary(ids::GroupId(uuid::Uuid::nil()));
+        assert_eq!(summary.name, "Unknown group");
+    }
+}

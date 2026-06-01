@@ -1,6 +1,7 @@
+use async_trait::async_trait;
 use redis::{AsyncCommands, Client, aio::ConnectionManager};
 
-use domain::{error::RepositoryError, ids::UserId};
+use domain::{error::RepositoryError, ids::UserId, ports::presence::Presence};
 
 /// `SETEX`-backed presence store. Every key carries a TTL so a process that
 /// crashes without cleaning up stops showing the user as online once the TTL
@@ -16,10 +17,13 @@ impl PresenceStore {
         let conn = ConnectionManager::new(client).await.map_err(backend)?;
         Ok(Self { conn })
     }
+}
 
+#[async_trait]
+impl Presence for PresenceStore {
     /// Mark the user online for `ttl_secs` seconds. Heartbeat by calling
     /// again before the TTL expires; the value is opaque.
-    pub async fn set_online(&self, user: UserId, ttl_secs: u64) -> Result<(), RepositoryError> {
+    async fn set_online(&self, user: UserId, ttl_secs: u64) -> Result<(), RepositoryError> {
         let key = presence_key(user);
         let mut conn = self.conn.clone();
         conn.set_ex::<_, _, ()>(key, 1u8, ttl_secs)
@@ -28,7 +32,7 @@ impl PresenceStore {
         Ok(())
     }
 
-    pub async fn is_online(&self, user: UserId) -> Result<bool, RepositoryError> {
+    async fn is_online(&self, user: UserId) -> Result<bool, RepositoryError> {
         let key = presence_key(user);
         let mut conn = self.conn.clone();
         conn.exists::<_, bool>(key).await.map_err(backend)

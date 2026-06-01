@@ -1,7 +1,8 @@
+use async_trait::async_trait;
 use redis::{Client, Script, aio::ConnectionManager};
 use time::OffsetDateTime;
 
-use domain::error::RepositoryError;
+use domain::{error::RepositoryError, ports::rate_limit::RateLimit};
 
 /// Fixed-window rate limiter backed by `INCR` + `EXPIRE`.
 ///
@@ -39,11 +40,14 @@ impl RateLimiter {
         self.window_secs = window_secs;
         self
     }
+}
 
+#[async_trait]
+impl RateLimit for RateLimiter {
     /// Increment the bucket's counter for the current window and return the
     /// resulting count. Caller decides whether the count exceeds the bucket's
     /// limit.
-    pub async fn incr(&self, bucket: &str) -> Result<u64, RepositoryError> {
+    async fn incr(&self, bucket: &str) -> Result<u64, RepositoryError> {
         let now = OffsetDateTime::now_utc().unix_timestamp();
         let window = now / self.window_secs;
         let key = rate_limit_key(bucket, window);

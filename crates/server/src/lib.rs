@@ -1,0 +1,70 @@
+//! Portal HTTP/WebSocket server.
+//!
+//! The library exposes the composition root ([`app::build`] / [`app::router`]),
+//! config, auth, routes, and middleware so the `server` binary stays a thin
+//! wrapper over [`run`] and the integration tests under `tests/` can drive the
+//! real router against in-memory fakes.
+
+pub mod app;
+pub mod auth;
+pub mod config;
+pub mod dto;
+pub mod error;
+pub mod extractors;
+pub mod middleware;
+pub mod realtime;
+pub mod resolve;
+pub mod routes;
+pub mod telemetry;
+
+use std::net::SocketAddr;
+
+/// Loads configuration, builds the router, and serves until a shutdown signal.
+pub async fn run() -> anyhow::Result<()> {
+    // Populate the process env from the repo-root .env before config is parsed.
+    dotenvy::dotenv().ok();
+    telemetry::init();
+
+    let cfg = config::from_env()?;
+    let router = app::build(&cfg).await?;
+
+    let listener = tokio::net::TcpListener::bind(cfg.server_addr).await?;
+    tracing::info!(addr = %cfg.server_addr, "server listening");
+    // `ConnectInfo` exposes the peer address to the per-IP rate limiter; graceful
+    // shutdown lets in-flight requests and WebSocket connections drain on signal.
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
+    Ok(())
+}
+
+/// Resolves on the first shutdown signal: Ctrl-C on every platform, plus
+/// `SIGTERM` on Unix (the orchestrator's stop signal).
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::error!(%error, "failed to install Ctrl-C handler");
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => tracing::error!(%error, "failed to install SIGTERM handler"),
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {}
+        () = terminate => {}
+    }
+    tracing::info!("shutdown signal received");
+}

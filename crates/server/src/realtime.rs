@@ -16,7 +16,7 @@ use domain::{
     ids::{ChannelId, MessageId, UserId},
     ports::event_publisher::EventPublisher,
 };
-use infrastructure::redis::{RedisEventPublisher, subscribe};
+use infrastructure::redis::subscribe;
 
 /// Topic for ephemeral WS signals (not persisted, best-effort).
 pub const WS_TOPIC: &str = "portal.ws";
@@ -45,13 +45,13 @@ pub enum WsSignal {
 /// ephemeral plane plus the Redis URL used to open per-connection subscriptions.
 #[derive(Clone)]
 pub struct Realtime {
-    publisher: Arc<RedisEventPublisher>,
+    publisher: Arc<dyn EventPublisher>,
     redis_url: Arc<str>,
 }
 
 impl Realtime {
     #[must_use]
-    pub fn new(publisher: Arc<RedisEventPublisher>, redis_url: impl Into<Arc<str>>) -> Self {
+    pub fn new(publisher: Arc<dyn EventPublisher>, redis_url: impl Into<Arc<str>>) -> Self {
         Self {
             publisher,
             redis_url: redis_url.into(),

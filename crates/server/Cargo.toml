@@ -31,3 +31,9 @@ tower = { workspace = true }
 tower-http = { workspace = true }
 futures = { workspace = true }
 dotenvy = { workspace = true }
+
+[dev-dependencies]
+# `util` brings `ServiceExt::oneshot`, used to drive the router in integration tests.
+tower = { workspace = true, features = ["util"] }
+# Test fakes implement the `#[async_trait]` domain ports/repositories.
+async-trait = { workspace = true }

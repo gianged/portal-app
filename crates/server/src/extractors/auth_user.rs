@@ -30,3 +30,40 @@ where
             .ok_or(AppError::Auth(AuthError::Missing))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use axum::http::{Request, StatusCode};
+    use axum::response::IntoResponse;
+
+    fn parts_with(user: Option<AuthUser>) -> Parts {
+        let mut request = Request::builder().body(()).expect("build request");
+        if let Some(user) = user {
+            request.extensions_mut().insert(user);
+        }
+        request.into_parts().0
+    }
+
+    #[tokio::test]
+    async fn reads_auth_user_from_extensions() {
+        let user = AuthUser {
+            user_id: UserId(uuid::Uuid::nil()),
+        };
+        let mut parts = parts_with(Some(user));
+        let extracted = AuthUser::from_request_parts(&mut parts, &())
+            .await
+            .expect("extract AuthUser");
+        assert_eq!(extracted.user_id, user.user_id);
+    }
+
+    #[tokio::test]
+    async fn missing_extension_rejects_as_401() {
+        let mut parts = parts_with(None);
+        let rejection = AuthUser::from_request_parts(&mut parts, &())
+            .await
+            .expect_err("missing AuthUser must reject");
+        assert_eq!(rejection.into_response().status(), StatusCode::UNAUTHORIZED);
+    }
+}

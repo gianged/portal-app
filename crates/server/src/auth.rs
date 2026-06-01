@@ -41,10 +41,14 @@ pub struct TokenService {
 impl TokenService {
     #[must_use]
     pub fn new(secret: &str, ttl_secs: u64, secure: bool) -> Self {
+        let mut validation = Validation::new(Algorithm::HS256);
+        // No grace beyond the token's own expiry: a session is valid strictly
+        // within its TTL (jsonwebtoken otherwise allows 60s of clock skew).
+        validation.leeway = 0;
         Self {
             encoding: EncodingKey::from_secret(secret.as_bytes()),
             decoding: DecodingKey::from_secret(secret.as_bytes()),
-            validation: Validation::new(Algorithm::HS256),
+            validation,
             // `ttl_secs` is config-derived (hours * 3600); it fits i64 comfortably.
             ttl: Duration::seconds(i64::try_from(ttl_secs).unwrap_or(i64::MAX)),
             secure,
@@ -54,7 +58,12 @@ impl TokenService {
     /// Mints a signed token for `user_id`, valid for the configured TTL.
     #[must_use]
     pub fn issue(&self, user_id: UserId) -> String {
-        let now = OffsetDateTime::now_utc();
+        self.issue_at(user_id, OffsetDateTime::now_utc())
+    }
+
+    /// [`issue`](Self::issue) with the clock injected, so token expiry is
+    /// exercisable in tests.
+    fn issue_at(&self, user_id: UserId, now: OffsetDateTime) -> String {
         let claims = Claims {
             sub: user_id.0,
             iat: now.unix_timestamp(),
@@ -93,5 +102,79 @@ impl TokenService {
             .path("/")
             .max_age(max_age)
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TTL_SECS: u64 = 3600;
+
+    fn service(secret: &str) -> TokenService {
+        TokenService::new(secret, TTL_SECS, false)
+    }
+
+    fn user() -> UserId {
+        UserId(Uuid::from_u128(0x1234_5678_9abc_def0_1234_5678_9abc_def0))
+    }
+
+    #[test]
+    fn issue_then_verify_round_trips_to_same_subject() {
+        let svc = service("session-secret");
+        let token = svc.issue(user());
+        assert_eq!(svc.verify(&token).expect("valid token"), user());
+    }
+
+    #[test]
+    fn verify_rejects_a_non_jwt() {
+        assert!(matches!(
+            service("session-secret").verify("definitely-not-a-jwt"),
+            Err(AuthError::Invalid)
+        ));
+    }
+
+    #[test]
+    fn verify_rejects_a_token_signed_with_another_secret() {
+        let token = service("secret-a").issue(user());
+        assert!(matches!(
+            service("secret-b").verify(&token),
+            Err(AuthError::Invalid)
+        ));
+    }
+
+    #[test]
+    fn verify_rejects_an_expired_token() {
+        let svc = service("session-secret");
+        // Minted two hours ago with a one-hour TTL: long past expiry, and leeway
+        // is zero, so there is no grace window to rescue it.
+        let issued = OffsetDateTime::now_utc() - Duration::hours(2);
+        let token = svc.issue_at(user(), issued);
+        assert!(matches!(svc.verify(&token), Err(AuthError::Invalid)));
+    }
+
+    #[test]
+    fn session_cookie_carries_the_security_attributes() {
+        let cookie = TokenService::new("k", TTL_SECS, true).session_cookie("tok".to_owned());
+        assert_eq!(cookie.name(), SESSION_COOKIE);
+        assert_eq!(cookie.value(), "tok");
+        assert_eq!(cookie.http_only(), Some(true));
+        assert_eq!(cookie.secure(), Some(true));
+        assert_eq!(cookie.same_site(), Some(SameSite::Lax));
+        assert_eq!(cookie.path(), Some("/"));
+        assert_eq!(cookie.max_age().map(Duration::whole_seconds), Some(3600));
+    }
+
+    #[test]
+    fn cookie_secure_flag_follows_config() {
+        let cookie = TokenService::new("k", TTL_SECS, false).session_cookie("t".to_owned());
+        assert_eq!(cookie.secure(), Some(false));
+    }
+
+    #[test]
+    fn clear_cookie_is_empty_and_expires_immediately() {
+        let cookie = service("session-secret").clear_cookie();
+        assert_eq!(cookie.value(), "");
+        assert_eq!(cookie.max_age().map(Duration::whole_seconds), Some(0));
     }
 }

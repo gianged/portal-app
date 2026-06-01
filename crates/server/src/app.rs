@@ -1,7 +1,12 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    http::{HeaderValue, Method, header},
+    routing::get,
+};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use application::{
     events::EventBus,
@@ -13,7 +18,7 @@ use application::{
     },
 };
 use domain::{
-    ports::file_storage::FileStorage,
+    ports::{file_storage::FileStorage, presence::Presence, rate_limit::RateLimit},
     repository::{
         AuditRepository, ChatRepository, GroupRepository, NotificationRepository,
         ProjectRepository, RequestRepository, TicketRepository, UserRepository,
@@ -31,15 +36,18 @@ use infrastructure::{
     scylla::{ScyllaChatRepo, build_session},
 };
 
-use crate::{auth::TokenService, config::Config, realtime::Realtime, routes};
+use crate::{
+    auth::TokenService,
+    config::Config,
+    middleware::rate_limit::RateLimits,
+    realtime::Realtime,
+    routes,
+};
 
 /// Dependency-injection seam shared by every handler. Cheap to clone — every
-/// field is an `Arc`.
-///
-/// `dead_code` is allowed until the HTTP routes/handlers (plus the rate-limit
-/// middleware, chat WebSocket, and upload handler) that read these fields land;
-/// constructing the full graph here proves the composition wires up.
-#[allow(dead_code)]
+/// field is an `Arc`. The Redis-backed cross-cutting ports (`presence`,
+/// `rate_limiter`) and the `realtime` publisher are held as trait objects so the
+/// router can be exercised against in-memory fakes in tests.
 #[derive(Clone)]
 pub struct AppState {
     pub user: Arc<UserService>,
@@ -54,11 +62,13 @@ pub struct AppState {
     // middleware and the chat WebSocket respectively.
     pub token: Arc<TokenService>,
     pub realtime: Realtime,
-    // Adapters not yet behind an application service; wired for the handlers,
-    // middleware, and audit wiring that land with the HTTP routes.
+    // TODO: wired for the audit-log write path that lands with the admin/audit
+    // routes; no handler reads it yet.
+    #[allow(dead_code)]
     pub audit: Arc<dyn AuditRepository>,
-    pub presence: Arc<PresenceStore>,
-    pub rate_limiter: Arc<RateLimiter>,
+    pub presence: Arc<dyn Presence>,
+    pub rate_limiter: Arc<dyn RateLimit>,
+    pub rate_limits: RateLimits,
     pub storage: Arc<LocalStorage>,
 }
 
@@ -81,12 +91,17 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             .await
             .context("connecting redis (events)")?,
     );
-    let presence = PresenceStore::new(&cfg.redis_url)
-        .await
-        .context("connecting redis (presence)")?;
-    let rate_limiter = RateLimiter::new(&cfg.redis_url)
-        .await
-        .context("connecting redis (rate limit)")?;
+    let presence: Arc<dyn Presence> = Arc::new(
+        PresenceStore::new(&cfg.redis_url)
+            .await
+            .context("connecting redis (presence)")?,
+    );
+    let rate_limiter: Arc<dyn RateLimit> = Arc::new(
+        RateLimiter::new(&cfg.redis_url)
+            .await
+            .context("connecting redis (rate limit)")?
+            .with_window(cfg.rate_limit_window_secs),
+    );
     let storage = Arc::new(LocalStorage::new(
         cfg.storage_root.clone(),
         &cfg.storage_public_base,
@@ -208,13 +223,28 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
         token,
         realtime,
         audit,
-        presence: Arc::new(presence),
-        rate_limiter: Arc::new(rate_limiter),
+        presence,
+        rate_limiter,
+        rate_limits: RateLimits {
+            auth: cfg.auth_rate_limit,
+            api: cfg.api_rate_limit,
+        },
         storage,
     };
 
-    // Protected API: every route requires a valid session. `route_layer` keeps
-    // the auth check off unmatched paths (they 404 rather than 401).
+    Ok(router(state).layer(cors_layer(&cfg.cors_allowed_origins)))
+}
+
+/// Composes the route tree and middleware stack over a fully-built [`AppState`].
+/// Split out from [`build`] so tests can drive the real router against in-memory
+/// fakes without standing up infrastructure. CORS and connect-info are applied by
+/// the caller ([`build`] / `main`), since they depend on config/runtime wiring
+/// rather than the route tree.
+pub fn router(state: AppState) -> Router {
+    // Protected API: every route requires a valid session, then a per-user rate
+    // limit. `route_layer` keeps these off unmatched paths (they 404, not 401).
+    // Auth is the outer layer so it inserts `AuthUser` before the per-user limiter
+    // reads it.
     let protected = routes::auth::me_router()
         .merge(routes::users::router())
         .merge(routes::groups::router())
@@ -228,22 +258,59 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
         .merge(routes::files::router())
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
+            crate::middleware::rate_limit::per_user,
+        ))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
             crate::middleware::auth::require_auth,
         ));
 
-    // Public API: login / logout carry no session yet.
-    let api = routes::auth::public_router().merge(protected);
+    // Public API: login / logout carry no session yet; rate-limited per client IP.
+    let public = routes::auth::public_router().route_layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        crate::middleware::rate_limit::per_ip,
+    ));
 
-    Ok(Router::new()
+    let api = public.merge(protected);
+
+    Router::new()
         .route("/healthz", get(healthz))
         .nest("/api/v1", api)
-        // Applied outermost-to-innermost: trace wraps request-id wraps the
-        // router (whose protected sub-tree adds the per-route auth layer above).
+        // Applied outermost-to-innermost: trace wraps request-id wraps the router
+        // (whose protected sub-tree adds the per-route auth + limit layers above).
+        // The caller adds CORS as the outermost layer.
         .layer(axum::middleware::from_fn(
             crate::middleware::request_id::propagate,
         ))
         .layer(crate::middleware::trace::layer())
-        .with_state(state))
+        .with_state(state)
+}
+
+/// Builds the credentialed CORS layer from the configured origins. Invalid origin
+/// strings are dropped with a warning rather than failing startup. Credentialed
+/// CORS forbids a wildcard origin, so the allow-list is always explicit.
+pub fn cors_layer(origins: &[String]) -> CorsLayer {
+    let parsed: Vec<HeaderValue> = origins
+        .iter()
+        .filter_map(|o| match o.parse::<HeaderValue>() {
+            Ok(value) => Some(value),
+            Err(_) => {
+                tracing::warn!(origin = %o, "ignoring invalid CORS origin");
+                None
+            }
+        })
+        .collect();
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(parsed))
+        .allow_credentials(true)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([header::CONTENT_TYPE])
 }
 
 async fn healthz() -> &'static str {
