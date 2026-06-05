@@ -37,10 +37,7 @@ use infrastructure::{
 };
 
 use crate::{
-    auth::TokenService,
-    config::Config,
-    middleware::rate_limit::RateLimits,
-    realtime::Realtime,
+    auth::TokenService, config::Config, middleware::rate_limit::RateLimits, realtime::Realtime,
     routes,
 };
 

@@ -1,0 +1,149 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 id,\n                 project_id,\n                 invited_by_user_id,\n                 invited_group_id,\n                 responded_by_user_id,\n                 status AS \"status: SqlInviteStatus\",\n                 responded_at,\n                 created_at,\n                 updated_at\n               FROM project.project_invites\n               WHERE invited_group_id = $1 AND status = $2\n               ORDER BY created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "project.project_invites",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "project_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "project.project_invites",
+            "name": "project_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "invited_by_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "project.project_invites",
+            "name": "invited_by_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "invited_group_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "project.project_invites",
+            "name": "invited_group_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "responded_by_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "project.project_invites",
+            "name": "responded_by_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "status: SqlInviteStatus",
+        "type_info": {
+          "Custom": {
+            "name": "project.invite_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "accepted",
+                "declined",
+                "revoked"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "project.project_invites",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "responded_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "project.project_invites",
+            "name": "responded_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "project.project_invites",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "project.project_invites",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "project.invite_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "accepted",
+                "declined",
+                "revoked"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "daadd298d49be9dac925c9f769b19b0475ccb09576e327bb10cf64f9c3630009"
+}

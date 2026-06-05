@@ -1,0 +1,133 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 id,\n                 actor_user_id,\n                 action AS \"action: SqlAuditAction\",\n                 entity_schema,\n                 entity_table,\n                 entity_id,\n                 payload_before::text AS \"payload_before?: String\",\n                 payload_after::text  AS \"payload_after?: String\",\n                 occurred_at\n               FROM audit.audit_log\n               WHERE entity_schema = $1 AND entity_table = $2 AND entity_id = $3\n               ORDER BY occurred_at DESC\n               LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audit.audit_log",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "actor_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audit.audit_log",
+            "name": "actor_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "action: SqlAuditAction",
+        "type_info": {
+          "Custom": {
+            "name": "audit.audit_action",
+            "kind": {
+              "Enum": [
+                "create",
+                "update",
+                "delete",
+                "status_change",
+                "assign",
+                "transfer",
+                "login",
+                "logout"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "audit.audit_log",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "entity_schema",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "audit.audit_log",
+            "name": "entity_schema"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "entity_table",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "audit.audit_log",
+            "name": "entity_table"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "entity_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audit.audit_log",
+            "name": "entity_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "payload_before?: String",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "payload_after?: String",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "occurred_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "audit.audit_log",
+            "name": "occurred_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      false
+    ]
+  },
+  "hash": "6275b92c5200c70e05226faccb4d9deb12148b8b19ff888fd4fe8bbac2783c7b"
+}

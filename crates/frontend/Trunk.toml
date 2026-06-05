@@ -7,12 +7,16 @@ addresses = ["127.0.0.1"]
 port = 8081
 open = false
 
-# Proxy HTTP API calls to the backend during dev. Uncomment once the server is running.
-# [[proxy]]
-# backend = "http://127.0.0.1:8080/api/"
-# rewrite = "/api/"
+# Proxy API calls to the backend during dev. The server mounts the API under
+# `/api/v1`; the frontend calls `/api/...`, so the rewrite bridges the version
+# prefix (request `/api/auth/me` -> `http://127.0.0.1:8080/api/v1/auth/me`).
+[[proxy]]
+backend = "http://127.0.0.1:8080/api/v1/"
+rewrite = "/api/"
 
-# Proxy WebSocket connections to the backend. Uncomment once the server is running.
-# [[proxy]]
-# backend = "ws://127.0.0.1:8080/ws/"
-# ws = true
+# WebSocket (chat): the live endpoint is `/api/v1/chat/ws`; the frontend dials
+# `/api/chat/ws` and this bridges the version prefix.
+[[proxy]]
+backend = "ws://127.0.0.1:8080/api/v1/chat/ws"
+rewrite = "/api/chat/ws"
+ws = true

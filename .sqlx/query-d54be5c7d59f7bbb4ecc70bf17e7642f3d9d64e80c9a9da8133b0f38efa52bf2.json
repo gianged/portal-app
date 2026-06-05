@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO project.project_collaborators\n                 (id, project_id, group_id, created_at)\n               VALUES ($1, $2, $3, $4)\n               ON CONFLICT (id) DO UPDATE SET\n                 project_id = EXCLUDED.project_id,\n                 group_id   = EXCLUDED.group_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d54be5c7d59f7bbb4ecc70bf17e7642f3d9d64e80c9a9da8133b0f38efa52bf2"
+}

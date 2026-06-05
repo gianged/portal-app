@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO notification.notifications\n                 (id, recipient_user_id, kind, payload, read_at, created_at)\n               VALUES ($1, $2, $3, $4, $5, $6)\n               ON CONFLICT (id) DO UPDATE SET\n                 recipient_user_id = EXCLUDED.recipient_user_id,\n                 kind              = EXCLUDED.kind,\n                 payload           = EXCLUDED.payload,\n                 read_at           = EXCLUDED.read_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        {
+          "Custom": {
+            "name": "notification.notification_kind",
+            "kind": {
+              "Enum": [
+                "announcement",
+                "mention",
+                "ticket_urgent",
+                "request_assigned",
+                "request_status_change",
+                "project_invite",
+                "system"
+              ]
+            }
+          }
+        },
+        "Jsonb",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "530e847245b739af3dc28ffcbcb2537153a56ce721ed4a340261b60d53c02278"
+}

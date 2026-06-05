@@ -802,7 +802,11 @@ mod tests {
             UserRole::Director,
         );
         assert_eq!(
-            resolve_user_role(Some(model::SystemRole::Hr), &[model::GroupRole::Member], false),
+            resolve_user_role(
+                Some(model::SystemRole::Hr),
+                &[model::GroupRole::Member],
+                false
+            ),
             UserRole::Hr,
         );
     }

@@ -16,6 +16,14 @@ use time::OffsetDateTime;
 
 use crate::error::Result;
 
+/// A business fact emitted by an application service after a successful state
+/// change.
+///
+/// Serialized with an internally-tagged snake_case `type` discriminant and
+/// routed by [`EventBus`] to a broadcast publisher (Redis pub/sub) and, for
+/// notification-bearing topics, the durable job queue. [`Self::topic`] maps each
+/// variant to its `portal.*` topic; the `before`/`after` payloads carry the
+/// state that audit and notification consumers read.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DomainEvent {

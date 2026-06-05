@@ -7,6 +7,7 @@ use shared::validation::user::{validate_email, validate_password};
 
 use crate::features::auth::api;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
+use crate::primitives::center::Center;
 use crate::primitives::input::{FieldError, FieldLabel, Input};
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
@@ -128,4 +129,41 @@ pub fn LoginForm() -> impl IntoView {
             </Stack>
         </form>
     }
+}
+
+/// Route guard for authenticated pages. Waits for the session bootstrap to
+/// resolve ([`AuthState::loaded`]); once resolved it renders `children` for a
+/// signed-in user, otherwise redirects to `/login`.
+#[component]
+pub fn RequireAuth(children: ChildrenFn) -> impl IntoView {
+    let auth = use_context::<AuthState>().expect("AuthState context");
+    let navigate = use_navigate();
+
+    Effect::new(move |_| {
+        if auth.loaded.get() && !auth.is_authenticated() {
+            navigate("/login", NavigateOptions::default());
+        }
+    });
+
+    view! {
+        {move || {
+            if !auth.loaded.get() {
+                auth_loader()
+            } else if auth.is_authenticated() {
+                children().into_any()
+            } else {
+                ().into_any()
+            }
+        }}
+    }
+}
+
+fn auth_loader() -> AnyView {
+    let cls = class(format!(
+        "font-family: {ff}; font-size: {fs}; color: {c};",
+        ff = typography::FONT_SANS,
+        fs = typography::TEXT_BODY,
+        c = color::TEXT_MUTED,
+    ));
+    view! { <Center><span class=cls>"Loading…"</span></Center> }.into_any()
 }

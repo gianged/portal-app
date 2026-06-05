@@ -15,7 +15,9 @@ shared = { path = "../shared" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-time = { workspace = true }
+# `wasm-bindgen` lets `OffsetDateTime::now_utc()` read the clock via JS `Date` in
+# the browser. Resolver v2 keeps this feature off the native (server/worker) builds.
+time = { workspace = true, features = ["wasm-bindgen"] }
 uuid = { workspace = true, features = ["js"] }
 tracing = { workspace = true }
 
@@ -23,9 +25,29 @@ leptos = { workspace = true }
 leptos_router = { workspace = true }
 leptos_animate = { workspace = true }
 stylist = { workspace = true }
-gloo = { workspace = true }
-reqwasm = { workspace = true }
-web-sys = { workspace = true }
+# `futures` enables the awaitable timer (`gloo::timers::future::TimeoutFuture`)
+# used by the WS heartbeat + reconnect backoff.
+gloo = { workspace = true, features = ["futures"] }
+# `websocket` powers the chat `WsClient`; `http` (default) backs the REST client.
+reqwasm = { workspace = true, features = ["websocket"] }
+# `SinkExt`/`StreamExt` for driving the WebSocket's split sink/stream.
+futures = { workspace = true }
+# Most web-sys APIs the frontend uses arrive transitively via leptos; these are the
+# extra interfaces we touch directly (theme persistence + `<html data-theme>`,
+# multipart upload via FormData/File, and the WS URL from `location`).
+web-sys = { workspace = true, features = [
+    "Blob",
+    "Document",
+    "Element",
+    "File",
+    "FileList",
+    "FormData",
+    "HtmlInputElement",
+    "Location",
+    "MediaQueryList",
+    "Storage",
+    "Window",
+] }
 wasm-bindgen = { workspace = true }
 
 [dev-dependencies]

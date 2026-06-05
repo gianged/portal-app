@@ -1,48 +1,55 @@
-pub const BG: &str = "#ffffff";
-pub const BG_SUBTLE: &str = "#fafbfc";
-pub const BG_ELEVATED: &str = "#ffffff";
-pub const BG_SUNKEN: &str = "#f4f5f7";
-pub const BG_HOVER: &str = "#f4f5f7";
-pub const BG_ACTIVE: &str = "#ebedef";
+//! Color tokens, resolved at runtime to CSS custom properties so a single
+//! `data-theme` flip on `<html>` reskins the whole app. The variable values live
+//! in [`crate::theme::global_stylesheet`]; spacing/radius/typography stay baked
+//! because they do not change between light and dark.
 
-pub const TEXT: &str = "#0a1f44";
-pub const TEXT_STRONG: &str = "#060d1f";
-pub const TEXT_MUTED: &str = "#51607a";
-pub const TEXT_FAINT: &str = "#8794ab";
-pub const TEXT_ON_ACCENT: &str = "#ffffff";
+pub const BG: &str = "var(--bg)";
+pub const BG_SUBTLE: &str = "var(--bg-subtle)";
+pub const BG_ELEVATED: &str = "var(--bg-elevated)";
+pub const BG_SUNKEN: &str = "var(--bg-sunken)";
+pub const BG_HOVER: &str = "var(--bg-hover)";
+pub const BG_ACTIVE: &str = "var(--bg-active)";
 
-pub const BORDER: &str = "#e3e8ee";
-pub const BORDER_STRONG: &str = "#cbd2dc";
-pub const BORDER_FOCUS: &str = "#2563eb";
+pub const TEXT: &str = "var(--text)";
+pub const TEXT_STRONG: &str = "var(--text-strong)";
+pub const TEXT_MUTED: &str = "var(--text-muted)";
+pub const TEXT_FAINT: &str = "var(--text-faint)";
+pub const TEXT_ON_ACCENT: &str = "var(--text-on-accent)";
 
-pub const ACCENT: &str = "#2563eb";
-pub const ACCENT_HOVER: &str = "#1d4ed8";
-pub const ACCENT_ACTIVE: &str = "#1e40af";
-pub const ACCENT_BG: &str = "#eff4ff";
-pub const ACCENT_BORDER: &str = "#c7d6fe";
+pub const BORDER: &str = "var(--border)";
+pub const BORDER_STRONG: &str = "var(--border-strong)";
+pub const BORDER_FOCUS: &str = "var(--border-focus)";
 
-pub const SUCCESS: &str = "#047857";
-pub const SUCCESS_BG: &str = "#ecfdf5";
-pub const SUCCESS_BORDER: &str = "#a7f3d0";
+pub const ACCENT: &str = "var(--accent)";
+pub const ACCENT_HOVER: &str = "var(--accent-hover)";
+pub const ACCENT_ACTIVE: &str = "var(--accent-active)";
+pub const ACCENT_BG: &str = "var(--accent-bg)";
+pub const ACCENT_BORDER: &str = "var(--accent-border)";
 
-pub const WARNING: &str = "#b45309";
-pub const WARNING_BG: &str = "#fffbeb";
-pub const WARNING_BORDER: &str = "#fde68a";
+pub const SUCCESS: &str = "var(--success)";
+pub const SUCCESS_BG: &str = "var(--success-bg)";
+pub const SUCCESS_BORDER: &str = "var(--success-border)";
 
-pub const DANGER: &str = "#b91c1c";
-pub const DANGER_HOVER: &str = "#991b1b";
-pub const DANGER_BG: &str = "#fef2f2";
-pub const DANGER_BORDER: &str = "#fecaca";
+pub const WARNING: &str = "var(--warning)";
+pub const WARNING_BG: &str = "var(--warning-bg)";
+pub const WARNING_BORDER: &str = "var(--warning-border)";
 
-pub const INFO: &str = "#1d4ed8";
-pub const INFO_BG: &str = "#eff4ff";
-pub const INFO_BORDER: &str = "#c7d6fe";
+pub const DANGER: &str = "var(--danger)";
+pub const DANGER_HOVER: &str = "var(--danger-hover)";
+pub const DANGER_BG: &str = "var(--danger-bg)";
+pub const DANGER_BORDER: &str = "var(--danger-border)";
 
+pub const INFO: &str = "var(--info)";
+pub const INFO_BG: &str = "var(--info-bg)";
+pub const INFO_BORDER: &str = "var(--info-border)";
+
+/// `(background, foreground)` pairs indexed by avatar tone. Each resolves to a
+/// theme-aware CSS variable pair defined in [`crate::theme::global_stylesheet`].
 pub const AVATAR_TONES: [(&str, &str); 6] = [
-    ("#dbeafe", "#1e40af"),
-    ("#fce7f3", "#9d174d"),
-    ("#dcfce7", "#166534"),
-    ("#fef3c7", "#92400e"),
-    ("#e0e7ff", "#3730a3"),
-    ("#ffe4e6", "#9f1239"),
+    ("var(--avatar-1-bg)", "var(--avatar-1-fg)"),
+    ("var(--avatar-2-bg)", "var(--avatar-2-fg)"),
+    ("var(--avatar-3-bg)", "var(--avatar-3-fg)"),
+    ("var(--avatar-4-bg)", "var(--avatar-4-fg)"),
+    ("var(--avatar-5-bg)", "var(--avatar-5-fg)"),
+    ("var(--avatar-6-bg)", "var(--avatar-6-fg)"),
 ];

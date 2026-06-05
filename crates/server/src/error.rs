@@ -214,10 +214,11 @@ mod tests {
     #[tokio::test]
     async fn internal_errors_hide_backend_detail() {
         // The wire message must not leak the wrapped backend string.
-        let (_, body) =
-            decode(application::Error::Repository(RepositoryError::Backend("secret dsn".to_owned()))
-                .into())
-            .await;
+        let (_, body) = decode(
+            application::Error::Repository(RepositoryError::Backend("secret dsn".to_owned()))
+                .into(),
+        )
+        .await;
         assert_eq!(body.message, "internal server error");
     }
 

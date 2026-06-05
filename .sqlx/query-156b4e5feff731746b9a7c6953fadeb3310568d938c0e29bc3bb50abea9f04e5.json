@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT avatar_storage_key AS \"avatar_storage_key!\"\n               FROM auth.users\n               WHERE avatar_storage_key IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "avatar_storage_key!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.users",
+            "name": "avatar_storage_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "156b4e5feff731746b9a7c6953fadeb3310568d938c0e29bc3bb50abea9f04e5"
+}

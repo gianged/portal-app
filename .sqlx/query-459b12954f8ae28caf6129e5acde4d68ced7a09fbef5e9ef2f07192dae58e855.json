@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 id,\n                 recipient_user_id,\n                 payload AS \"payload: Json<NotificationPayload>\",\n                 read_at,\n                 created_at\n               FROM notification.notifications\n               WHERE recipient_user_id = $1\n                 AND ($2 = false OR read_at IS NULL)\n               ORDER BY created_at DESC\n               LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "notification.notifications",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "recipient_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "notification.notifications",
+            "name": "recipient_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "payload: Json<NotificationPayload>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "notification.notifications",
+            "name": "payload"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "read_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "notification.notifications",
+            "name": "read_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "notification.notifications",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "459b12954f8ae28caf6129e5acde4d68ced7a09fbef5e9ef2f07192dae58e855"
+}

@@ -85,6 +85,13 @@ fn company_role_relation(role: SystemRole) -> &'static str {
     }
 }
 
+/// Authorization gate over the org graph.
+///
+/// Resolves actors and memberships through the [`UserRepository`] /
+/// [`GroupRepository`] and answers permission questions — or writes the relation
+/// tuples backing a state change — through the [`AuthzClient`] (OpenFGA). The
+/// `REL_*` relation strings above MUST match the relations declared in
+/// `infra/openfga/authorization-model.json`.
 pub struct Permissions {
     users: Arc<dyn UserRepository>,
     groups: Arc<dyn GroupRepository>,

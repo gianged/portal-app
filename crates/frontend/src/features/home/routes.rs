@@ -1,11 +1,23 @@
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use leptos_router::components::A;
+use shared::dto::{
+    chat::ChannelSummaryDto, group::GroupDto, request::RequestDto, ticket::TicketDto,
+};
 
-use crate::features::home::components::{Hero, SidebarNav, StatTiles, Topbar, Wordmark};
+use crate::features::auth::components::RequireAuth;
+use crate::features::home::api as home_api;
+use crate::features::home::components::{Hero, Wordmark};
+use crate::features::home::panels::{
+    ChannelsPanel, Loadable, RequestsPanel, StatTiles, TicketsPanel,
+};
+use crate::features::home::shell::{AppShell, AuthedPage};
 use crate::primitives::card::Card;
 use crate::primitives::center::Center;
-use crate::primitives::sidebar::SidebarLayout;
+use crate::primitives::empty_state::EmptyState;
+use crate::primitives::icon::IconName;
 use crate::primitives::stack::{Gap, Stack};
+use crate::state::auth::AuthState;
 use crate::theme::{class, color, space, typography};
 
 #[component]
@@ -59,26 +71,92 @@ pub fn LandingPage() -> impl IntoView {
 
 #[component]
 pub fn DashboardPage() -> impl IntoView {
-    let main_cls = class(format!(
-        "padding: {p1} {p2} {p3}; max-width: {mw}; width: 100%; margin: 0 auto;",
-        p1 = space::D6,
-        p2 = space::D7,
-        p3 = space::D8,
-        mw = space::CONTENT_MAX_W,
+    view! {
+        <RequireAuth>
+            <AppShell title="Home">
+                <DashboardContent />
+            </AppShell>
+        </RequireAuth>
+    }
+}
+
+#[component]
+fn DashboardContent() -> impl IntoView {
+    let auth = use_context::<AuthState>().expect("AuthState context");
+
+    // Assembled from existing list endpoints; each starts `None` (loading) and is
+    // filled by a one-shot fetch. `RequireAuth` guarantees `auth.user` is present.
+    let requests: Loadable<Vec<RequestDto>> = RwSignal::new(None);
+    let tickets: Loadable<Vec<TicketDto>> = RwSignal::new(None);
+    let channels: Loadable<Vec<ChannelSummaryDto>> = RwSignal::new(None);
+    let groups: Loadable<Vec<GroupDto>> = RwSignal::new(None);
+
+    spawn_local(async move { requests.set(Some(home_api::my_requests().await)) });
+    spawn_local(async move { tickets.set(Some(home_api::my_tickets().await)) });
+    spawn_local(async move { channels.set(Some(home_api::channels().await)) });
+    spawn_local(async move { groups.set(Some(home_api::groups().await)) });
+
+    let greeting = auth.user.with(|u| {
+        u.as_ref().map_or_else(
+            || "Welcome back.".to_owned(),
+            |user| format!("Welcome back, {}.", first_name(&user.name)),
+        )
+    });
+
+    let grid = class(format!(
+        "display: grid; grid-template-columns: minmax(0, 1fr) 360px; \
+         gap: {g}; align-items: start;",
+        g = space::D5,
     ));
 
-    let side = view! { <SidebarNav /> }.into_any();
-    let main = view! {
-        <Topbar />
-        <main class=main_cls>
-            <Hero
-                greeting="Good morning."
-                subtitle="You have 3 requests waiting on your review and 1 ticket in triage for your group."
-            />
-            <StatTiles />
-        </main>
+    view! {
+        <Hero
+            greeting=greeting
+            subtitle="Here's what's happening across your workspace today."
+        />
+        <StatTiles requests=requests tickets=tickets channels=channels groups=groups />
+        <div class=grid>
+            <RequestsPanel requests=requests />
+            <Stack gap=Gap::Md>
+                <TicketsPanel tickets=tickets />
+                <ChannelsPanel channels=channels />
+            </Stack>
+        </div>
     }
-    .into_any();
+}
 
-    view! { <SidebarLayout side=side main=main /> }
+fn first_name(full: &str) -> String {
+    full.split_whitespace().next().unwrap_or(full).to_owned()
+}
+
+/// File access is via attachments inside requests; there is no standalone file
+/// browser (the backend exposes download-by-key only, no listing).
+#[component]
+pub fn FilesPage() -> impl IntoView {
+    view! {
+        <AuthedPage title="Files">
+            <EmptyState
+                icon=IconName::Folder
+                title="Files live with their work item"
+                description="Attachments are uploaded and downloaded from the request they belong to. \
+                             There's no separate file browser."
+            />
+        </AuthedPage>
+    }
+}
+
+/// Access control is resolved server-side against the OpenFGA org graph; there is
+/// no direct permission-editing surface in the UI.
+#[component]
+pub fn PermissionsPage() -> impl IntoView {
+    view! {
+        <AuthedPage title="Permissions">
+            <EmptyState
+                icon=IconName::Lock
+                title="Permissions follow the org graph"
+                description="Who can see and do what is derived from group roles and project \
+                             membership via OpenFGA, not edited directly here."
+            />
+        </AuthedPage>
+    }
 }

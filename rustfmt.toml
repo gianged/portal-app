@@ -1,0 +1,10 @@
+# Formatting is edition 2024. `cargo fmt` already infers the edition from each
+# crate's Cargo.toml; this pins it for direct `rustfmt` invocations too.
+edition = "2024"
+
+# The import style the codebase follows - one `use` per crate, grouped
+# std / external / local - is governed by these options, which are still
+# nightly-only in rustfmt. Apply them with `cargo +nightly fmt`:
+#
+#   group_imports = "StdExternalCrate"
+#   imports_granularity = "Crate"

@@ -129,7 +129,10 @@ async fn add_member(
 ) -> Result<Json<MembershipDto>, AppError> {
     let membership = state
         .group
-        .add_membership(auth.user_id, dto::add_membership_command(GroupId(id), &body))
+        .add_membership(
+            auth.user_id,
+            dto::add_membership_command(GroupId(id), &body),
+        )
         .await?;
     let user = resolve::user_summary(&state.user, &state.group, membership.user_id).await?;
     Ok(Json(dto::membership_dto(&membership, user)))

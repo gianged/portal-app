@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  # Also run on push to master so the shared cache is warm for PRs.
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # infrastructure uses sqlx compile-time query macros; the committed .sqlx cache
+  # lets every compile job build without a live database.
+  SQLX_OFFLINE: "true"
+
+jobs:
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy-native:
+    name: Clippy (native)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: native
+      # frontend is wasm-only (leptos_animate needs web_sys_unstable_apis); it is
+      # linted separately on the wasm target by the clippy-wasm job.
+      - run: cargo clippy --workspace --exclude frontend --all-targets -- -D warnings
+
+  clippy-wasm:
+    name: Clippy (frontend, wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm
+      # The frontend is still in development and carries expected dead-code
+      # warnings, so this job lints for hard errors without denying warnings yet.
+      # Tighten to `-- -D warnings` once the UI is feature-complete; clippy-native
+      # already denies warnings on the (complete) backend.
+      - run: cargo clippy -p frontend --target wasm32-unknown-unknown --all-targets
+
+  test:
+    name: Tests (native)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: native
+      # --lib --bins runs unit tests and compiles the binaries; the tests/ integration
+      # crates use testcontainers (Docker Postgres/Redis/Scylla/OpenFGA) and run
+      # out-of-band, not on the PR critical path.
+      - run: cargo test --workspace --exclude frontend --lib --bins --locked
+
+  msrv:
+    name: MSRV (1.94)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: msrv
+      # rust-toolchain.toml pins stable for developers; +1.94 overrides it so this
+      # job actually gates the declared MSRV. check-only, since lint output drifts
+      # between toolchain versions.
+      - run: cargo +1.94 check --workspace --exclude frontend --locked

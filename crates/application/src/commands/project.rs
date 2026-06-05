@@ -7,6 +7,7 @@ pub struct CreateProjectCommand {
     pub description: String,
 }
 
+/// `None` leaves the field unchanged.
 #[derive(Debug, Clone, Default)]
 pub struct UpdateProjectMetadataCommand {
     pub name: Option<String>,

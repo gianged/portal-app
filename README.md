@@ -43,7 +43,7 @@ portal-app/
 │   ├── shared/          DTOs + validation shared by backend and frontend (native + WASM).
 │   └── frontend/        Leptos SPA, built with Trunk to WebAssembly.
 ├── infra/               Docker Compose stack, schema files, OpenFGA model.
-├── migrations/          SQLx migrations (Postgres).
+├── migrations/          Reserved for incremental SQLx migrations (schema in infra/postgres/).
 ├── storage/uploads/     Local file uploads (gitignored).
 ├── scripts/             Dev helpers.
 └── e2e/                 Full-stack end-to-end browser tests.
@@ -55,6 +55,7 @@ The dependency graph points inward toward `domain` on the backend; `shared` is t
 
 - Rust 1.94 or newer (toolchain pinned in `rust-toolchain.toml` — `rustup` will install it automatically)
 - Docker + Docker Compose
+- [cargo-make](https://github.com/sagiegurari/cargo-make): `cargo install cargo-make --locked`
 - [Trunk](https://trunkrs.dev): `cargo install trunk`
 - [sqlx-cli](https://crates.io/crates/sqlx-cli): `cargo install sqlx-cli --no-default-features --features rustls,postgres`
 
@@ -64,21 +65,15 @@ The dependency graph points inward toward `domain` on the backend; `shared` is t
 # 1. Configure environment
 cp .env.example .env
 
-# 2. Start the development stack (Postgres, Redis, Cassandra, OpenFGA)
-docker compose -f infra/docker-compose.yml up -d
+# 2. Bring up the dependency stack and apply schemas — idempotent, safe to re-run
+#    (Postgres, Redis, ScyllaDB, OpenFGA). Wraps infra/scripts/init.sh.
+cargo make bootstrap
 
-# 3. Apply database migrations
-sqlx migrate run
-
-# 4. Run the backend
-cargo run --bin server
-
-# 5. In a separate terminal, run the frontend dev server
-cd crates/frontend
-trunk serve
+# 3. Run the backend, workers, and frontend dev server together
+cargo make run-all
 ```
 
-The Trunk dev server proxies HTTP and WebSocket calls to the backend; see `crates/frontend/Trunk.toml`.
+`cargo make run-all` runs the server, workers, and the Trunk dev server in parallel; use `cargo make run-server` / `run-workers` / `run-frontend` to run them individually, and `cargo make up` / `cargo make down` to start and stop just the dependency stack (no re-bootstrap). The Trunk dev server proxies HTTP and WebSocket calls to the backend; see `crates/frontend/Trunk.toml`.
 
 ## Development
 
@@ -123,7 +118,14 @@ Artifacts:
 
 ## Deployment
 
-TODO. Notes on hosting, container images, CI/CD pipeline, secrets management, and rollout strategy will live here.
+CI/CD runs on GitHub Actions. Every pull request and push to `master` is gated on
+formatting, Clippy (native crates plus the WASM frontend), tests, and an MSRV (1.94)
+check — see `.github/workflows/ci.yml`. Each PR surfaces these as status checks; merge
+once they pass. There is no automated versioning or release step.
+
+Container images build from the repo-root `Dockerfile` (server + workers) and
+`Dockerfile.frontend` (static assets served by nginx — see `infra/nginx/`). Hosting,
+secrets management, and rollout strategy are still to be decided.
 
 ## Configuration
 

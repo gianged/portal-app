@@ -4,7 +4,7 @@ Internal company portal for one organization (100–1000 users). Full-stack Rust
 
 ## Status
 
-The workspace is fully scaffolded — 7 crates, complete module trees, all dependencies wired in `Cargo.toml`. Most `.rs` files are still empty stubs. Implementation fills inward from `domain` outward; treat empty modules as not-yet-written, not broken.
+The backend is substantially implemented inward-out: `domain`, `application`, `infrastructure`, and `server` are largely complete, and `shared` DTOs/validation are mostly in place. `workers` (job handlers) and `frontend` (most feature modules) are still partial — scaffolded with a few flows live. Treat empty modules as not-yet-written, not broken.
 
 ## Toolchain
 
@@ -62,7 +62,7 @@ Why: keeps business rules unit-testable in isolation, lets the frontend type-che
 | Frontend dev server | `cd crates/frontend && trunk serve` |
 | Bring up dep stack | `docker compose -f infra/docker-compose.yml up -d` |
 
-`infra/` is currently empty; the compose file is pending. Database migrations live under `migrations/` and run via `sqlx migrate run`.
+`infra/` holds the Compose stack (`docker-compose.infra.yml` for the dependency services, `docker-compose.yml` for the full containerized stack), the Postgres and Scylla schema files, the OpenFGA model, and the bootstrap/backup scripts. Bring the stack up and apply schemas with `cargo make bootstrap` (idempotent). The Postgres schema is applied from `infra/postgres/10-init.sql` at bootstrap; `migrations/` is reserved for future incremental `sqlx migrate` steps.
 
 ## External services
 

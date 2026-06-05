@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO project.project_invites\n                 (id, project_id, invited_by_user_id, invited_group_id,\n                  responded_by_user_id, status, responded_at, created_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n               ON CONFLICT (id) DO UPDATE SET\n                 project_id           = EXCLUDED.project_id,\n                 invited_by_user_id   = EXCLUDED.invited_by_user_id,\n                 invited_group_id     = EXCLUDED.invited_group_id,\n                 responded_by_user_id = EXCLUDED.responded_by_user_id,\n                 status               = EXCLUDED.status,\n                 responded_at         = EXCLUDED.responded_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        {
+          "Custom": {
+            "name": "project.invite_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "accepted",
+                "declined",
+                "revoked"
+              ]
+            }
+          }
+        },
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5fc5735cf4e8529c2960be85c2cb09a379040a25fb6154a7eb96167a62e30165"
+}

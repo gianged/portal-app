@@ -2,6 +2,9 @@ use std::fmt;
 
 use domain::model::SystemRole;
 
+/// Input to create a user. `password` is **plaintext** — the service hashes it
+/// before persistence, so it must never be logged; the hand-written `Debug`
+/// below redacts it.
 #[derive(Clone)]
 pub struct CreateUserCommand {
     pub email: String,
@@ -25,6 +28,7 @@ impl fmt::Debug for CreateUserCommand {
     }
 }
 
+/// `None` leaves the field unchanged.
 #[derive(Debug, Clone, Default)]
 pub struct UpdateProfileCommand {
     pub full_name: Option<String>,

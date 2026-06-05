@@ -65,7 +65,13 @@ pub struct FakeUsers {
 #[async_trait]
 impl UserRepository for FakeUsers {
     async fn find_by_id(&self, id: UserId) -> Result<Option<User>, RepositoryError> {
-        Ok(self.users.lock().unwrap().iter().find(|u| u.id == id).cloned())
+        Ok(self
+            .users
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|u| u.id == id)
+            .cloned())
     }
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, RepositoryError> {
         Ok(self
@@ -97,7 +103,13 @@ pub struct FakeGroups {
 #[async_trait]
 impl GroupRepository for FakeGroups {
     async fn find_group(&self, id: GroupId) -> Result<Option<Group>, RepositoryError> {
-        Ok(self.groups.lock().unwrap().iter().find(|g| g.id == id).cloned())
+        Ok(self
+            .groups
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|g| g.id == id)
+            .cloned())
     }
     async fn list_all(&self) -> Result<Vec<Group>, RepositoryError> {
         Ok(self.groups.lock().unwrap().clone())
@@ -434,7 +446,12 @@ struct FakeAuthz;
 
 #[async_trait]
 impl AuthzClient for FakeAuthz {
-    async fn check(&self, _user: UserId, _relation: &str, _object: &str) -> Result<bool, AuthzError> {
+    async fn check(
+        &self,
+        _user: UserId,
+        _relation: &str,
+        _object: &str,
+    ) -> Result<bool, AuthzError> {
         Ok(false)
     }
     async fn write_tuple(&self, _s: &str, _r: &str, _o: &str) -> Result<(), AuthzError> {

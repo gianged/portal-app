@@ -7,4 +7,5 @@ pub mod notifications;
 pub mod projects;
 pub mod requests;
 pub mod tickets;
+pub mod ui;
 pub mod users;

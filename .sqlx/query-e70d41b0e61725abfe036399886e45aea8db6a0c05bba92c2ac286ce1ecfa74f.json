@@ -1,0 +1,191 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 id,\n                 project_id,\n                 creator_user_id,\n                 assignee_user_id,\n                 title,\n                 description,\n                 status   AS \"status: SqlRequestStatus\",\n                 priority AS \"priority: SqlRequestPriority\",\n                 due_at,\n                 created_at,\n                 updated_at\n               FROM project.requests\n               WHERE assignee_user_id = $1\n                 AND ($2::project.request_status IS NULL OR status = $2)\n               ORDER BY created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "project.requests",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "project_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "project.requests",
+            "name": "project_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "creator_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "project.requests",
+            "name": "creator_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "assignee_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "project.requests",
+            "name": "assignee_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "project.requests",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "project.requests",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "status: SqlRequestStatus",
+        "type_info": {
+          "Custom": {
+            "name": "project.request_status",
+            "kind": {
+              "Enum": [
+                "draft",
+                "submitted",
+                "assigned",
+                "in_progress",
+                "review",
+                "completed",
+                "cancelled"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "project.requests",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "priority: SqlRequestPriority",
+        "type_info": {
+          "Custom": {
+            "name": "project.request_priority",
+            "kind": {
+              "Enum": [
+                "low",
+                "normal",
+                "high",
+                "urgent"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "project.requests",
+            "name": "priority"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "due_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "project.requests",
+            "name": "due_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "project.requests",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "project.requests",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "project.request_status",
+            "kind": {
+              "Enum": [
+                "draft",
+                "submitted",
+                "assigned",
+                "in_progress",
+                "review",
+                "completed",
+                "cancelled"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "e70d41b0e61725abfe036399886e45aea8db6a0c05bba92c2ac286ce1ecfa74f"
+}

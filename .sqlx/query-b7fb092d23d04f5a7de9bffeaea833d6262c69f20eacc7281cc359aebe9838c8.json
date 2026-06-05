@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM notification.notifications\n               WHERE read_at IS NOT NULL AND read_at < $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b7fb092d23d04f5a7de9bffeaea833d6262c69f20eacc7281cc359aebe9838c8"
+}

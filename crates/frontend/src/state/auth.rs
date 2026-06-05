@@ -4,6 +4,9 @@ use shared::dto::user::UserDto;
 #[derive(Clone, Copy)]
 pub struct AuthState {
     pub user: RwSignal<Option<UserDto>>,
+    /// `false` until the initial `GET /auth/me` bootstrap resolves. Route guards
+    /// wait on this so a page refresh does not flash-redirect to `/login`.
+    pub loaded: RwSignal<bool>,
 }
 
 impl Default for AuthState {
@@ -17,6 +20,7 @@ impl AuthState {
     pub fn new() -> Self {
         Self {
             user: RwSignal::new(None),
+            loaded: RwSignal::new(false),
         }
     }
 

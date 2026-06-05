@@ -56,7 +56,12 @@ pub async fn per_user(
     next: Next,
 ) -> Result<Response, AppError> {
     if let Some(auth) = req.extensions().get::<AuthUser>().copied() {
-        enforce(&state, &format!("api:{}", auth.user_id.0), state.rate_limits.api).await?;
+        enforce(
+            &state,
+            &format!("api:{}", auth.user_id.0),
+            state.rate_limits.api,
+        )
+        .await?;
     }
     Ok(next.run(req).await)
 }

@@ -1,0 +1,8 @@
+# Developers build on the latest stable toolchain; CI gates the MSRV (1.94)
+# separately in `.github/workflows/ci.yml`. Declaring the wasm target and the
+# rustfmt/clippy components here lets `rustup` install everything the workspace
+# needs - native crates and the Leptos frontend - on first build.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

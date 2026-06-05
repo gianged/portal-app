@@ -2,8 +2,10 @@ use leptos::prelude::*;
 
 use crate::theme::{class, color, radius, space, typography};
 
+/// Click-to-toggle popover. The `trigger` is rendered inline; clicking it shows
+/// the menu (this component's children) anchored to the trigger's bottom-right.
 #[component]
-pub fn Dropdown(trigger: ChildrenFn, menu: ChildrenFn) -> impl IntoView {
+pub fn Dropdown(trigger: AnyView, children: ChildrenFn) -> impl IntoView {
     let open = RwSignal::new(false);
 
     let wrap = class("position: relative; display: inline-block;");
@@ -21,9 +23,9 @@ pub fn Dropdown(trigger: ChildrenFn, menu: ChildrenFn) -> impl IntoView {
 
     view! {
         <div class=wrap>
-            <div on:click=move |_| open.update(|v| *v = !*v)>{trigger()}</div>
+            <div on:click=move |_| open.update(|v| *v = !*v)>{trigger}</div>
             <Show when=move || open.get() fallback=|| ()>
-                <div class=menu_cls.clone()>{menu()}</div>
+                <div class=menu_cls.clone()>{children()}</div>
             </Show>
         </div>
     }
