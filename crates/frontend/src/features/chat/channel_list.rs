@@ -20,7 +20,9 @@ use crate::util::load::{Loadable, load, note};
 
 fn channel_id(c: &ChannelDto) -> ChannelId {
     match c {
-        ChannelDto::Group { id, .. } | ChannelDto::General { id } | ChannelDto::Direct { id, .. } => *id,
+        ChannelDto::Group { id, .. }
+        | ChannelDto::General { id }
+        | ChannelDto::Direct { id, .. } => *id,
     }
 }
 
@@ -49,9 +51,10 @@ pub fn ChannelList(selected: RwSignal<Option<ChannelId>>) -> impl IntoView {
             return;
         }
         if let Some(Ok(list)) = channels.get()
-            && let Some(first) = list.first() {
-                selected.set(Some(first.id));
-            }
+            && let Some(first) = list.first()
+        {
+            selected.set(Some(first.id));
+        }
     });
 
     let open_dm = Callback::new(move |_| dm_open.set(true));
@@ -64,7 +67,10 @@ pub fn ChannelList(selected: RwSignal<Option<ChannelId>>) -> impl IntoView {
         "display: flex; align-items: center; justify-content: space-between; padding: {p};",
         p = space::D3,
     ));
-    let list_cls = class(format!("display: flex; flex-direction: column; gap: 1px; padding: 0 {p};", p = space::D2));
+    let list_cls = class(format!(
+        "display: flex; flex-direction: column; gap: 1px; padding: 0 {p};",
+        p = space::D2
+    ));
 
     view! {
         <Stack gap=Gap::Xs>
@@ -114,7 +120,9 @@ fn channel_row(c: ChannelSummaryDto, selected: RwSignal<Option<ChannelId>>) -> i
         a = color::ACCENT,
     ));
 
-    let grow = class("flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;");
+    let grow = class(
+        "flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
+    );
     let dot = class(format!(
         "width: 7px; height: 7px; border-radius: 50%; background: {a}; flex-shrink: 0;",
         a = color::ACCENT,

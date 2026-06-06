@@ -35,7 +35,9 @@ use crate::primitives::table::{Table, TableToolbar, TableWrap};
 use crate::primitives::textarea::Textarea;
 use crate::state::toast::ToastState;
 use crate::theme::{class, color, space, typography};
-use crate::util::format::{relative_time, ticket_priority_variant, ticket_status_variant, tone_for};
+use crate::util::format::{
+    relative_time, ticket_priority_variant, ticket_status_variant, tone_for,
+};
 use crate::util::load::{Loadable, load, note};
 
 fn category_wire(c: TicketCategory) -> &'static str {
@@ -168,7 +170,10 @@ fn ticket_row(t: TicketDto) -> impl IntoView {
         fw = typography::WEIGHT_MEDIUM,
         a = color::ACCENT,
     ));
-    let wrap = class(format!("display: inline-flex; align-items: center; gap: {g};", g = space::D2));
+    let wrap = class(format!(
+        "display: inline-flex; align-items: center; gap: {g};",
+        g = space::D2
+    ));
     view! {
         <tr>
             <td><span class="mono cell-muted">{id_label}</span></td>
@@ -326,7 +331,9 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
     });
 
     let run = move |action: TicketAction| {
-        let Some(tid) = id.get_untracked() else { return };
+        let Some(tid) = id.get_untracked() else {
+            return;
+        };
         spawn_local(async move {
             match action_future(action, tid).await {
                 Ok(_) => {
@@ -338,10 +345,14 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
         });
     };
 
-    let confirm_triage = Callback::new(move |_| {
-        let Some(tid) = id.get_untracked() else { return };
+    let confirm_triage = Callback::new(move |()| {
+        let Some(tid) = id.get_untracked() else {
+            return;
+        };
         triage_open.set(false);
-        let req = TriageTicketRequest { priority: triage_priority.get_untracked() };
+        let req = TriageTicketRequest {
+            priority: triage_priority.get_untracked(),
+        };
         spawn_local(async move {
             match api::triage(tid, &req).await {
                 Ok(_) => {
@@ -353,15 +364,19 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
         });
     });
 
-    let confirm_assign = Callback::new(move |_| {
+    let confirm_assign = Callback::new(move |()| {
         let Some(uid) = assign_target.get_untracked() else {
             toast.error("Pick someone to assign.");
             return;
         };
-        let Some(tid) = id.get_untracked() else { return };
+        let Some(tid) = id.get_untracked() else {
+            return;
+        };
         assign_open.set(false);
         spawn_local(async move {
-            let req = AssignTicketRequest { assignee_user_id: uid };
+            let req = AssignTicketRequest {
+                assignee_user_id: uid,
+            };
             match api::assign(tid, &req).await {
                 Ok(_) => {
                     toast.success("Ticket assigned");
@@ -425,16 +440,22 @@ fn lifecycle_bar(
 ) -> AnyView {
     let btn = move |label: &'static str, variant: ButtonVariant, action: TicketAction| {
         let cb = Callback::new(move |_| run(action));
-        view! { <Button variant=variant size=ButtonSize::Sm on_click=cb>{label}</Button> }.into_any()
+        view! { <Button variant=variant size=ButtonSize::Sm on_click=cb>{label}</Button> }
+            .into_any()
     };
-    let triage_btn = move || view! {
+    let triage_btn = move || {
+        view! {
         <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_triage>"Triage"</Button>
-    }.into_any();
-    let assign_btn = move || view! {
-        <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_assign>
-            <Icon name=IconName::Users size=14 /> " Assign"
-        </Button>
-    }.into_any();
+    }.into_any()
+    };
+    let assign_btn = move || {
+        view! {
+            <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_assign>
+                <Icon name=IconName::Users size=14 /> " Assign"
+            </Button>
+        }
+        .into_any()
+    };
 
     let buttons: Vec<AnyView> = match status {
         TicketStatus::Open | TicketStatus::Reopened => vec![triage_btn()],
@@ -443,12 +464,24 @@ fn lifecycle_bar(
             btn("Start work", ButtonVariant::Primary, TicketAction::Start),
             assign_btn(),
         ],
-        TicketStatus::InProgress => vec![btn("Resolve", ButtonVariant::Primary, TicketAction::Resolve)],
+        TicketStatus::InProgress => vec![btn(
+            "Resolve",
+            ButtonVariant::Primary,
+            TicketAction::Resolve,
+        )],
         TicketStatus::Resolved => vec![
             btn("Close", ButtonVariant::Primary, TicketAction::Close),
-            btn("Reject resolution", ButtonVariant::Secondary, TicketAction::Reject),
+            btn(
+                "Reject resolution",
+                ButtonVariant::Secondary,
+                TicketAction::Reject,
+            ),
         ],
-        TicketStatus::Closed => vec![btn("Reopen", ButtonVariant::Secondary, TicketAction::Reopen)],
+        TicketStatus::Closed => vec![btn(
+            "Reopen",
+            ButtonVariant::Secondary,
+            TicketAction::Reopen,
+        )],
     };
 
     if buttons.is_empty() {

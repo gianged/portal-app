@@ -198,3 +198,95 @@ pub struct RequestAttachment {
     pub storage_key: String,
     pub created_at: OffsetDateTime,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::Duration;
+    use uuid::Uuid;
+
+    fn request(status: RequestStatus) -> Request {
+        let t0 = OffsetDateTime::UNIX_EPOCH;
+        Request {
+            id: RequestId(Uuid::nil()),
+            project_id: ProjectId(Uuid::nil()),
+            creator_user_id: UserId(Uuid::nil()),
+            assignee_user_id: None,
+            title: "Provision laptop".to_owned(),
+            description: String::new(),
+            status,
+            priority: RequestPriority::Normal,
+            due_at: None,
+            created_at: t0,
+            updated_at: t0,
+        }
+    }
+
+    #[test]
+    fn full_lifecycle_happy_path() {
+        assert_eq!(
+            RequestStatus::Draft.try_submit().unwrap(),
+            RequestStatus::Submitted
+        );
+        assert_eq!(
+            RequestStatus::Submitted.try_assign().unwrap(),
+            RequestStatus::Assigned
+        );
+        assert_eq!(
+            RequestStatus::Assigned.try_start().unwrap(),
+            RequestStatus::InProgress
+        );
+        assert_eq!(
+            RequestStatus::InProgress.try_review().unwrap(),
+            RequestStatus::Review
+        );
+        assert_eq!(
+            RequestStatus::Review.try_complete().unwrap(),
+            RequestStatus::Completed
+        );
+    }
+
+    #[test]
+    fn illegal_jumps_are_rejected() {
+        assert!(RequestStatus::Draft.try_assign().is_err());
+        assert!(RequestStatus::Draft.try_start().is_err());
+        assert!(RequestStatus::Submitted.try_start().is_err());
+        assert!(RequestStatus::Assigned.try_review().is_err());
+        assert!(RequestStatus::Completed.try_submit().is_err());
+    }
+
+    #[test]
+    fn reject_returns_review_to_in_progress() {
+        assert_eq!(
+            RequestStatus::Review.try_reject().unwrap(),
+            RequestStatus::InProgress
+        );
+        assert!(RequestStatus::InProgress.try_reject().is_err());
+    }
+
+    #[test]
+    fn cancel_allowed_pre_terminal_only() {
+        for s in [
+            RequestStatus::Draft,
+            RequestStatus::Submitted,
+            RequestStatus::Assigned,
+            RequestStatus::InProgress,
+            RequestStatus::Review,
+        ] {
+            assert_eq!(s.try_cancel().unwrap(), RequestStatus::Cancelled);
+        }
+        assert!(RequestStatus::Completed.try_cancel().is_err());
+        assert!(RequestStatus::Cancelled.try_cancel().is_err());
+    }
+
+    #[test]
+    fn assign_populates_assignee() {
+        let assignee = UserId(Uuid::from_u128(7));
+        let t1 = OffsetDateTime::UNIX_EPOCH + Duration::hours(1);
+        let mut r = request(RequestStatus::Submitted);
+        r.assign(assignee, t1).unwrap();
+        assert_eq!(r.status, RequestStatus::Assigned);
+        assert_eq!(r.assignee_user_id, Some(assignee));
+        assert_eq!(r.updated_at, t1);
+    }
+}

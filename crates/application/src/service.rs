@@ -1,4 +1,5 @@
 pub mod announcement;
+pub mod audit;
 pub mod chat;
 pub mod group;
 pub mod maintenance;
@@ -9,6 +10,7 @@ pub mod ticket;
 pub mod user;
 
 pub use announcement::AnnouncementService;
+pub use audit::{AuditProjector, AuditService};
 pub use chat::{ChannelOverview, ChatService};
 pub use group::GroupService;
 pub use maintenance::MaintenanceService;

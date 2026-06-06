@@ -10,7 +10,7 @@
 use std::sync::{Arc, Mutex};
 
 use application::{
-    EventBus, GroupService, Permissions, ProjectService, TicketService,
+    ChatService, Error, EventBus, GroupService, Permissions, ProjectService, TicketService,
     commands::{
         group::{AddMembershipCommand, CreateGroupCommand},
         project::CreateProjectCommand,
@@ -27,7 +27,8 @@ use domain::{
     model::{
         Announcement, Channel, ChannelKind, ChannelMembership, Group, GroupKind, GroupRole,
         Membership, Message, Project, ProjectCollaborator, ProjectInvite, Request,
-        RequestAttachment, RequestStatus, SystemRole, Ticket, TicketCategory, User, UserStatus,
+        RequestAttachment, RequestStatus, SystemRole, Ticket, TicketCategory, TicketStatus, User,
+        UserStatus,
     },
     ports::{
         authz_client::{AuthzClient, RelationTuple},
@@ -39,7 +40,7 @@ use domain::{
         UserRepository,
     },
 };
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 // --- recording fake authz client ----------------------------------------------
@@ -324,12 +325,20 @@ impl RequestRepository for FakeRequests {
 }
 
 #[derive(Default)]
-struct FakeTickets;
+struct FakeTickets {
+    tickets: Mutex<Vec<Ticket>>,
+}
 
 #[async_trait]
 impl TicketRepository for FakeTickets {
-    async fn find_by_id(&self, _id: TicketId) -> Result<Option<Ticket>, RepositoryError> {
-        Ok(None)
+    async fn find_by_id(&self, id: TicketId) -> Result<Option<Ticket>, RepositoryError> {
+        Ok(self
+            .tickets
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|t| t.id == id)
+            .cloned())
     }
     async fn list_open_for_triage(&self, _limit: u32) -> Result<Vec<Ticket>, RepositoryError> {
         Ok(Vec::new())
@@ -340,7 +349,13 @@ impl TicketRepository for FakeTickets {
     async fn list_for_requester(&self, _requester: UserId) -> Result<Vec<Ticket>, RepositoryError> {
         Ok(Vec::new())
     }
-    async fn save(&self, _ticket: &Ticket) -> Result<(), RepositoryError> {
+    async fn save(&self, ticket: &Ticket) -> Result<(), RepositoryError> {
+        let mut v = self.tickets.lock().unwrap();
+        if let Some(existing) = v.iter_mut().find(|t| t.id == ticket.id) {
+            *existing = ticket.clone();
+        } else {
+            v.push(ticket.clone());
+        }
         Ok(())
     }
 }
@@ -512,7 +527,11 @@ fn membership(group_id: GroupId, user_id: UserId, role: GroupRole) -> Membership
 }
 
 fn events() -> Arc<EventBus> {
-    Arc::new(EventBus::new(Arc::new(FakePublisher), Arc::new(FakeJobs)))
+    Arc::new(EventBus::new(
+        Arc::new(FakePublisher),
+        Arc::new(FakeJobs),
+        Arc::new(FakeJobs),
+    ))
 }
 
 fn has(writes: &[Tuple], subject: &str, relation: &str, object: &str) -> bool {
@@ -586,7 +605,7 @@ async fn raise_ticket_writes_requester_it_group_and_company() {
 
     let authz = Arc::new(FakeAuthz::default());
     let perms = Arc::new(Permissions::new(users, groups, authz.clone()));
-    let svc = TicketService::new(Arc::new(FakeTickets), perms, events());
+    let svc = TicketService::new(Arc::new(FakeTickets::default()), perms, events());
 
     let ticket = svc
         .raise(
@@ -727,5 +746,227 @@ async fn add_member_writes_direct_member_not_computed_member() {
     assert!(
         !writes.iter().any(|(_, r, _)| r == "member"),
         "must NOT write the computed `member` relation (OpenFGA would reject it): {writes:?}"
+    );
+}
+
+// --- cross-cutting invariant tests ---------------------------------------------
+//
+// These exercise the application services' enforcement of the documented domain
+// invariants (CLAUDE.md), using the same in-memory fakes as the tuple-write tests.
+
+fn closed_ticket(requester: UserId, closed_at: OffsetDateTime) -> Ticket {
+    Ticket {
+        id: TicketId(Uuid::now_v7()),
+        requester_user_id: requester,
+        assignee_user_id: None,
+        title: "broken".into(),
+        description: String::new(),
+        status: TicketStatus::Closed,
+        priority: None,
+        category: TicketCategory::Hardware,
+        triaged_at: Some(closed_at),
+        resolved_at: Some(closed_at),
+        closed_at: Some(closed_at),
+        created_at: closed_at,
+        updated_at: closed_at,
+    }
+}
+
+/// Invariant 1: a group has exactly one leader — a second leader is rejected.
+#[tokio::test]
+async fn invariant_group_has_one_leader() {
+    let hr = user(Some(SystemRole::Hr));
+    let existing_leader = user(None);
+    let newcomer = user(None);
+    let g = group(GroupKind::Standard);
+
+    let users = Arc::new(FakeUsers::default());
+    users.users.lock().unwrap().push(hr.clone());
+    let groups = Arc::new(FakeGroups::default());
+    groups.groups.lock().unwrap().push(g.clone());
+    groups.memberships.lock().unwrap().push(membership(
+        g.id,
+        existing_leader.id,
+        GroupRole::Leader,
+    ));
+
+    let authz = Arc::new(FakeAuthz::default());
+    let perms = Arc::new(Permissions::new(users, groups.clone(), authz));
+    let svc = GroupService::new(
+        groups,
+        Arc::new(FakeProjects),
+        Arc::new(FakeChats),
+        perms,
+        events(),
+    );
+
+    let err = svc
+        .add_membership(
+            hr.id,
+            AddMembershipCommand {
+                group_id: g.id,
+                user_id: newcomer.id,
+                role: GroupRole::Leader,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Conflict(ref m) if m == "group_already_has_leader"),
+        "a second leader must be rejected, got {err:?}"
+    );
+}
+
+/// Invariant 3: one role per user per group — re-adding an active member is rejected.
+#[tokio::test]
+async fn invariant_one_membership_per_user_per_group() {
+    let hr = user(Some(SystemRole::Hr));
+    let member = user(None);
+    let g = group(GroupKind::Standard);
+
+    let users = Arc::new(FakeUsers::default());
+    users.users.lock().unwrap().push(hr.clone());
+    let groups = Arc::new(FakeGroups::default());
+    groups.groups.lock().unwrap().push(g.clone());
+    groups
+        .memberships
+        .lock()
+        .unwrap()
+        .push(membership(g.id, member.id, GroupRole::Member));
+
+    let authz = Arc::new(FakeAuthz::default());
+    let perms = Arc::new(Permissions::new(users, groups.clone(), authz));
+    let svc = GroupService::new(
+        groups,
+        Arc::new(FakeProjects),
+        Arc::new(FakeChats),
+        perms,
+        events(),
+    );
+
+    let err = svc
+        .add_membership(
+            hr.id,
+            AddMembershipCommand {
+                group_id: g.id,
+                user_id: member.id,
+                role: GroupRole::SubLeader,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Conflict(ref m) if m == "user_already_member"),
+        "a duplicate membership must be rejected, got {err:?}"
+    );
+}
+
+/// Invariant 7: direct messages are private even from Directors — opening a DM
+/// writes NO authz tuples, so there is no `viewer` relation a Director could
+/// traverse.
+#[tokio::test]
+async fn invariant_direct_messages_write_no_authz_tuples() {
+    let actor = user(None);
+    let other = user(None);
+
+    let users = Arc::new(FakeUsers::default());
+    users.users.lock().unwrap().push(actor.clone());
+    users.users.lock().unwrap().push(other.clone());
+
+    let authz = Arc::new(FakeAuthz::default());
+    let perms = Arc::new(Permissions::new(
+        users.clone(),
+        Arc::new(FakeGroups::default()),
+        authz.clone(),
+    ));
+    let svc = ChatService::new(Arc::new(FakeChats), users, perms, events());
+
+    svc.open_direct_channel(actor.id, other.id)
+        .await
+        .expect("open dm");
+
+    assert!(
+        authz.writes().is_empty(),
+        "a direct channel must write no authz tuples (no Director backdoor): {:?}",
+        authz.writes()
+    );
+}
+
+/// DM guardrails: cannot DM yourself, cannot DM a deactivated user.
+#[tokio::test]
+async fn direct_message_validation() {
+    let actor = user(None);
+    let mut inactive = user(None);
+    inactive.status = UserStatus::Deactivated;
+
+    let users = Arc::new(FakeUsers::default());
+    users.users.lock().unwrap().push(actor.clone());
+    users.users.lock().unwrap().push(inactive.clone());
+    let authz = Arc::new(FakeAuthz::default());
+    let perms = Arc::new(Permissions::new(
+        users.clone(),
+        Arc::new(FakeGroups::default()),
+        authz,
+    ));
+    let svc = ChatService::new(Arc::new(FakeChats), users, perms, events());
+
+    let self_err = svc
+        .open_direct_channel(actor.id, actor.id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(self_err, Error::Validation(ref m) if m == "cannot_dm_self"),
+        "got {self_err:?}"
+    );
+
+    let inactive_err = svc
+        .open_direct_channel(actor.id, inactive.id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(inactive_err, Error::Conflict(ref m) if m == "recipient_not_active"),
+        "got {inactive_err:?}"
+    );
+}
+
+/// Ticket reopen is bounded to a 7-day window after closing.
+#[tokio::test]
+async fn invariant_ticket_reopen_window() {
+    let requester = user(None);
+    let users = Arc::new(FakeUsers::default());
+    users.users.lock().unwrap().push(requester.clone());
+    let authz = Arc::new(FakeAuthz::default());
+    let perms = Arc::new(Permissions::new(
+        users,
+        Arc::new(FakeGroups::default()),
+        authz,
+    ));
+    let tickets = Arc::new(FakeTickets::default());
+    let now = OffsetDateTime::now_utc();
+
+    // Closed 6 days ago — inside the window, reopen succeeds.
+    let t = closed_ticket(requester.id, now - Duration::days(6));
+    let ticket_id = t.id;
+    tickets.tickets.lock().unwrap().push(t);
+
+    let svc = TicketService::new(tickets.clone(), perms, events());
+    let reopened = svc
+        .reopen(requester.id, ticket_id)
+        .await
+        .expect("reopen within window");
+    assert_eq!(reopened.status, TicketStatus::Reopened);
+
+    // Move the same ticket's close date to 8 days ago — past the window.
+    {
+        let mut v = tickets.tickets.lock().unwrap();
+        let stored = v.iter_mut().find(|x| x.id == ticket_id).unwrap();
+        stored.status = TicketStatus::Closed;
+        stored.closed_at = Some(now - Duration::days(8));
+        stored.resolved_at = Some(now - Duration::days(8));
+    }
+    let err = svc.reopen(requester.id, ticket_id).await.unwrap_err();
+    assert!(
+        matches!(err, Error::Conflict(ref m) if m == "reopen_window_expired"),
+        "an expired reopen window must be rejected, got {err:?}"
     );
 }

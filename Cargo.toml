@@ -23,7 +23,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 argon2 = "0.5"
-password-hash = { version = "0.5", features = ["getrandom"] }
+password-hash = { version = "0", features = ["getrandom"] }
+hmac = "0.13"
+sha2 = "0.11"
 axum = { version = "0.8", features = ["ws", "macros", "multipart"] }
 axum-extra = { version = "0.12", features = ["cookie"] }
 jsonwebtoken = { version = "10", default-features = false, features = ["hmac", "rust_crypto"] }
@@ -32,15 +34,11 @@ tower-http = { version = "0.6", features = ["trace", "cors", "limit"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
 redis = { version = "1", features = ["tokio-comp", "connection-manager"] }
 scylla = { version = "1", features = ["time-03", "rustls-023"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 futures = "0.3"
 dotenvy = "0.15"
 
 # workers
-# 0.7 is the latest stable apalis line. apalis-redis pulls its own redis 0.32
-# transitively; that coexists with the workspace's redis 1.x (the two are used
-# independently — apalis-redis encapsulates its client, and our JobQueue port is
-# byte-based), so the versions need not unify.
 apalis = "0.7"
 apalis-redis = "0.7"
 

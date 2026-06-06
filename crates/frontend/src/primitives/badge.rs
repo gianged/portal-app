@@ -44,8 +44,9 @@ pub fn Badge(
         fw = typography::WEIGHT_MEDIUM,
         r = radius::PILL,
     ));
-    let dot_cls =
-        class("width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0;");
+    let dot_cls = class(
+        "width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0;",
+    );
     view! {
         <span class=cls>
             {dot.then(|| view! { <span class=dot_cls.clone()></span> })}

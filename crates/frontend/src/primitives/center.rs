@@ -9,9 +9,7 @@ pub fn Center(
 ) -> impl IntoView {
     let min_height = min_height.unwrap_or_else(|| "100vh".to_string());
     let cls = class(format!(
-        "display: flex; align-items: center; justify-content: center; min-height: {h}; padding: {p};",
-        h = min_height,
-        p = D6,
+        "display: flex; align-items: center; justify-content: center; min-height: {min_height}; padding: {D6};",
     ));
     view! { <div class=cls>{children()}</div> }
 }

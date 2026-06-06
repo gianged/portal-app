@@ -9,7 +9,7 @@ pub use error::{Error, Result};
 pub use events::{DomainEvent, EventBus};
 pub use permissions::Permissions;
 pub use service::{
-    AnnouncementService, ChannelOverview, ChatService, GroupService, MaintenanceService,
-    NotificationFanout, NotificationService, ProjectService, RequestService, TicketService,
-    UserService,
+    AnnouncementService, AuditProjector, AuditService, ChannelOverview, ChatService, GroupService,
+    MaintenanceService, NotificationFanout, NotificationService, ProjectService, RequestService,
+    TicketService, UserService,
 };

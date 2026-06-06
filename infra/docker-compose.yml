@@ -117,8 +117,12 @@ services:
         condition: service_healthy
       openfga:
         condition: service_started
-    # No healthcheck yet — server::main is empty. Add a /health route and a
-    # HEALTHCHECK directive in the same change that implements startup.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   # ----------------------------------------------------------------- Workers
   workers:

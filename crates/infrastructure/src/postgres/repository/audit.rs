@@ -117,4 +117,36 @@ impl AuditRepository for PgAuditRepo {
         .map_err(map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
+
+    async fn list_recent(
+        &self,
+        limit: u32,
+        before: Option<OffsetDateTime>,
+    ) -> Result<Vec<AuditLog>, RepositoryError> {
+        // Global admin feed, backed by idx_audit_log_occurred. A NULL `before`
+        // (the first page) matches every row; otherwise page backwards by time.
+        let rows = sqlx::query_as!(
+            AuditRow,
+            r#"SELECT
+                 id,
+                 actor_user_id,
+                 action AS "action: SqlAuditAction",
+                 entity_schema,
+                 entity_table,
+                 entity_id,
+                 payload_before::text AS "payload_before?: String",
+                 payload_after::text  AS "payload_after?: String",
+                 occurred_at
+               FROM audit.audit_log
+               WHERE $1::timestamptz IS NULL OR occurred_at < $1
+               ORDER BY occurred_at DESC
+               LIMIT $2"#,
+            before,
+            i64::from(limit),
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_pg_error)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
 }

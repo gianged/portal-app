@@ -72,6 +72,10 @@ CREATE TYPE notification.notification_kind AS ENUM (
     'request_assigned',
     'request_status_change',
     'project_invite',
+    'ticket_assigned',
+    'ticket_status_change',
+    'project_invite_response',
+    'ticket_raised',
     'system'
 );
 
@@ -605,6 +609,10 @@ CREATE INDEX idx_audit_log_entity
 CREATE INDEX idx_audit_log_actor_user_id_occurred
     ON audit.audit_log (actor_user_id, occurred_at DESC)
     WHERE actor_user_id IS NOT NULL;
+
+-- Global admin feed (list_recent): newest-first scan / occurred_at cursor.
+CREATE INDEX idx_audit_log_occurred
+    ON audit.audit_log (occurred_at DESC);
 
 
 -- -----------------------------------------------------------------------------

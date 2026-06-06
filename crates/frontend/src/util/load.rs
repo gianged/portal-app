@@ -22,13 +22,19 @@ where
     Fut: Future<Output = Result<T, FrontendError>> + 'static,
 {
     signal.set(None);
-    spawn_local(async move { signal.set(Some(fut.await)); });
+    spawn_local(async move {
+        signal.set(Some(fut.await));
+    });
 }
 
 /// A small inline status line (loading / error / empty).
 #[must_use]
 pub fn note(text: &str, danger: bool) -> AnyView {
-    let c = if danger { color::DANGER } else { color::TEXT_MUTED };
+    let c = if danger {
+        color::DANGER
+    } else {
+        color::TEXT_MUTED
+    };
     let cls = class(format!(
         "padding: {p}; font-family: {ff}; font-size: {fs}; color: {c};",
         p = space::D5,

@@ -55,9 +55,10 @@ pub fn AnnouncementsIndex() -> impl IntoView {
             return;
         }
         if let Some(Ok(list)) = channels.get()
-            && let Some(c) = list.iter().find(|c| c.kind == ChannelKind::General) {
-                channel.set(Some(c.id));
-            }
+            && let Some(c) = list.iter().find(|c| c.kind == ChannelKind::General)
+        {
+            channel.set(Some(c.id));
+        }
     });
 
     Effect::new(move |_| {
@@ -67,8 +68,10 @@ pub fn AnnouncementsIndex() -> impl IntoView {
         }
     });
 
-    let on_channel = Callback::new(move |s: String| channel.set(Uuid::parse_str(&s).ok().map(ChannelId)));
-    let channel_value = Signal::derive(move || channel.get().map(|c| c.0.to_string()).unwrap_or_default());
+    let on_channel =
+        Callback::new(move |s: String| channel.set(Uuid::parse_str(&s).ok().map(ChannelId)));
+    let channel_value =
+        Signal::derive(move || channel.get().map(|c| c.0.to_string()).unwrap_or_default());
     let open_post = Callback::new(move |_| post_open.set(true));
     let posted = Callback::new(move |()| reload.update(|n| *n += 1));
 
@@ -155,7 +158,10 @@ fn announcement_card(
     let body = a.body.clone();
     let when = relative_time(a.created_at);
     let edited = a.edited_at.is_some();
-    let remaining = a.editable.then(|| remaining_edit_minutes(a.created_at)).flatten();
+    let remaining = a
+        .editable
+        .then(|| remaining_edit_minutes(a.created_at))
+        .flatten();
     let cid = a.channel_id;
     let mid = a.id;
 
@@ -235,7 +241,10 @@ fn PostAnnouncementDialog(
             return;
         }
         submitting.set(true);
-        let req = PostAnnouncementRequest { channel_id: cid, body: b };
+        let req = PostAnnouncementRequest {
+            channel_id: cid,
+            body: b,
+        };
         spawn_local(async move {
             match api::post(&req).await {
                 Ok(_) => {

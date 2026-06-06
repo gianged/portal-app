@@ -32,10 +32,12 @@ pub fn Dialog(
     // Close on Escape while open. Registered once for the component's lifetime;
     // reads `open` untracked since the handler is not a reactive context.
     let handle = window_event_listener(leptos::ev::keydown, move |ev: KeyboardEvent| {
-        if open.get_untracked() && ev.key() == "Escape"
-            && let Some(cb) = on_close {
-                cb.run(());
-            }
+        if open.get_untracked()
+            && ev.key() == "Escape"
+            && let Some(cb) = on_close
+        {
+            cb.run(());
+        }
     });
     on_cleanup(move || handle.remove());
 

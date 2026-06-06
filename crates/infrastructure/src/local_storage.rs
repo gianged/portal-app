@@ -1,4 +1,5 @@
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -11,21 +12,25 @@ use domain::{
     ports::file_storage::{FileStorage, StorageObject},
 };
 
+use crate::signed_url::SignedUrl;
+
 /// Local-filesystem implementation of [`FileStorage`]. Objects are written
 /// under `root` (configured as `STORAGE_ROOT`). Keys are validated to stay
 /// within the root so a crafted key like `../../etc/passwd` cannot escape it.
 pub struct LocalStorage {
     root: PathBuf,
     public_base: String,
+    signer: Arc<SignedUrl>,
 }
 
 impl LocalStorage {
     #[must_use]
-    pub fn new(root: PathBuf, public_base: &str) -> Self {
+    pub fn new(root: PathBuf, public_base: &str, signer: Arc<SignedUrl>) -> Self {
         Self {
             root,
             // Trailing slash normalised away so presign URLs join cleanly.
             public_base: public_base.trim_end_matches('/').to_string(),
+            signer,
         }
     }
 
@@ -104,13 +109,17 @@ impl FileStorage for LocalStorage {
         }
     }
 
-    async fn presign_get(&self, key: &str, _ttl: Duration) -> Result<String, StorageError> {
-        // Local storage has no real presigning; return a direct URL routed
-        // through the (future) file-serving endpoint. The key is still validated
-        // so the no-escape contract matches the other methods. TODO: sign with
-        // an expiry once the file route exists; `_ttl` is accepted but unenforced.
+    async fn presign_get(&self, key: &str, ttl: Duration) -> Result<String, StorageError> {
+        // Validate the key (same no-escape contract as the other methods), then
+        // emit a signed, time-limited URL through the file-serving endpoint. The
+        // signature binds the key to its expiry; the server verifies it before
+        // serving, so following the link needs no session.
         self.resolve(key)?;
-        Ok(format!("{}/files/{key}", self.public_base))
+        let (exp, sig) = self.signer.sign(key, ttl, OffsetDateTime::now_utc());
+        Ok(format!(
+            "{}/files/{key}?exp={exp}&sig={sig}",
+            self.public_base
+        ))
     }
 
     async fn list(&self, prefix: &str) -> Result<Vec<StorageObject>, StorageError> {

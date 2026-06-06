@@ -2,6 +2,8 @@
 //! `GET /requests/{id}` returns the request plus its attachments, and
 //! `PATCH /requests/{id}` edits metadata (creator-only, before work starts).
 
+use std::time::Duration;
+
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
@@ -14,6 +16,7 @@ use application::commands::request::AddAttachmentCommand;
 use domain::{
     ids::{ProjectId, RequestId, UserId},
     model::Request,
+    ports::file_storage::FileStorage,
 };
 use shared::dto::request::{
     AssignRequestRequest, CreateRequestRequest, RequestAttachmentDto, RequestDetailDto, RequestDto,
@@ -25,6 +28,9 @@ use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser
 
 /// Upload cap for a single attachment (the default axum body limit is 2 MiB).
 const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
+
+/// Lifetime of a presigned attachment download URL handed to clients.
+const DOWNLOAD_URL_TTL: Duration = Duration::from_secs(3600);
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -104,12 +110,19 @@ async fn detail(
 
     let uploader_ids: Vec<UserId> = attachments.iter().map(|a| a.uploaded_by_user_id).collect();
     let users = resolve::user_map(&state.user, &state.group, uploader_ids).await?;
-    let attachment_dtos = attachments
-        .iter()
-        .map(|a| {
-            dto::request_attachment_dto(a, resolve::summary_from(&users, a.uploaded_by_user_id))
-        })
-        .collect();
+    let mut attachment_dtos = Vec::with_capacity(attachments.len());
+    for a in &attachments {
+        let download_url = state
+            .storage
+            .presign_get(&a.storage_key, DOWNLOAD_URL_TTL)
+            .await
+            .map_err(|e| AppError::Domain(application::Error::Storage(e)))?;
+        attachment_dtos.push(dto::request_attachment_dto(
+            a,
+            resolve::summary_from(&users, a.uploaded_by_user_id),
+            download_url,
+        ));
+    }
 
     Ok(Json(RequestDetailDto {
         request: single(&state, &request).await?,
@@ -249,7 +262,16 @@ async fn add_attachment(
         .await?;
     let uploader =
         resolve::user_summary(&state.user, &state.group, attachment.uploaded_by_user_id).await?;
-    Ok(Json(dto::request_attachment_dto(&attachment, uploader)))
+    let download_url = state
+        .storage
+        .presign_get(&attachment.storage_key, DOWNLOAD_URL_TTL)
+        .await
+        .map_err(|e| AppError::Domain(application::Error::Storage(e)))?;
+    Ok(Json(dto::request_attachment_dto(
+        &attachment,
+        uploader,
+        download_url,
+    )))
 }
 
 /// Resolves one request's creator + assignee summaries.

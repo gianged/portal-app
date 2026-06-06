@@ -219,3 +219,117 @@ impl ProjectInvite {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::Duration;
+
+    #[test]
+    fn activate_only_from_planning() {
+        assert_eq!(
+            ProjectStatus::Planning.try_activate().unwrap(),
+            ProjectStatus::Active
+        );
+        for s in [
+            ProjectStatus::Active,
+            ProjectStatus::OnHold,
+            ProjectStatus::Completed,
+            ProjectStatus::Cancelled,
+        ] {
+            assert!(s.try_activate().is_err(), "{s:?} should not activate");
+        }
+    }
+
+    #[test]
+    fn hold_and_resume_round_trip() {
+        let held = ProjectStatus::Active.try_hold().unwrap();
+        assert_eq!(held, ProjectStatus::OnHold);
+        assert_eq!(held.try_resume().unwrap(), ProjectStatus::Active);
+        // resume is only valid from on_hold
+        assert!(ProjectStatus::Active.try_resume().is_err());
+    }
+
+    #[test]
+    fn complete_only_from_active() {
+        assert_eq!(
+            ProjectStatus::Active.try_complete().unwrap(),
+            ProjectStatus::Completed
+        );
+        assert!(ProjectStatus::Planning.try_complete().is_err());
+        assert!(ProjectStatus::OnHold.try_complete().is_err());
+    }
+
+    #[test]
+    fn cancel_allowed_pre_terminal_only() {
+        for s in [
+            ProjectStatus::Planning,
+            ProjectStatus::Active,
+            ProjectStatus::OnHold,
+        ] {
+            assert_eq!(s.try_cancel().unwrap(), ProjectStatus::Cancelled);
+        }
+        assert!(ProjectStatus::Completed.try_cancel().is_err());
+        assert!(ProjectStatus::Cancelled.try_cancel().is_err());
+    }
+
+    #[test]
+    fn activate_sets_updated_at() {
+        let t0 = OffsetDateTime::UNIX_EPOCH;
+        let t1 = t0 + Duration::hours(3);
+        let mut p = Project {
+            id: ProjectId(uuid::Uuid::nil()),
+            owner_group_id: GroupId(uuid::Uuid::nil()),
+            created_by_user_id: UserId(uuid::Uuid::nil()),
+            name: "Helios".to_owned(),
+            description: String::new(),
+            status: ProjectStatus::Planning,
+            created_at: t0,
+            updated_at: t0,
+        };
+        p.activate(t1).unwrap();
+        assert_eq!(p.status, ProjectStatus::Active);
+        assert_eq!(p.updated_at, t1);
+    }
+
+    #[test]
+    fn invite_status_transitions() {
+        assert_eq!(
+            ProjectInviteStatus::Pending.try_accept().unwrap(),
+            ProjectInviteStatus::Accepted
+        );
+        assert_eq!(
+            ProjectInviteStatus::Pending.try_decline().unwrap(),
+            ProjectInviteStatus::Declined
+        );
+        assert_eq!(
+            ProjectInviteStatus::Pending.try_revoke().unwrap(),
+            ProjectInviteStatus::Revoked
+        );
+        // A settled invite cannot transition again.
+        assert!(ProjectInviteStatus::Accepted.try_decline().is_err());
+        assert!(ProjectInviteStatus::Declined.try_revoke().is_err());
+        assert!(ProjectInviteStatus::Revoked.try_accept().is_err());
+    }
+
+    #[test]
+    fn invite_accept_records_responder() {
+        let t0 = OffsetDateTime::UNIX_EPOCH;
+        let responder = UserId(uuid::Uuid::nil());
+        let mut invite = ProjectInvite {
+            id: ProjectInviteId(uuid::Uuid::nil()),
+            project_id: ProjectId(uuid::Uuid::nil()),
+            invited_by_user_id: UserId(uuid::Uuid::nil()),
+            invited_group_id: GroupId(uuid::Uuid::nil()),
+            responded_by_user_id: None,
+            status: ProjectInviteStatus::Pending,
+            responded_at: None,
+            created_at: t0,
+            updated_at: t0,
+        };
+        invite.accept(responder, t0 + Duration::minutes(2)).unwrap();
+        assert_eq!(invite.status, ProjectInviteStatus::Accepted);
+        assert_eq!(invite.responded_by_user_id, Some(responder));
+        assert!(invite.responded_at.is_some());
+    }
+}

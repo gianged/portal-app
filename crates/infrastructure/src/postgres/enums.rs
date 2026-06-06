@@ -115,6 +115,10 @@ pub(crate) enum SqlNotificationKind {
     RequestAssigned,
     RequestStatusChange,
     ProjectInvite,
+    TicketAssigned,
+    TicketStatusChange,
+    ProjectInviteResponse,
+    TicketRaised,
     System,
 }
 
@@ -127,6 +131,10 @@ impl From<NotificationKind> for SqlNotificationKind {
             NotificationKind::RequestAssigned => Self::RequestAssigned,
             NotificationKind::RequestStatusChange => Self::RequestStatusChange,
             NotificationKind::ProjectInvite => Self::ProjectInvite,
+            NotificationKind::TicketAssigned => Self::TicketAssigned,
+            NotificationKind::TicketStatusChange => Self::TicketStatusChange,
+            NotificationKind::ProjectInviteResponse => Self::ProjectInviteResponse,
+            NotificationKind::TicketRaised => Self::TicketRaised,
             NotificationKind::System => Self::System,
         }
     }

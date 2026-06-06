@@ -162,7 +162,10 @@ fn user_row(u: UserDto) -> impl IntoView {
         fw = typography::WEIGHT_MEDIUM,
         a = color::ACCENT,
     ));
-    let wrap = class(format!("display: inline-flex; align-items: center; gap: {g};", g = space::D2));
+    let wrap = class(format!(
+        "display: inline-flex; align-items: center; gap: {g};",
+        g = space::D2
+    ));
     view! {
         <tr>
             <td>
@@ -291,7 +294,9 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
     });
 
     let set_active = move |activate: bool| {
-        let Some(uid) = id.get_untracked() else { return };
+        let Some(uid) = id.get_untracked() else {
+            return;
+        };
         spawn_local(async move {
             let result = if activate {
                 api::reactivate(uid).await.map(|_| ())
@@ -300,7 +305,11 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
             };
             match result {
                 Ok(()) => {
-                    toast.success(if activate { "User reactivated" } else { "User deactivated" });
+                    toast.success(if activate {
+                        "User reactivated"
+                    } else {
+                        "User deactivated"
+                    });
                     reload.update(|n| *n += 1);
                 }
                 Err(e) => toast.error(e.to_string()),
@@ -385,11 +394,16 @@ fn profile_fields(p: &UserProfileDto) -> AnyView {
         let l = class(format!(
             "font-family: {ff}; font-size: {fs}; font-weight: {fw}; text-transform: uppercase; \
              letter-spacing: 0.06em; color: {c};",
-            ff = typography::FONT_SANS, fs = typography::TEXT_EYEBROW, fw = typography::WEIGHT_SEMIBOLD, c = color::TEXT_FAINT,
+            ff = typography::FONT_SANS,
+            fs = typography::TEXT_EYEBROW,
+            fw = typography::WEIGHT_SEMIBOLD,
+            c = color::TEXT_FAINT,
         ));
         let v = class(format!(
             "font-family: {ff}; font-size: {fs}; color: {c};",
-            ff = typography::FONT_SANS, fs = typography::TEXT_SMALL, c = color::TEXT,
+            ff = typography::FONT_SANS,
+            fs = typography::TEXT_SMALL,
+            c = color::TEXT,
         ));
         let label = label.to_owned();
         view! { <Stack gap=Gap::Xs><div class=l>{label}</div><div class=v>{value}</div></Stack> }
@@ -430,7 +444,9 @@ fn EditProfileDialog(
         if submitting.get_untracked() {
             return;
         }
-        let Some(uid) = id.get_untracked() else { return };
+        let Some(uid) = id.get_untracked() else {
+            return;
+        };
         let phone_val = phone.get_untracked();
         let req = UpdateProfileRequest {
             full_name: Some(name.get_untracked()),

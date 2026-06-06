@@ -39,8 +39,11 @@ pub const DANGER_HOVER: &str = "var(--danger-hover)";
 pub const DANGER_BG: &str = "var(--danger-bg)";
 pub const DANGER_BORDER: &str = "var(--danger-border)";
 
+#[allow(dead_code)] // TODO: unused, I will see it
 pub const INFO: &str = "var(--info)";
+#[allow(dead_code)] // TODO: unused, I will see it
 pub const INFO_BG: &str = "var(--info-bg)";
+#[allow(dead_code)] // TODO: unused, I will see it
 pub const INFO_BORDER: &str = "var(--info-border)";
 
 /// `(background, foreground)` pairs indexed by avatar tone. Each resolves to a

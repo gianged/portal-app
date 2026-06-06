@@ -104,3 +104,72 @@ impl User {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::Duration;
+    use uuid::Uuid;
+
+    fn user(status: UserStatus) -> User {
+        let t0 = OffsetDateTime::UNIX_EPOCH;
+        User {
+            id: UserId(Uuid::nil()),
+            email: "jane@example.com".to_owned(),
+            password_hash: "x".to_owned(),
+            full_name: "Jane".to_owned(),
+            avatar_storage_key: None,
+            phone: None,
+            timezone: "UTC".to_owned(),
+            status,
+            system_role: None,
+            first_logged_in_at: None,
+            deactivated_at: None,
+            created_at: t0,
+            updated_at: t0,
+        }
+    }
+
+    #[test]
+    fn status_transitions() {
+        assert_eq!(
+            UserStatus::Pending.try_activate().unwrap(),
+            UserStatus::Active
+        );
+        assert_eq!(
+            UserStatus::Active.try_deactivate().unwrap(),
+            UserStatus::Deactivated
+        );
+        assert_eq!(
+            UserStatus::Deactivated.try_reactivate().unwrap(),
+            UserStatus::Active
+        );
+        // Illegal transitions.
+        assert!(UserStatus::Pending.try_deactivate().is_err());
+        assert!(UserStatus::Pending.try_reactivate().is_err());
+        assert!(UserStatus::Active.try_activate().is_err());
+        assert!(UserStatus::Deactivated.try_activate().is_err());
+    }
+
+    #[test]
+    fn activate_sets_first_login() {
+        let login = OffsetDateTime::UNIX_EPOCH + Duration::days(1);
+        let mut u = user(UserStatus::Pending);
+        u.activate(login, login).unwrap();
+        assert_eq!(u.status, UserStatus::Active);
+        assert_eq!(u.first_logged_in_at, Some(login));
+    }
+
+    #[test]
+    fn deactivate_then_reactivate_round_trips_deactivated_at() {
+        let t1 = OffsetDateTime::UNIX_EPOCH + Duration::days(1);
+        let mut u = user(UserStatus::Active);
+        u.deactivate(t1).unwrap();
+        assert_eq!(u.status, UserStatus::Deactivated);
+        assert_eq!(u.deactivated_at, Some(t1));
+
+        u.reactivate(t1 + Duration::days(1)).unwrap();
+        assert_eq!(u.status, UserStatus::Active);
+        assert_eq!(u.deactivated_at, None);
+    }
+}

@@ -6,7 +6,9 @@ use crate::dto::{
         ChannelId, MessageId, NotificationId, ProjectId, ProjectInviteId, RequestId, TicketId,
         UserId,
     },
+    project::ProjectInviteStatus,
     request::RequestStatus,
+    ticket::TicketStatus,
 };
 
 /// Filterable kind tag. Mirrors `domain::model::NotificationKind`.
@@ -19,6 +21,10 @@ pub enum NotificationKind {
     RequestAssigned,
     RequestStatusChange,
     ProjectInvite,
+    TicketAssigned,
+    TicketStatusChange,
+    ProjectInviteResponse,
+    TicketRaised,
     System,
 }
 
@@ -32,6 +38,10 @@ impl NotificationKind {
             Self::RequestAssigned => "Request Assigned",
             Self::RequestStatusChange => "Request Update",
             Self::ProjectInvite => "Project Invite",
+            Self::TicketAssigned => "Ticket Assigned",
+            Self::TicketStatusChange => "Ticket Update",
+            Self::ProjectInviteResponse => "Invite Response",
+            Self::TicketRaised => "New Ticket",
             Self::System => "System",
         }
     }
@@ -66,6 +76,22 @@ pub enum NotificationPayloadDto {
     ProjectInvite {
         invite_id: ProjectInviteId,
         project_id: ProjectId,
+    },
+    TicketAssigned {
+        ticket_id: TicketId,
+    },
+    TicketStatusChange {
+        ticket_id: TicketId,
+        from: TicketStatus,
+        to: TicketStatus,
+    },
+    ProjectInviteResponse {
+        invite_id: ProjectInviteId,
+        project_id: ProjectId,
+        status: ProjectInviteStatus,
+    },
+    TicketRaised {
+        ticket_id: TicketId,
     },
     System {
         message: String,
@@ -103,6 +129,28 @@ mod tests {
         assert!(json.contains("\"kind\":\"ticket_urgent\""), "got {json}");
         let back: NotificationPayloadDto = serde_json::from_str(&json).unwrap();
         assert!(matches!(back, NotificationPayloadDto::TicketUrgent { .. }));
+    }
+
+    #[test]
+    fn invite_response_round_trips_with_status() {
+        let payload = NotificationPayloadDto::ProjectInviteResponse {
+            invite_id: ProjectInviteId(Uuid::nil()),
+            project_id: ProjectId(Uuid::nil()),
+            status: ProjectInviteStatus::Accepted,
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(
+            json.contains("\"kind\":\"project_invite_response\""),
+            "got {json}"
+        );
+        let back: NotificationPayloadDto = serde_json::from_str(&json).unwrap();
+        assert!(matches!(
+            back,
+            NotificationPayloadDto::ProjectInviteResponse {
+                status: ProjectInviteStatus::Accepted,
+                ..
+            }
+        ));
     }
 
     #[test]

@@ -27,10 +27,14 @@ fn payload_icon(p: &NotificationPayloadDto) -> IconName {
     match p {
         NotificationPayloadDto::Announcement { .. } => IconName::Megaphone,
         NotificationPayloadDto::Mention { .. } => IconName::Chat,
-        NotificationPayloadDto::TicketUrgent { .. } => IconName::Ticket,
+        NotificationPayloadDto::TicketUrgent { .. }
+        | NotificationPayloadDto::TicketAssigned { .. }
+        | NotificationPayloadDto::TicketStatusChange { .. }
+        | NotificationPayloadDto::TicketRaised { .. } => IconName::Ticket,
         NotificationPayloadDto::RequestAssigned { .. }
         | NotificationPayloadDto::RequestStatusChange { .. } => IconName::Doc,
-        NotificationPayloadDto::ProjectInvite { .. } => IconName::Folder,
+        NotificationPayloadDto::ProjectInvite { .. }
+        | NotificationPayloadDto::ProjectInviteResponse { .. } => IconName::Folder,
         NotificationPayloadDto::System { .. } => IconName::AlertCircle,
     }
 }
@@ -39,12 +43,18 @@ fn payload_href(p: &NotificationPayloadDto) -> Option<String> {
     match p {
         NotificationPayloadDto::Announcement { .. } => Some("/announcements".to_owned()),
         NotificationPayloadDto::Mention { .. } => Some("/chat".to_owned()),
-        NotificationPayloadDto::TicketUrgent { ticket_id } => Some(format!("/tickets/{}", ticket_id.0)),
+        NotificationPayloadDto::TicketUrgent { ticket_id }
+        | NotificationPayloadDto::TicketAssigned { ticket_id }
+        | NotificationPayloadDto::TicketStatusChange { ticket_id, .. }
+        | NotificationPayloadDto::TicketRaised { ticket_id } => {
+            Some(format!("/tickets/{}", ticket_id.0))
+        }
         NotificationPayloadDto::RequestAssigned { request_id }
         | NotificationPayloadDto::RequestStatusChange { request_id, .. } => {
             Some(format!("/requests/{}", request_id.0))
         }
-        NotificationPayloadDto::ProjectInvite { project_id, .. } => {
+        NotificationPayloadDto::ProjectInvite { project_id, .. }
+        | NotificationPayloadDto::ProjectInviteResponse { project_id, .. } => {
             Some(format!("/projects/{}", project_id.0))
         }
         NotificationPayloadDto::System { .. } => None,
@@ -55,12 +65,26 @@ fn payload_summary(p: &NotificationPayloadDto) -> String {
     match p {
         NotificationPayloadDto::Announcement { .. } => "New announcement".to_owned(),
         NotificationPayloadDto::Mention { .. } => "You were mentioned".to_owned(),
-        NotificationPayloadDto::TicketUrgent { .. } => "An urgent ticket needs attention".to_owned(),
-        NotificationPayloadDto::RequestAssigned { .. } => "A request was assigned to you".to_owned(),
+        NotificationPayloadDto::TicketUrgent { .. } => {
+            "An urgent ticket needs attention".to_owned()
+        }
+        NotificationPayloadDto::RequestAssigned { .. } => {
+            "A request was assigned to you".to_owned()
+        }
         NotificationPayloadDto::RequestStatusChange { from, to, .. } => {
             format!("Request moved from {} to {}", from.label(), to.label())
         }
-        NotificationPayloadDto::ProjectInvite { .. } => "Your group was invited to a project".to_owned(),
+        NotificationPayloadDto::ProjectInvite { .. } => {
+            "Your group was invited to a project".to_owned()
+        }
+        NotificationPayloadDto::TicketAssigned { .. } => "A ticket was assigned to you".to_owned(),
+        NotificationPayloadDto::TicketStatusChange { from, to, .. } => {
+            format!("Ticket moved from {} to {}", from.label(), to.label())
+        }
+        NotificationPayloadDto::ProjectInviteResponse { status, .. } => {
+            format!("Project invite {}", status.label().to_lowercase())
+        }
+        NotificationPayloadDto::TicketRaised { .. } => "A new ticket was raised".to_owned(),
         NotificationPayloadDto::System { message } => message.clone(),
     }
 }
@@ -173,7 +197,11 @@ fn notification_row(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
-        fw = if read { typography::WEIGHT_REGULAR } else { typography::WEIGHT_MEDIUM },
+        fw = if read {
+            typography::WEIGHT_REGULAR
+        } else {
+            typography::WEIGHT_MEDIUM
+        },
         c = color::TEXT,
     ));
     let dot = class(format!(

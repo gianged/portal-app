@@ -62,6 +62,8 @@ pub struct RequestAttachmentDto {
     pub filename: String,
     pub content_type: String,
     pub size_bytes: u64,
+    /// Presigned, time-limited URL the client uses to fetch the file.
+    pub download_url: String,
     pub uploaded_by: UserSummaryDto,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,

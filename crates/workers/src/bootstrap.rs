@@ -3,18 +3,23 @@ use std::sync::Arc;
 use anyhow::Context;
 use apalis_redis::RedisStorage;
 
-use application::{MaintenanceService, NotificationFanout};
+use application::{AuditProjector, MaintenanceService, NotificationFanout};
 use domain::{
     ports::file_storage::FileStorage,
     repository::{
-        ChatRepository, GroupRepository, NotificationRepository, RequestRepository, UserRepository,
+        AuditRepository, ChatRepository, GroupRepository, NotificationRepository,
+        ProjectRepository, RequestRepository, TicketRepository, UserRepository,
     },
 };
 use infrastructure::{
-    jobs::{NotificationEnvelope, notification_storage},
+    jobs::{AuditEnvelope, NotificationEnvelope, audit_storage, notification_storage},
     local_storage::LocalStorage,
-    postgres::{PgGroupRepo, PgNotificationRepo, PgRequestRepo, PgUserRepo, build_pool},
+    postgres::{
+        PgAuditRepo, PgGroupRepo, PgNotificationRepo, PgProjectRepo, PgRequestRepo, PgTicketRepo,
+        PgUserRepo, build_pool,
+    },
     scylla::{ScyllaChatRepo, build_session},
+    signed_url::SignedUrl,
 };
 
 use crate::config::Config;
@@ -23,6 +28,8 @@ use crate::config::Config;
 pub struct WorkerContext {
     pub fanout: Arc<NotificationFanout>,
     pub storage: RedisStorage<NotificationEnvelope>,
+    pub audit_projector: Arc<AuditProjector>,
+    pub audit_storage: RedisStorage<AuditEnvelope>,
     pub maintenance: Arc<MaintenanceService>,
 }
 
@@ -48,9 +55,15 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
             .await
             .context("preparing scylla statements")?,
     );
+    let tickets: Arc<dyn TicketRepository> = Arc::new(PgTicketRepo::new(pool.clone()));
+    let projects: Arc<dyn ProjectRepository> = Arc::new(PgProjectRepo::new(pool.clone()));
+    // The orphan-sweep job only lists and deletes; it never presigns, so this
+    // signer is never exercised (hence the empty key).
+    let signer = Arc::new(SignedUrl::new(b""));
     let file_storage: Arc<dyn FileStorage> = Arc::new(LocalStorage::new(
         cfg.storage_root.clone(),
         &cfg.storage_public_base,
+        signer,
     ));
 
     // Built before the fan-out moves the repo handles below.
@@ -61,21 +74,31 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         file_storage,
     ));
 
+    let audit: Arc<dyn AuditRepository> = Arc::new(PgAuditRepo::new(pool.clone()));
+    let audit_projector = Arc::new(AuditProjector::new(audit));
+
     let fanout = Arc::new(NotificationFanout::new(
         notifications,
         groups,
         users,
         requests,
         chats,
+        tickets,
+        projects,
     ));
 
     let storage = notification_storage(&cfg.redis_url)
         .await
         .context("connecting apalis redis (jobs)")?;
+    let audit_storage = audit_storage(&cfg.redis_url)
+        .await
+        .context("connecting apalis redis (audit jobs)")?;
 
     Ok(WorkerContext {
         fanout,
         storage,
+        audit_projector,
+        audit_storage,
         maintenance,
     })
 }

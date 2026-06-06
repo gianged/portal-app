@@ -152,7 +152,11 @@ fn CreateGroupDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl Int
     let on_close = Callback::new(move |()| open.set(false));
     let cancel = Callback::new(move |_| open.set(false));
     let on_kind = Callback::new(move |v: String| {
-        kind.set(if v == "it" { GroupKind::It } else { GroupKind::Standard });
+        kind.set(if v == "it" {
+            GroupKind::It
+        } else {
+            GroupKind::Standard
+        });
     });
     let kind_value = Signal::derive(move || kind_wire(kind.get()).to_owned());
 
@@ -177,7 +181,11 @@ fn CreateGroupDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl Int
             return;
         }
         submitting.set(true);
-        let req = CreateGroupRequest { name: n, description: d, kind: kind.get_untracked() };
+        let req = CreateGroupRequest {
+            name: n,
+            description: d,
+            kind: kind.get_untracked(),
+        };
         spawn_local(async move {
             match api::create(&req).await {
                 Ok(_) => {
@@ -245,7 +253,9 @@ pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
     });
 
     let do_change_role = move |uid: UserId, role: GroupRole| {
-        let Some(gid) = id.get_untracked() else { return };
+        let Some(gid) = id.get_untracked() else {
+            return;
+        };
         let req = ChangeMemberRoleRequest { role };
         spawn_local(async move {
             match api::change_role(gid, uid, &req).await {
@@ -258,7 +268,9 @@ pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
         });
     };
     let do_remove = move |uid: UserId| {
-        let Some(gid) = id.get_untracked() else { return };
+        let Some(gid) = id.get_untracked() else {
+            return;
+        };
         spawn_local(async move {
             match api::remove_member(gid, uid).await {
                 Ok(()) => {
@@ -278,7 +290,10 @@ pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
     // Current leader id, for the transfer-leadership "from".
     let current_leader = Signal::derive(move || {
         detail.get().and_then(Result::ok).and_then(|d| {
-            d.members.iter().find(|m| m.role == GroupRole::Leader).map(|m| m.user.id)
+            d.members
+                .iter()
+                .find(|m| m.role == GroupRole::Leader)
+                .map(|m| m.user.id)
         })
     });
 
@@ -431,9 +446,14 @@ fn AddMemberDialog(
             toast.error("Pick a person to add.");
             return;
         };
-        let Some(gid) = id.get_untracked() else { return };
+        let Some(gid) = id.get_untracked() else {
+            return;
+        };
         open.set(false);
-        let req = AddMemberRequest { user_id: uid, role: role.get_untracked() };
+        let req = AddMemberRequest {
+            user_id: uid,
+            role: role.get_untracked(),
+        };
         spawn_local(async move {
             match api::add_member(gid, &req).await {
                 Ok(_) => {
@@ -495,7 +515,9 @@ fn TransferDialog(
             toast.error("This group has no current leader to transfer from.");
             return;
         };
-        let Some(gid) = id.get_untracked() else { return };
+        let Some(gid) = id.get_untracked() else {
+            return;
+        };
         open.set(false);
         spawn_local(async move {
             match api::transfer_leadership(gid, from, to).await {

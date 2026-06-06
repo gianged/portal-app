@@ -18,7 +18,8 @@ use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::table::{Table, TableToolbar, TableWrap};
 use crate::theme::{class, color, space, typography};
 use crate::util::format::{
-    relative_time, request_priority_variant, request_status_variant, ticket_status_variant, tone_for,
+    relative_time, request_priority_variant, request_status_variant, ticket_status_variant,
+    tone_for,
 };
 
 pub use crate::util::load::Loadable;
@@ -223,7 +224,10 @@ fn tickets_list(items: Vec<TicketDto>) -> AnyView {
 }
 
 fn ticket_row(t: TicketDto) -> impl IntoView {
-    let row = class(format!("display: flex; align-items: center; gap: {g};", g = space::D3));
+    let row = class(format!(
+        "display: flex; align-items: center; gap: {g};",
+        g = space::D3
+    ));
     let title = class(format!(
         "flex: 1; min-width: 0; font-family: {ff}; font-size: {fs}; color: {c}; \
          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
@@ -255,7 +259,10 @@ fn channels_list(items: Vec<ChannelSummaryDto>) -> AnyView {
 }
 
 fn channel_row(c: ChannelSummaryDto) -> impl IntoView {
-    let row = class(format!("display: flex; align-items: center; gap: {g};", g = space::D3));
+    let row = class(format!(
+        "display: flex; align-items: center; gap: {g};",
+        g = space::D3
+    ));
     let dot = class(format!(
         "width: 7px; height: 7px; border-radius: 50%; background: {c}; flex-shrink: 0;",
         c = color::ACCENT,
@@ -292,7 +299,10 @@ fn channel_row(c: ChannelSummaryDto) -> impl IntoView {
 }
 
 fn assignee_cell(name: &str) -> AnyView {
-    let wrap = class(format!("display: inline-flex; align-items: center; gap: {g};", g = space::D2));
+    let wrap = class(format!(
+        "display: inline-flex; align-items: center; gap: {g};",
+        g = space::D2
+    ));
     view! {
         <span class=wrap>
             <Avatar name=name.to_owned() size=AvatarSize::Sm tone=tone_for(name) />
@@ -318,7 +328,11 @@ fn panel_heading(text: &str) -> AnyView {
 }
 
 fn note(text: &str, danger: bool, padded: bool) -> AnyView {
-    let c = if danger { color::DANGER } else { color::TEXT_MUTED };
+    let c = if danger {
+        color::DANGER
+    } else {
+        color::TEXT_MUTED
+    };
     let pad = if padded { space::D5 } else { "0px" };
     let cls = class(format!(
         "padding: {pad}; font-family: {ff}; font-size: {fs}; color: {c};",

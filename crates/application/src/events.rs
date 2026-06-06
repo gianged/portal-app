@@ -19,7 +19,7 @@ use crate::error::Result;
 /// A business fact emitted by an application service after a successful state
 /// change.
 ///
-/// Serialized with an internally-tagged snake_case `type` discriminant and
+/// Serialized with an internally-tagged `snake_case` `type` discriminant and
 /// routed by [`EventBus`] to a broadcast publisher (Redis pub/sub) and, for
 /// notification-bearing topics, the durable job queue. [`Self::topic`] maps each
 /// variant to its `portal.*` topic; the `before`/`after` payloads carry the
@@ -305,6 +305,17 @@ const NOTIFY_TOPICS: &[&str] = &[
     "portal.chat",
 ];
 
+/// Topics whose events are projected into the immutable audit log. Postgres-
+/// backed entities only — `portal.chat` / `portal.announcement` live in Scylla
+/// and are not audited here.
+const AUDIT_TOPICS: &[&str] = &[
+    "portal.user",
+    "portal.group",
+    "portal.project",
+    "portal.request",
+    "portal.ticket",
+];
+
 /// Dispatches every [`DomainEvent`] to two sinks: a broadcast publisher (Redis
 /// pub/sub, for real-time WebSocket fan-out) and a durable job queue (apalis,
 /// for background processing such as notifications). The same serialised bytes
@@ -312,12 +323,21 @@ const NOTIFY_TOPICS: &[&str] = &[
 pub struct EventBus {
     publisher: Arc<dyn EventPublisher>,
     jobs: Arc<dyn JobQueue>,
+    audit_jobs: Arc<dyn JobQueue>,
 }
 
 impl EventBus {
     #[must_use]
-    pub fn new(publisher: Arc<dyn EventPublisher>, jobs: Arc<dyn JobQueue>) -> Self {
-        Self { publisher, jobs }
+    pub fn new(
+        publisher: Arc<dyn EventPublisher>,
+        jobs: Arc<dyn JobQueue>,
+        audit_jobs: Arc<dyn JobQueue>,
+    ) -> Self {
+        Self {
+            publisher,
+            jobs,
+            audit_jobs,
+        }
     }
 
     /// Publishes `event` to the broadcast publisher and, for notify topics, also
@@ -338,6 +358,9 @@ impl EventBus {
         self.publisher.publish(topic, &payload).await?;
         if NOTIFY_TOPICS.contains(&topic) {
             self.jobs.enqueue("notifications", &payload).await?;
+        }
+        if AUDIT_TOPICS.contains(&topic) {
+            self.audit_jobs.enqueue("audit", &payload).await?;
         }
         Ok(())
     }

@@ -10,6 +10,7 @@ pub enum ButtonVariant {
     Secondary,
     Ghost,
     Destructive,
+    #[allow(dead_code)] // TODO: unused, I will see it
     Link,
     Icon,
 }

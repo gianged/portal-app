@@ -73,10 +73,27 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: native
-      # --lib --bins runs unit tests and compiles the binaries; the tests/ integration
-      # crates use testcontainers (Docker Postgres/Redis/Scylla/OpenFGA) and run
-      # out-of-band, not on the PR critical path.
-      - run: cargo test --workspace --exclude frontend --lib --bins --locked
+      # Runs unit tests, the bins, AND the tests/ integration crates. Every current
+      # tests/ target is in-memory (tower oneshot + fakes) and needs no Docker. Any
+      # future Docker-backed test is gated behind `#![cfg(feature = "integration")]`
+      # and compiled out here (see the integration-docker job).
+      - run: cargo test --workspace --exclude frontend --locked
+
+  test-frontend-wasm:
+    name: Tests (frontend, wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm
+      # Runs the inline #[wasm_bindgen_test]s and the tests/ integration tests in
+      # a headless browser. firefox + geckodriver are preinstalled on ubuntu-latest.
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - run: wasm-pack test --headless --firefox crates/frontend
 
   msrv:
     name: MSRV (1.94)

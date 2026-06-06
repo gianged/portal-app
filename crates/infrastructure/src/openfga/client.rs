@@ -54,7 +54,7 @@ pub struct OpenFgaAuthzClient {
 impl OpenFgaAuthzClient {
     pub fn new(cfg: OpenFgaConfig) -> Result<Self, AuthzError> {
         let http = Client::builder()
-            .use_rustls_tls()
+            .tls_backend_rustls()
             .build()
             .map_err(|e| AuthzError::Backend(e.to_string()))?;
         Ok(Self {

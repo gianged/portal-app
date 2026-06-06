@@ -26,6 +26,7 @@ pub async fn create(req: &CreateProjectRequest) -> Result<ProjectDto, FrontendEr
     client::post_json("/projects", req).await
 }
 
+#[allow(dead_code)] // TODO: unused, I will see it
 pub async fn update(
     id: ProjectId,
     req: &UpdateProjectMetadataRequest,
@@ -47,10 +48,7 @@ pub async fn invite_group(
     client::post_json(&format!("/projects/{}/invites", id.0), req).await
 }
 
-pub async fn remove_collaborator(
-    project: ProjectId,
-    group: GroupId,
-) -> Result<(), FrontendError> {
+pub async fn remove_collaborator(project: ProjectId, group: GroupId) -> Result<(), FrontendError> {
     client::del(&format!(
         "/projects/{}/collaborators/{}",
         project.0, group.0

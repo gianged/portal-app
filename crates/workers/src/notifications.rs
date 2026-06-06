@@ -11,11 +11,13 @@ use infrastructure::jobs::NotificationEnvelope;
 ///
 /// A malformed payload or a fan-out failure returns [`Error::Failed`] so apalis
 /// applies its retry/backoff policy rather than silently dropping the job.
+#[tracing::instrument(skip_all, err)]
 pub async fn handle(
     envelope: NotificationEnvelope,
     fanout: Data<Arc<NotificationFanout>>,
 ) -> Result<(), Error> {
     let event: DomainEvent = serde_json::from_slice(&envelope.event).map_err(failed)?;
+    tracing::debug!(topic = event.topic(), "notification job received");
     fanout.handle(&event).await.map_err(failed)?;
     Ok(())
 }

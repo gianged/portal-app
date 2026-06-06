@@ -1,3 +1,5 @@
+#![allow(dead_code)] // TODO: unused, I will see it
+
 use leptos::ev::MouseEvent;
 use leptos::prelude::*;
 

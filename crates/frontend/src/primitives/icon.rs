@@ -7,6 +7,7 @@ use leptos::prelude::*;
 
 use crate::theme::class;
 
+#[allow(dead_code)] // TODO: unused, I will see it
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum IconName {
     Search,

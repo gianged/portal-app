@@ -1,3 +1,5 @@
+#![allow(dead_code)] // TODO: unused, I will see it
+
 use leptos::prelude::*;
 
 use crate::theme::{class, color, radius, space};

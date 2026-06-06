@@ -1,7 +1,9 @@
 //! Announcement HTTP wrappers. Announcements are per-channel; listing requires a
 //! channel id (resolve the General channel via the chat channel list).
 
-use shared::dto::announcement::{AnnouncementDto, EditAnnouncementRequest, PostAnnouncementRequest};
+use shared::dto::announcement::{
+    AnnouncementDto, EditAnnouncementRequest, PostAnnouncementRequest,
+};
 use shared::dto::ids::{ChannelId, MessageId};
 
 use crate::api::client;

@@ -33,7 +33,10 @@ pub fn ChatView() -> impl IntoView {
         bg = color::BG_SUBTLE,
     ));
     let right = class("flex: 1; min-width: 0; display: flex; flex-direction: column;");
-    let empty_wrap = class(format!("flex: 1; display: flex; align-items: center; justify-content: center; padding: {p};", p = space::D6));
+    let empty_wrap = class(format!(
+        "flex: 1; display: flex; align-items: center; justify-content: center; padding: {p};",
+        p = space::D6
+    ));
 
     view! {
         <div class=frame>

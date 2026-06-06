@@ -21,6 +21,8 @@ tokio = { workspace = true }
 sqlx = { workspace = true }
 redis = { workspace = true }
 scylla = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
 reqwest = { workspace = true }
 futures = { workspace = true }
 apalis = { workspace = true }

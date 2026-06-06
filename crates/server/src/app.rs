@@ -12,9 +12,9 @@ use application::{
     events::EventBus,
     permissions::Permissions,
     service::{
-        announcement::AnnouncementService, chat::ChatService, group::GroupService,
-        notification::NotificationService, project::ProjectService, request::RequestService,
-        ticket::TicketService, user::UserService,
+        announcement::AnnouncementService, audit::AuditService, chat::ChatService,
+        group::GroupService, notification::NotificationService, project::ProjectService,
+        request::RequestService, ticket::TicketService, user::UserService,
     },
 };
 use domain::{
@@ -25,7 +25,7 @@ use domain::{
     },
 };
 use infrastructure::{
-    jobs::{ApalisNotificationQueue, notification_storage},
+    jobs::{ApalisAuditQueue, ApalisNotificationQueue, audit_storage, notification_storage},
     local_storage::LocalStorage,
     openfga::{self, OpenFgaAuthzClient},
     postgres::{
@@ -34,6 +34,7 @@ use infrastructure::{
     },
     redis::{PresenceStore, RateLimiter, RedisEventPublisher},
     scylla::{ScyllaChatRepo, build_session},
+    signed_url::SignedUrl,
 };
 
 use crate::{
@@ -59,14 +60,14 @@ pub struct AppState {
     // middleware and the chat WebSocket respectively.
     pub token: Arc<TokenService>,
     pub realtime: Realtime,
-    // TODO: wired for the audit-log write path that lands with the admin/audit
-    // routes; no handler reads it yet.
-    #[allow(dead_code)]
-    pub audit: Arc<dyn AuditRepository>,
+    pub audit_service: Arc<AuditService>,
     pub presence: Arc<dyn Presence>,
     pub rate_limiter: Arc<dyn RateLimit>,
     pub rate_limits: RateLimits,
     pub storage: Arc<LocalStorage>,
+    // Verifies the signed `?exp&sig` on `/files` downloads; the same signer
+    // (built from `jwt_secret`) backs `LocalStorage::presign_get`.
+    pub signed_url: Arc<SignedUrl>,
 }
 
 /// Builds every infrastructure adapter, assembles the application services, and
@@ -99,9 +100,13 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             .context("connecting redis (rate limit)")?
             .with_window(cfg.rate_limit_window_secs),
     );
+    // One signer backs both presign (in the adapter) and verify (in the file
+    // route); reusing `jwt_secret` avoids introducing a second deployment secret.
+    let signed_url = Arc::new(SignedUrl::new(cfg.jwt_secret.as_bytes()));
     let storage = Arc::new(LocalStorage::new(
         cfg.storage_root.clone(),
         &cfg.storage_public_base,
+        signed_url.clone(),
     ));
 
     // Repositories (as port trait objects).
@@ -155,7 +160,17 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             .await
             .context("connecting apalis redis (jobs)")?,
     );
-    let events = Arc::new(EventBus::new(publisher.clone(), Arc::new(jobs)));
+    let audit_jobs = ApalisAuditQueue::new(
+        audit_storage(&cfg.redis_url)
+            .await
+            .context("connecting apalis redis (audit jobs)")?,
+    );
+    let events = Arc::new(EventBus::new(
+        publisher.clone(),
+        Arc::new(jobs),
+        Arc::new(audit_jobs),
+    ));
+    let audit_service = Arc::new(AuditService::new(audit, perms.clone()));
     let storage_port: Arc<dyn FileStorage> = storage.clone();
 
     // Cookie-session tokens and the real-time pub/sub handle (chat WebSocket).
@@ -219,7 +234,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
         )),
         token,
         realtime,
-        audit,
+        audit_service,
         presence,
         rate_limiter,
         rate_limits: RateLimits {
@@ -227,6 +242,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             api: cfg.api_rate_limit,
         },
         storage,
+        signed_url,
     };
 
     Ok(router(state).layer(cors_layer(&cfg.cors_allowed_origins)))
@@ -252,7 +268,7 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::chat_ws::router())
         .merge(routes::announcements::router())
         .merge(routes::notifications::router())
-        .merge(routes::files::router())
+        .merge(routes::audit::router())
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::middleware::rate_limit::per_user,
@@ -268,7 +284,10 @@ pub fn router(state: AppState) -> Router {
         crate::middleware::rate_limit::per_ip,
     ));
 
-    let api = public.merge(protected);
+    // File downloads authorize via the signed `?exp&sig` (verified in the
+    // handler), so they sit outside both the session-auth layer and the per-user
+    // limiter that the protected sub-tree carries.
+    let api = public.merge(protected).merge(routes::files::router());
 
     Router::new()
         .route("/healthz", get(healthz))

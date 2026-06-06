@@ -14,13 +14,16 @@ pub const TEXT_EYEBROW: &str = "11.5px";
 pub const WEIGHT_REGULAR: &str = "400";
 pub const WEIGHT_MEDIUM: &str = "500";
 pub const WEIGHT_SEMIBOLD: &str = "600";
+#[allow(dead_code)] // TODO: unused, I will see it
 pub const WEIGHT_BOLD: &str = "700";
 
 // Shadows and the focus ring resolve to CSS variables: the reference darkens them
 // under `[data-theme="dark"]`, so they must flip with the theme like the colors do.
 pub const SHADOW_XS: &str = "var(--shadow-xs)";
+#[allow(dead_code)] // TODO: unused, I will see it
 pub const SHADOW_SM: &str = "var(--shadow-sm)";
 pub const SHADOW_MD: &str = "var(--shadow-md)";
 pub const SHADOW_LG: &str = "var(--shadow-lg)";
+#[allow(dead_code)] // TODO: unused, I will see it
 pub const SHADOW_POP: &str = "var(--shadow-pop)";
 pub const RING: &str = "var(--ring)";

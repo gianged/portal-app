@@ -1,3 +1,4 @@
+mod audit;
 mod bootstrap;
 mod cleanup;
 mod config;
@@ -19,6 +20,8 @@ async fn main() -> anyhow::Result<()> {
     let WorkerContext {
         fanout,
         storage,
+        audit_projector,
+        audit_storage,
         maintenance,
     } = bootstrap::build(&cfg).await?;
 
@@ -37,15 +40,22 @@ async fn main() -> anyhow::Result<()> {
         cfg.upload_sweep_interval,
     ));
 
-    // One worker consuming the durable `notifications` queue the server enqueues.
-    let worker = WorkerBuilder::new("notifications")
+    // One worker per durable queue the server enqueues. Separate queues keep the
+    // (non-idempotent) notification fan-out and the audit projector isolated so a
+    // retry in one never re-runs the other.
+    let notify_worker = WorkerBuilder::new("notifications")
         .data(fanout)
         .backend(storage)
         .build_fn(notifications::handle);
+    let audit_worker = WorkerBuilder::new("audit")
+        .data(audit_projector)
+        .backend(audit_storage)
+        .build_fn(audit::handle);
 
-    tracing::info!("workers ready: notification consumer + maintenance loops");
+    tracing::info!("workers ready: notification + audit consumers + maintenance loops");
     Monitor::new()
-        .register(worker)
+        .register(notify_worker)
+        .register(audit_worker)
         .run_with_signal(tokio::signal::ctrl_c())
         .await?;
 

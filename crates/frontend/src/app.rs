@@ -5,6 +5,7 @@ use leptos_router::path;
 
 use crate::api::ws::WsClient;
 use crate::features::announcements::routes::AnnouncementsPage;
+use crate::features::audit::routes::AuditPage;
 use crate::features::auth::{self, routes::LoginPage};
 use crate::features::chat::routes::ChatPage;
 use crate::features::groups::routes::{GroupDetailPage, GroupsPage};
@@ -80,6 +81,7 @@ pub fn App() -> impl IntoView {
                 <Route path=path!("/users/:id") view=UserDetailPage />
                 <Route path=path!("/files") view=FilesPage />
                 <Route path=path!("/permissions") view=PermissionsPage />
+                <Route path=path!("/audit") view=AuditPage />
             </Routes>
         </Router>
         <ToastHost />

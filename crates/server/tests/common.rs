@@ -1,6 +1,6 @@
 //! In-memory test doubles and an [`AppState`] builder shared by the server's
 //! integration tests. The fakes drive the real [`server::app::router`] without
-//! standing up Postgres, Scylla, Redis, or OpenFGA.
+//! standing up Postgres, Scylla, Redis, or `OpenFGA`.
 //!
 //! The fakes implement the `domain` traits with trivial in-memory behaviour;
 //! untested-route methods return empty/`Ok` results. Repository shapes mirror the
@@ -21,9 +21,9 @@ use application::{
     events::EventBus,
     permissions::Permissions,
     service::{
-        announcement::AnnouncementService, chat::ChatService, group::GroupService,
-        notification::NotificationService, project::ProjectService, request::RequestService,
-        ticket::TicketService, user::UserService,
+        announcement::AnnouncementService, audit::AuditService, chat::ChatService,
+        group::GroupService, notification::NotificationService, project::ProjectService,
+        request::RequestService, ticket::TicketService, user::UserService,
     },
 };
 use domain::{
@@ -50,6 +50,7 @@ use domain::{
     },
 };
 use infrastructure::local_storage::LocalStorage;
+use infrastructure::signed_url::SignedUrl;
 
 use server::{
     app::AppState, auth::TokenService, middleware::rate_limit::RateLimits, realtime::Realtime,
@@ -438,6 +439,13 @@ impl AuditRepository for FakeAudit {
     ) -> Result<Vec<AuditLog>, RepositoryError> {
         Ok(Vec::new())
     }
+    async fn list_recent(
+        &self,
+        _limit: u32,
+        _before: Option<OffsetDateTime>,
+    ) -> Result<Vec<AuditLog>, RepositoryError> {
+        Ok(Vec::new())
+    }
 }
 
 // --- ports ---------------------------------------------------------------------
@@ -566,15 +574,22 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
 
     let authz = Arc::new(FakeAuthz);
     let perms = Arc::new(Permissions::new(users.clone(), groups.clone(), authz));
-    let events = Arc::new(EventBus::new(Arc::new(FakePublisher), Arc::new(FakeJobs)));
+    let events = Arc::new(EventBus::new(
+        Arc::new(FakePublisher),
+        Arc::new(FakeJobs),
+        Arc::new(FakeJobs),
+    ));
 
     let publisher: Arc<dyn EventPublisher> = Arc::new(FakePublisher);
     let realtime = Realtime::new(publisher, "redis://invalid.test");
+    let signed_url = Arc::new(SignedUrl::new(b"test-secret"));
     let storage = Arc::new(LocalStorage::new(
         std::env::temp_dir().join("portal-test-uploads"),
         "/files",
+        signed_url.clone(),
     ));
-    let audit: Arc<dyn AuditRepository> = Arc::new(FakeAudit);
+    let audit_repo: Arc<dyn AuditRepository> = Arc::new(FakeAudit);
+    let audit_service = Arc::new(AuditService::new(audit_repo, perms.clone()));
     let presence: Arc<dyn Presence> = Arc::new(FakePresence);
     let rate_limiter: Arc<dyn RateLimit> = Arc::new(FakeRateLimit::default());
 
@@ -627,11 +642,12 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         notification: Arc::new(NotificationService::new(Arc::new(FakeNotifications), perms)),
         token: Arc::new(TokenService::new("test-secret", 3600, false)),
         realtime,
-        audit,
+        audit_service,
         presence,
         rate_limiter,
         rate_limits,
         storage,
+        signed_url,
     };
 
     TestApp {

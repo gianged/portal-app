@@ -116,3 +116,42 @@ fn month_abbr(month: Month) -> &'static str {
         Month::December => "Dec",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test]
+    fn tone_for_is_stable_and_bounded() {
+        // Same name -> same tone, always within the 0..6 avatar palette.
+        assert!(tone_for("Ada Lovelace") < 6);
+        assert_eq!(tone_for("Ada Lovelace"), tone_for("Ada Lovelace"));
+    }
+
+    #[wasm_bindgen_test]
+    fn relative_time_reads_browser_clock() {
+        // Exercises the `time/wasm-bindgen` feature: `now_utc()` resolves through
+        // the JS `Date` shim in-browser. A just-created timestamp reads "just now".
+        let now = OffsetDateTime::now_utc();
+        assert_eq!(relative_time(now), "just now");
+    }
+
+    #[wasm_bindgen_test]
+    fn status_variants_map_terminal_states() {
+        assert!(matches!(
+            ticket_status_variant(TicketStatus::Resolved),
+            BadgeVariant::Success
+        ));
+        assert!(matches!(
+            request_status_variant(RequestStatus::Cancelled),
+            BadgeVariant::Danger
+        ));
+        assert!(matches!(
+            project_status_variant(ProjectStatus::Active),
+            BadgeVariant::Success
+        ));
+    }
+}

@@ -57,3 +57,52 @@ impl JobQueue for ApalisNotificationQueue {
         Ok(())
     }
 }
+
+/// Audit-queue twin of [`NotificationEnvelope`]. A distinct type so its
+/// apalis/Redis namespace (`RedisStorage::new` namespaces by `type_name`) never
+/// collides with the notification queue, keeping the two consumers' retry
+/// domains isolated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditEnvelope {
+    pub event: Vec<u8>,
+}
+
+/// Builds the Redis-backed audit job storage. Both the producer (`server`, via
+/// [`ApalisAuditQueue`]) and the consumer (`workers`) call this so they agree on
+/// the queue's wire type and namespace.
+pub async fn audit_storage(redis_url: &str) -> Result<RedisStorage<AuditEnvelope>, JobError> {
+    let conn = apalis_redis::connect(redis_url)
+        .await
+        .map_err(|e| JobError::Backend(e.to_string()))?;
+    Ok(RedisStorage::new(conn))
+}
+
+/// [`JobQueue`] adapter feeding the durable `audit` queue the audit projector
+/// consumes. Mirrors [`ApalisNotificationQueue`].
+#[derive(Clone)]
+pub struct ApalisAuditQueue {
+    storage: RedisStorage<AuditEnvelope>,
+}
+
+impl ApalisAuditQueue {
+    #[must_use]
+    pub fn new(storage: RedisStorage<AuditEnvelope>) -> Self {
+        Self { storage }
+    }
+}
+
+#[async_trait]
+impl JobQueue for ApalisAuditQueue {
+    /// `queue` is accepted for the port's generality but ignored: this adapter
+    /// is bound to a single audit storage at construction.
+    async fn enqueue(&self, _queue: &str, payload: &[u8]) -> Result<(), JobError> {
+        let mut storage = self.storage.clone();
+        storage
+            .push(AuditEnvelope {
+                event: payload.to_vec(),
+            })
+            .await
+            .map_err(|e| JobError::Backend(e.to_string()))?;
+        Ok(())
+    }
+}

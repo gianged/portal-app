@@ -1,0 +1,17 @@
+[package]
+name = "portal-e2e"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone workspace: deliberately NOT a member of the root workspace, so
+# `cargo build/test --workspace` never tries to drive a browser. Run explicitly
+# via `scripts/e2e.sh` (which brings up the stack + geckodriver first).
+[workspace]
+
+# rustls only — the repo forbids openssl/native-tls (fantoccini's default features
+# pull hyper-tls -> native-tls, so they are disabled here).
+[dev-dependencies]
+fantoccini = { version = "0.21", default-features = false, features = ["rustls-tls"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+anyhow = "1"

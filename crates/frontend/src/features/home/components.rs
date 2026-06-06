@@ -1,8 +1,10 @@
+#![allow(dead_code)] // TODO: UserCard unused, I will see it
+
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos_router::NavigateOptions;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_location, use_navigate};
-use leptos_router::NavigateOptions;
 
 use crate::features::auth::api as auth_api;
 use crate::primitives::avatar::{Avatar, AvatarSize};
@@ -37,27 +39,100 @@ pub fn sidebar_sections() -> Vec<NavSection> {
         NavSection {
             label: "Workspace",
             items: vec![
-                NavItem { label: "Home", href: "/dashboard", icon: IconName::Spark, count: None, enabled: true },
-                NavItem { label: "Inbox", href: "/inbox", icon: IconName::Inbox, count: None, enabled: true },
-                NavItem { label: "Announcements", href: "/announcements", icon: IconName::Megaphone, count: None, enabled: true },
+                NavItem {
+                    label: "Home",
+                    href: "/dashboard",
+                    icon: IconName::Spark,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Inbox",
+                    href: "/inbox",
+                    icon: IconName::Inbox,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Announcements",
+                    href: "/announcements",
+                    icon: IconName::Megaphone,
+                    count: None,
+                    enabled: true,
+                },
             ],
         },
         NavSection {
             label: "Work",
             items: vec![
-                NavItem { label: "Groups", href: "/groups", icon: IconName::Users, count: None, enabled: true },
-                NavItem { label: "Projects", href: "/projects", icon: IconName::Folder, count: None, enabled: true },
-                NavItem { label: "Requests", href: "/requests", icon: IconName::Doc, count: None, enabled: true },
-                NavItem { label: "IT tickets", href: "/tickets", icon: IconName::Ticket, count: None, enabled: true },
-                NavItem { label: "Chat", href: "/chat", icon: IconName::Chat, count: None, enabled: true },
-                NavItem { label: "Files", href: "/files", icon: IconName::Folder, count: None, enabled: true },
+                NavItem {
+                    label: "Groups",
+                    href: "/groups",
+                    icon: IconName::Users,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Projects",
+                    href: "/projects",
+                    icon: IconName::Folder,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Requests",
+                    href: "/requests",
+                    icon: IconName::Doc,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "IT tickets",
+                    href: "/tickets",
+                    icon: IconName::Ticket,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Chat",
+                    href: "/chat",
+                    icon: IconName::Chat,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Files",
+                    href: "/files",
+                    icon: IconName::Folder,
+                    count: None,
+                    enabled: true,
+                },
             ],
         },
         NavSection {
             label: "Admin",
             items: vec![
-                NavItem { label: "People", href: "/users", icon: IconName::Building, count: None, enabled: true },
-                NavItem { label: "Permissions", href: "/permissions", icon: IconName::Lock, count: None, enabled: true },
+                NavItem {
+                    label: "People",
+                    href: "/users",
+                    icon: IconName::Building,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Permissions",
+                    href: "/permissions",
+                    icon: IconName::Lock,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Audit log",
+                    href: "/audit",
+                    icon: IconName::Clock,
+                    count: None,
+                    enabled: true,
+                },
             ],
         },
     ]
@@ -354,7 +429,10 @@ fn UserMenu() -> impl IntoView {
         fs = typography::TEXT_CAPTION,
         c = color::TEXT_MUTED,
     ));
-    let chevron_cls = class(format!("color: {c}; display: inline-flex;", c = color::TEXT_FAINT));
+    let chevron_cls = class(format!(
+        "color: {c}; display: inline-flex;",
+        c = color::TEXT_FAINT
+    ));
     let meta_cls = class(format!(
         "padding: {p}; border-bottom: 1px solid {b}; margin-bottom: {mb};",
         p = space::D2,

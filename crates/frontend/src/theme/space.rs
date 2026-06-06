@@ -6,6 +6,7 @@ pub const D5: &str = "20px";
 pub const D6: &str = "24px";
 pub const D7: &str = "32px";
 pub const D8: &str = "40px";
+#[allow(dead_code)] // TODO: unused, I will see it
 pub const D9: &str = "56px";
 
 pub const ROW_H: &str = "40px";

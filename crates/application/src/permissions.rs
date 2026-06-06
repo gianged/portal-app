@@ -89,7 +89,7 @@ fn company_role_relation(role: SystemRole) -> &'static str {
 ///
 /// Resolves actors and memberships through the [`UserRepository`] /
 /// [`GroupRepository`] and answers permission questions — or writes the relation
-/// tuples backing a state change — through the [`AuthzClient`] (OpenFGA). The
+/// tuples backing a state change — through the [`AuthzClient`] (`OpenFGA`). The
 /// `REL_*` relation strings above MUST match the relations declared in
 /// `infra/openfga/authorization-model.json`.
 pub struct Permissions {
@@ -179,6 +179,20 @@ impl Permissions {
     pub async fn require_director(&self, actor: UserId) -> Result<()> {
         let user = self.require_active(actor).await?;
         if matches!(user.system_role, Some(SystemRole::Director)) {
+            Ok(())
+        } else {
+            Err(Error::Forbidden)
+        }
+    }
+
+    /// Verifies the actor is active and holds an org-wide system role (Director or
+    /// HR) — the admin tier that may read the audit log.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the actor does not exist, `Forbidden` if the actor is inactive or holds no system role, or a repository error if the datastore is unavailable.
+    pub async fn require_admin(&self, actor: UserId) -> Result<()> {
+        let user = self.require_active(actor).await?;
+        if user.system_role.is_some() {
             Ok(())
         } else {
             Err(Error::Forbidden)

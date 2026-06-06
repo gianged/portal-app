@@ -2,9 +2,13 @@ use std::{collections::HashSet, sync::Arc};
 
 use domain::{
     ids::{ChannelId, GroupId, NotificationId, UserId},
-    model::{Channel, GroupRole, Membership, Notification, NotificationPayload, TicketPriority},
+    model::{
+        Channel, GroupRole, Membership, Notification, NotificationPayload, ProjectInviteStatus,
+        TicketPriority, TicketStatus,
+    },
     repository::{
-        ChatRepository, GroupRepository, NotificationRepository, RequestRepository, UserRepository,
+        ChatRepository, GroupRepository, NotificationRepository, ProjectRepository,
+        RequestRepository, TicketRepository, UserRepository,
     },
 };
 use time::OffsetDateTime;
@@ -29,6 +33,8 @@ pub struct NotificationFanout {
     users: Arc<dyn UserRepository>,
     requests: Arc<dyn RequestRepository>,
     chats: Arc<dyn ChatRepository>,
+    tickets: Arc<dyn TicketRepository>,
+    projects: Arc<dyn ProjectRepository>,
 }
 
 impl NotificationFanout {
@@ -39,6 +45,8 @@ impl NotificationFanout {
         users: Arc<dyn UserRepository>,
         requests: Arc<dyn RequestRepository>,
         chats: Arc<dyn ChatRepository>,
+        tickets: Arc<dyn TicketRepository>,
+        projects: Arc<dyn ProjectRepository>,
     ) -> Self {
         Self {
             notifications,
@@ -46,6 +54,8 @@ impl NotificationFanout {
             users,
             requests,
             chats,
+            tickets,
+            projects,
         }
     }
 
@@ -148,8 +158,109 @@ impl NotificationFanout {
                 };
                 self.fan_out(recipients, *actor, &payload).await
             }
-            _ => Ok(()),
+            DomainEvent::TicketAssigned {
+                ticket_id,
+                assignee,
+                actor,
+                ..
+            } => {
+                let payload = NotificationPayload::TicketAssigned {
+                    ticket_id: *ticket_id,
+                };
+                self.fan_out([*assignee], *actor, &payload).await
+            }
+            DomainEvent::TicketStatusChanged {
+                ticket_id,
+                from,
+                to,
+                actor,
+                ..
+            } => {
+                if !Self::is_notable_ticket_transition(*from, *to) {
+                    return Ok(());
+                }
+                // The event omits requester/assignee; fetch the ticket to learn
+                // who cares about the status change (mirrors RequestStatusChanged).
+                let mut recipients = Vec::new();
+                if let Some(ticket) = self.tickets.find_by_id(*ticket_id).await? {
+                    recipients.push(ticket.requester_user_id);
+                    if let Some(assignee) = ticket.assignee_user_id {
+                        recipients.push(assignee);
+                    }
+                }
+                let payload = NotificationPayload::TicketStatusChange {
+                    ticket_id: *ticket_id,
+                    from: *from,
+                    to: *to,
+                };
+                self.fan_out(recipients, *actor, &payload).await
+            }
+            DomainEvent::ProjectInviteResponded {
+                invite_id,
+                project_id,
+                target_group,
+                status,
+                actor,
+                ..
+            } => {
+                let recipients: Vec<UserId> = match status {
+                    // Accept/decline: notify the inviter. The event omits them, so
+                    // fetch the invite for `invited_by_user_id`.
+                    ProjectInviteStatus::Accepted | ProjectInviteStatus::Declined => self
+                        .projects
+                        .find_invite(*invite_id)
+                        .await?
+                        .map(|inv| inv.invited_by_user_id)
+                        .into_iter()
+                        .collect(),
+                    // Revoke: notify the invited group's leader (had a pending invite).
+                    ProjectInviteStatus::Revoked => self
+                        .group_leader_id(*target_group)
+                        .await?
+                        .into_iter()
+                        .collect(),
+                    // Not emitted for this event; defensively a no-op.
+                    ProjectInviteStatus::Pending => Vec::new(),
+                };
+                let payload = NotificationPayload::ProjectInviteResponse {
+                    invite_id: *invite_id,
+                    project_id: *project_id,
+                    status: *status,
+                };
+                self.fan_out(recipients, *actor, &payload).await
+            }
+            DomainEvent::TicketRaised {
+                ticket_id,
+                requester,
+                ..
+            } => {
+                let recipients = self.it_group_member_ids().await?;
+                let payload = NotificationPayload::TicketRaised {
+                    ticket_id: *ticket_id,
+                };
+                self.fan_out(recipients, *requester, &payload).await
+            }
+            other => {
+                tracing::debug!(
+                    topic = other.topic(),
+                    "fanout: event has no notification mapping"
+                );
+                Ok(())
+            }
         }
+    }
+
+    /// Ticket transitions worth notifying the requester/assignee about: the
+    /// resolution lifecycle (resolved/closed/reopened) and a rejected resolution
+    /// (`Resolved -> InProgress`). `start` (`Assigned -> InProgress`) is noise.
+    const fn is_notable_ticket_transition(from: TicketStatus, to: TicketStatus) -> bool {
+        matches!(
+            to,
+            TicketStatus::Resolved | TicketStatus::Closed | TicketStatus::Reopened
+        ) || matches!(
+            (from, to),
+            (TicketStatus::Resolved, TicketStatus::InProgress)
+        )
     }
 
     /// Persist one notification per distinct recipient, skipping `exclude`.

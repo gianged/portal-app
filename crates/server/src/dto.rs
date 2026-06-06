@@ -33,6 +33,7 @@ use application::commands::group::{
 use application::commands::project::{CreateProjectCommand, UpdateProjectMetadataCommand};
 use application::commands::request::{CreateRequestCommand, UpdateRequestCommand};
 use shared::dto::announcement::{AnnouncementDto, PostAnnouncementRequest};
+use shared::dto::audit::{AuditAction as WireAuditAction, AuditLogDto};
 use shared::dto::chat::{
     ChannelDto, ChannelKind as WireChannelKind, ChannelSummaryDto, MessageDto, SendMessageRequest,
 };
@@ -370,6 +371,34 @@ pub fn notification_payload_dto(payload: &model::NotificationPayload) -> Notific
             invite_id: project_invite_id(*invite_id),
             project_id: project_id(*pid),
         },
+        model::NotificationPayload::TicketAssigned { ticket_id: tid } => {
+            NotificationPayloadDto::TicketAssigned {
+                ticket_id: ticket_id(*tid),
+            }
+        }
+        model::NotificationPayload::TicketStatusChange {
+            ticket_id: tid,
+            from,
+            to,
+        } => NotificationPayloadDto::TicketStatusChange {
+            ticket_id: ticket_id(*tid),
+            from: ticket_status_dto(*from),
+            to: ticket_status_dto(*to),
+        },
+        model::NotificationPayload::ProjectInviteResponse {
+            invite_id,
+            project_id: pid,
+            status,
+        } => NotificationPayloadDto::ProjectInviteResponse {
+            invite_id: project_invite_id(*invite_id),
+            project_id: project_id(*pid),
+            status: project_invite_status_dto(*status),
+        },
+        model::NotificationPayload::TicketRaised { ticket_id: tid } => {
+            NotificationPayloadDto::TicketRaised {
+                ticket_id: ticket_id(*tid),
+            }
+        }
         model::NotificationPayload::System { message } => NotificationPayloadDto::System {
             message: message.clone(),
         },
@@ -383,6 +412,37 @@ pub fn notification_dto(notification: &model::Notification) -> NotificationDto {
         payload: notification_payload_dto(&notification.payload),
         read: notification.read_at.is_some(),
         created_at: notification.created_at,
+    }
+}
+
+// --- audit ---
+
+#[must_use]
+pub fn audit_action_dto(action: model::AuditAction) -> WireAuditAction {
+    match action {
+        model::AuditAction::Create => WireAuditAction::Create,
+        model::AuditAction::Update => WireAuditAction::Update,
+        model::AuditAction::Delete => WireAuditAction::Delete,
+        model::AuditAction::StatusChange => WireAuditAction::StatusChange,
+        model::AuditAction::Assign => WireAuditAction::Assign,
+        model::AuditAction::Transfer => WireAuditAction::Transfer,
+        model::AuditAction::Login => WireAuditAction::Login,
+        model::AuditAction::Logout => WireAuditAction::Logout,
+    }
+}
+
+/// Projects an audit row plus its already-resolved actor summary. A `None` actor
+/// is a system action (or an actor that has since been hard-deleted).
+#[must_use]
+pub fn audit_log_dto(log: &model::AuditLog, actor: Option<UserSummaryDto>) -> AuditLogDto {
+    AuditLogDto {
+        id: audit_log_id(log.id),
+        actor,
+        action: audit_action_dto(log.action),
+        entity_schema: log.entity_schema.clone(),
+        entity_table: log.entity_table.clone(),
+        entity_id: log.entity_id,
+        occurred_at: log.occurred_at,
     }
 }
 
@@ -636,12 +696,14 @@ pub fn request_dto(
 pub fn request_attachment_dto(
     attachment: &model::RequestAttachment,
     uploaded_by: UserSummaryDto,
+    download_url: String,
 ) -> RequestAttachmentDto {
     RequestAttachmentDto {
         id: request_attachment_id(attachment.id),
         filename: attachment.filename.clone(),
         content_type: attachment.content_type.clone(),
         size_bytes: attachment.size_bytes,
+        download_url,
         uploaded_by,
         created_at: attachment.created_at,
     }

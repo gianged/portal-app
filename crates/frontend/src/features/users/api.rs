@@ -23,7 +23,10 @@ pub async fn create(req: &CreateUserRequest) -> Result<UserProfileDto, FrontendE
 }
 
 /// Edit a profile (self or HR; `PATCH /users/{id}`).
-pub async fn update(id: UserId, req: &UpdateProfileRequest) -> Result<UserProfileDto, FrontendError> {
+pub async fn update(
+    id: UserId,
+    req: &UpdateProfileRequest,
+) -> Result<UserProfileDto, FrontendError> {
     client::patch_json(&format!("/users/{}", id.0), req).await
 }
 

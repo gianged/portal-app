@@ -1,34 +1,56 @@
-//! Authenticated file download, backing attachment + avatar `storage_key`s and
-//! the URLs `FileStorage::presign_get` emits.
+//! Signed file download, backing attachment + avatar `storage_key`s and the URLs
+//! [`FileStorage::presign_get`] emits.
 //!
-//! Access control is "any authenticated active session + unguessable key". The
-//! route is mounted under `/api/v1`, so `STORAGE_PUBLIC_BASE` must include that
-//! prefix for presign URLs to resolve. Per-resource checks (map key -> resource
-//! -> viewer) are a future refinement.
+//! Access control is the signed `?exp&sig` query: the handler verifies the HMAC
+//! and expiry, so a valid presigned link works without a session (e.g. an
+//! `<img src>`). The route is mounted under `/api/v1`, so `STORAGE_PUBLIC_BASE`
+//! must include that prefix for presign URLs to resolve. Per-resource checks
+//! (map key -> resource -> viewer) are a future refinement.
 
 use axum::{
     Router,
     body::Body,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderValue, StatusCode, header},
     response::Response,
     routing::get,
 };
+use serde::Deserialize;
+use time::OffsetDateTime;
 
 use domain::error::StorageError;
 use domain::ports::file_storage::FileStorage;
 
-use crate::{app::AppState, error::AppError, extractors::auth_user::AuthUser};
+use crate::{
+    app::AppState,
+    error::{AppError, AuthError},
+};
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/files/{*key}", get(download))
 }
 
+/// Query string carried by a presigned download URL.
+#[derive(Deserialize)]
+struct SignedParams {
+    /// Unix-seconds expiry embedded at sign time.
+    exp: i64,
+    /// Lowercase-hex HMAC-SHA256 over `key|exp`.
+    sig: String,
+}
+
 async fn download(
     State(state): State<AppState>,
-    _auth: AuthUser,
     Path(key): Path<String>,
+    Query(params): Query<SignedParams>,
 ) -> Result<Response, AppError> {
+    if !state
+        .signed_url
+        .verify(&key, params.exp, &params.sig, OffsetDateTime::now_utc())
+    {
+        return Err(AppError::Auth(AuthError::Invalid));
+    }
+
     let bytes = state.storage.get(&key).await.map_err(|e| match e {
         StorageError::NotFound => AppError::Domain(application::Error::NotFound("file")),
         other @ StorageError::Backend(_) => AppError::Domain(application::Error::Storage(other)),

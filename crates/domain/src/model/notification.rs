@@ -5,7 +5,7 @@ use crate::ids::{
     ChannelId, MessageId, NotificationId, ProjectId, ProjectInviteId, RequestId, TicketId, UserId,
 };
 
-use super::request::RequestStatus;
+use super::{project::ProjectInviteStatus, request::RequestStatus, ticket::TicketStatus};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Notification {
@@ -43,6 +43,22 @@ pub enum NotificationPayload {
         invite_id: ProjectInviteId,
         project_id: ProjectId,
     },
+    TicketAssigned {
+        ticket_id: TicketId,
+    },
+    TicketStatusChange {
+        ticket_id: TicketId,
+        from: TicketStatus,
+        to: TicketStatus,
+    },
+    ProjectInviteResponse {
+        invite_id: ProjectInviteId,
+        project_id: ProjectId,
+        status: ProjectInviteStatus,
+    },
+    TicketRaised {
+        ticket_id: TicketId,
+    },
     System {
         message: String,
     },
@@ -59,6 +75,10 @@ pub enum NotificationKind {
     RequestAssigned,
     RequestStatusChange,
     ProjectInvite,
+    TicketAssigned,
+    TicketStatusChange,
+    ProjectInviteResponse,
+    TicketRaised,
     System,
 }
 
@@ -74,6 +94,12 @@ impl Notification {
                 NotificationKind::RequestStatusChange
             }
             NotificationPayload::ProjectInvite { .. } => NotificationKind::ProjectInvite,
+            NotificationPayload::TicketAssigned { .. } => NotificationKind::TicketAssigned,
+            NotificationPayload::TicketStatusChange { .. } => NotificationKind::TicketStatusChange,
+            NotificationPayload::ProjectInviteResponse { .. } => {
+                NotificationKind::ProjectInviteResponse
+            }
+            NotificationPayload::TicketRaised { .. } => NotificationKind::TicketRaised,
             NotificationPayload::System { .. } => NotificationKind::System,
         }
     }

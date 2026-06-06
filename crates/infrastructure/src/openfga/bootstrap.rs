@@ -22,7 +22,7 @@ pub async fn resolve_config(
 ) -> Result<OpenFgaConfig, AuthzError> {
     let endpoint = endpoint.trim_end_matches('/').to_string();
     let http = Client::builder()
-        .use_rustls_tls()
+        .tls_backend_rustls()
         .build()
         .map_err(|e| AuthzError::Backend(e.to_string()))?;
 

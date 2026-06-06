@@ -40,7 +40,9 @@ use crate::primitives::table::{Table, TableToolbar, TableWrap};
 use crate::primitives::textarea::Textarea;
 use crate::state::toast::ToastState;
 use crate::theme::{class, color, space, typography};
-use crate::util::format::{relative_time, request_priority_variant, request_status_variant, tone_for};
+use crate::util::format::{
+    relative_time, request_priority_variant, request_status_variant, tone_for,
+};
 use crate::util::load::{Loadable, load, note};
 
 const ALL_STATUSES: [RequestStatus; 7] = [
@@ -214,7 +216,10 @@ fn request_row(r: RequestDto) -> impl IntoView {
 }
 
 fn assignee_cell(name: &str) -> AnyView {
-    let wrap = class(format!("display: inline-flex; align-items: center; gap: {g};", g = space::D2));
+    let wrap = class(format!(
+        "display: inline-flex; align-items: center; gap: {g};",
+        g = space::D2
+    ));
     view! {
         <span class=wrap>
             <Avatar name=name.to_owned() size=AvatarSize::Sm tone=tone_for(name) />
@@ -357,7 +362,8 @@ fn ProjectPicker(selected: RwSignal<Option<ProjectId>>) -> impl IntoView {
     let on_group = Callback::new(move |s: String| group.set(Uuid::parse_str(&s).ok().map(GroupId)));
     let on_project =
         Callback::new(move |s: String| selected.set(Uuid::parse_str(&s).ok().map(ProjectId)));
-    let group_value = Signal::derive(move || group.get().map(|g| g.0.to_string()).unwrap_or_default());
+    let group_value =
+        Signal::derive(move || group.get().map(|g| g.0.to_string()).unwrap_or_default());
     let project_value =
         Signal::derive(move || selected.get().map(|p| p.0.to_string()).unwrap_or_default());
 
@@ -429,7 +435,9 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
 
     // Run a lifecycle action: resolve the future, toast, re-fetch.
     let run = move |action: RequestAction| {
-        let Some(rid) = id.get_untracked() else { return };
+        let Some(rid) = id.get_untracked() else {
+            return;
+        };
         spawn_local(async move {
             match action_future(action, rid).await {
                 Ok(_) => {
@@ -441,15 +449,19 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
         });
     };
 
-    let confirm_assign = Callback::new(move |_| {
+    let confirm_assign = Callback::new(move |()| {
         let Some(uid) = assign_target.get_untracked() else {
             toast.error("Pick someone to assign.");
             return;
         };
-        let Some(rid) = id.get_untracked() else { return };
+        let Some(rid) = id.get_untracked() else {
+            return;
+        };
         assign_open.set(false);
         spawn_local(async move {
-            let req = AssignRequestRequest { assignee_user_id: uid };
+            let req = AssignRequestRequest {
+                assignee_user_id: uid,
+            };
             match api::assign(rid, &req).await {
                 Ok(_) => {
                     toast.success("Request assigned");
@@ -467,7 +479,9 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
             toast.error("Choose a file first.");
             return;
         };
-        let Some(rid) = id.get_untracked() else { return };
+        let Some(rid) = id.get_untracked() else {
+            return;
+        };
         let form = FormData::new().expect("FormData is constructible in the browser");
         let blob: &web_sys::Blob = file.as_ref();
         let _ = form.append_with_blob_and_filename("file", blob, &file.name());
@@ -563,20 +577,40 @@ fn lifecycle_bar(
     let buttons: Vec<AnyView> = match status {
         RequestStatus::Draft => vec![
             btn("Submit", ButtonVariant::Primary, RequestAction::Submit),
-            btn("Cancel request", ButtonVariant::Destructive, RequestAction::Cancel),
+            btn(
+                "Cancel request",
+                ButtonVariant::Destructive,
+                RequestAction::Cancel,
+            ),
         ],
         RequestStatus::Submitted => vec![
             assign(),
-            btn("Cancel request", ButtonVariant::Destructive, RequestAction::Cancel),
+            btn(
+                "Cancel request",
+                ButtonVariant::Destructive,
+                RequestAction::Cancel,
+            ),
         ],
         RequestStatus::Assigned => vec![
             btn("Start work", ButtonVariant::Primary, RequestAction::Start),
             assign(),
-            btn("Cancel request", ButtonVariant::Destructive, RequestAction::Cancel),
+            btn(
+                "Cancel request",
+                ButtonVariant::Destructive,
+                RequestAction::Cancel,
+            ),
         ],
         RequestStatus::InProgress => vec![
-            btn("Send for review", ButtonVariant::Primary, RequestAction::Review),
-            btn("Cancel request", ButtonVariant::Destructive, RequestAction::Cancel),
+            btn(
+                "Send for review",
+                ButtonVariant::Primary,
+                RequestAction::Review,
+            ),
+            btn(
+                "Cancel request",
+                ButtonVariant::Destructive,
+                RequestAction::Cancel,
+            ),
         ],
         RequestStatus::Review => vec![
             btn("Approve", ButtonVariant::Primary, RequestAction::Approve),

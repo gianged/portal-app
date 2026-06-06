@@ -8,6 +8,7 @@ pub enum FrontendError {
     Http { status: u16, message: String },
     #[error("invalid response: {0}")]
     Serde(String),
+    #[allow(dead_code)] // TODO: unused, I will see it
     #[error("{0}")]
     Validation(String),
 }

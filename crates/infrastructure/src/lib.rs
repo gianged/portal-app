@@ -8,3 +8,4 @@ pub mod openfga;
 pub mod postgres;
 pub mod redis;
 pub mod scylla;
+pub mod signed_url;

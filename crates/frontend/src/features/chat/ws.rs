@@ -36,12 +36,15 @@ pub fn apply_server_frame(
         {
             push_message(messages, message.clone());
         }
-        ServerFrame::MessageDeleted { channel_id, message_id } if *channel_id == channel => {
+        ServerFrame::MessageDeleted {
+            channel_id,
+            message_id,
+        } if *channel_id == channel => {
             messages.update(|v| v.retain(|m| m.id != *message_id));
         }
         ServerFrame::Typing { channel_id, .. } if *channel_id == channel => {
             typing.set(true);
-            set_timeout(move || typing.set(false), Duration::from_millis(3000));
+            set_timeout(move || typing.set(false), Duration::from_secs(3));
         }
         _ => {}
     }

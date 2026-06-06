@@ -56,11 +56,14 @@ pub fn ProjectsIndex() -> impl IntoView {
             return;
         }
         if let Some(Ok(list)) = groups.get() {
-            let my = auth.user.with_untracked(|u| u.as_ref().and_then(|x| x.group_name.clone()));
+            let my = auth
+                .user
+                .with_untracked(|u| u.as_ref().and_then(|x| x.group_name.clone()));
             if let Some(name) = my
-                && let Some(g) = list.iter().find(|g| g.name == name) {
-                    group.set(Some(g.id));
-                }
+                && let Some(g) = list.iter().find(|g| g.name == name)
+            {
+                group.set(Some(g.id));
+            }
         }
     });
 
@@ -73,7 +76,8 @@ pub fn ProjectsIndex() -> impl IntoView {
     });
 
     let on_group = Callback::new(move |s: String| group.set(Uuid::parse_str(&s).ok().map(GroupId)));
-    let group_value = Signal::derive(move || group.get().map(|g| g.0.to_string()).unwrap_or_default());
+    let group_value =
+        Signal::derive(move || group.get().map(|g| g.0.to_string()).unwrap_or_default());
     let open_create = Callback::new(move |_| create_open.set(true));
     let created = Callback::new(move |()| reload.update(|n| *n += 1));
     let responded = Callback::new(move |()| reload.update(|n| *n += 1));
@@ -182,7 +186,11 @@ fn InvitesInbox(
             let req = RespondInviteRequest { accept };
             match api::respond_invite(invite, &req).await {
                 Ok(_) => {
-                    toast.success(if accept { "Invite accepted" } else { "Invite declined" });
+                    toast.success(if accept {
+                        "Invite accepted"
+                    } else {
+                        "Invite declined"
+                    });
                     on_responded.run(());
                 }
                 Err(e) => toast.error(e.to_string()),
@@ -261,7 +269,11 @@ fn CreateProjectDialog(
             return;
         }
         submitting.set(true);
-        let req = CreateProjectRequest { owner_group_id: gid, name: n, description: d };
+        let req = CreateProjectRequest {
+            owner_group_id: gid,
+            name: n,
+            description: d,
+        };
         spawn_local(async move {
             match api::create(&req).await {
                 Ok(_) => {
@@ -343,8 +355,12 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
     });
 
     let run = move |target: StatusTarget| {
-        let Some(pid) = id.get_untracked() else { return };
-        let req = ChangeProjectStatusRequest { status: target.status() };
+        let Some(pid) = id.get_untracked() else {
+            return;
+        };
+        let req = ChangeProjectStatusRequest {
+            status: target.status(),
+        };
         spawn_local(async move {
             match api::change_status(pid, &req).await {
                 Ok(_) => {
@@ -357,7 +373,9 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
     };
 
     let remove_collab = move |gid: GroupId| {
-        let Some(pid) = id.get_untracked() else { return };
+        let Some(pid) = id.get_untracked() else {
+            return;
+        };
         spawn_local(async move {
             match api::remove_collaborator(pid, gid).await {
                 Ok(()) => {
@@ -429,7 +447,8 @@ fn status_bar(
 ) -> AnyView {
     let btn = move |label: &'static str, variant: ButtonVariant, target: StatusTarget| {
         let cb = Callback::new(move |_| run(target));
-        view! { <Button variant=variant size=ButtonSize::Sm on_click=cb>{label}</Button> }.into_any()
+        view! { <Button variant=variant size=ButtonSize::Sm on_click=cb>{label}</Button> }
+            .into_any()
     };
     let buttons: Vec<AnyView> = match status {
         ProjectStatus::Planning => vec![
@@ -438,7 +457,11 @@ fn status_bar(
         ],
         ProjectStatus::Active => vec![
             btn("Put on hold", ButtonVariant::Secondary, StatusTarget::Hold),
-            btn("Mark complete", ButtonVariant::Primary, StatusTarget::Complete),
+            btn(
+                "Mark complete",
+                ButtonVariant::Primary,
+                StatusTarget::Complete,
+            ),
             btn("Cancel", ButtonVariant::Destructive, StatusTarget::Cancel),
         ],
         ProjectStatus::OnHold => vec![
@@ -588,14 +611,17 @@ fn InviteGroupDialog(
     let on_close = Callback::new(move |()| open.set(false));
     let cancel = Callback::new(move |_| open.set(false));
     let on_group = Callback::new(move |s: String| group.set(Uuid::parse_str(&s).ok().map(GroupId)));
-    let group_value = Signal::derive(move || group.get().map(|g| g.0.to_string()).unwrap_or_default());
+    let group_value =
+        Signal::derive(move || group.get().map(|g| g.0.to_string()).unwrap_or_default());
 
     let confirm = Callback::new(move |_| {
         let Some(gid) = group.get_untracked() else {
             toast.error("Pick a group to invite.");
             return;
         };
-        let Some(pid) = id.get_untracked() else { return };
+        let Some(pid) = id.get_untracked() else {
+            return;
+        };
         open.set(false);
         let req = InviteGroupRequest { group_id: gid };
         spawn_local(async move {

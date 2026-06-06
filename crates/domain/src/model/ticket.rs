@@ -209,3 +209,141 @@ impl Ticket {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ids::{TicketId, UserId};
+    use time::Duration;
+    use uuid::Uuid;
+
+    fn ticket(status: TicketStatus) -> Ticket {
+        let t0 = OffsetDateTime::UNIX_EPOCH;
+        Ticket {
+            id: TicketId(Uuid::nil()),
+            requester_user_id: UserId(Uuid::nil()),
+            assignee_user_id: None,
+            title: "Printer down".to_owned(),
+            description: "It is on fire".to_owned(),
+            status,
+            priority: None,
+            category: TicketCategory::Hardware,
+            triaged_at: None,
+            resolved_at: None,
+            closed_at: None,
+            created_at: t0,
+            updated_at: t0,
+        }
+    }
+
+    #[test]
+    fn triage_allowed_from_open_or_reopened_only() {
+        assert_eq!(
+            TicketStatus::Open.try_triage().unwrap(),
+            TicketStatus::Triaged
+        );
+        assert_eq!(
+            TicketStatus::Reopened.try_triage().unwrap(),
+            TicketStatus::Triaged
+        );
+        for s in [
+            TicketStatus::Triaged,
+            TicketStatus::Assigned,
+            TicketStatus::InProgress,
+            TicketStatus::Resolved,
+            TicketStatus::Closed,
+        ] {
+            assert!(s.try_triage().is_err(), "{s:?} should not triage");
+        }
+    }
+
+    #[test]
+    fn happy_path_open_to_closed() {
+        assert_eq!(
+            TicketStatus::Open.try_triage().unwrap(),
+            TicketStatus::Triaged
+        );
+        assert_eq!(
+            TicketStatus::Triaged.try_assign().unwrap(),
+            TicketStatus::Assigned
+        );
+        assert_eq!(
+            TicketStatus::Assigned.try_start().unwrap(),
+            TicketStatus::InProgress
+        );
+        assert_eq!(
+            TicketStatus::InProgress.try_resolve().unwrap(),
+            TicketStatus::Resolved
+        );
+        assert_eq!(
+            TicketStatus::Resolved.try_close().unwrap(),
+            TicketStatus::Closed
+        );
+    }
+
+    #[test]
+    fn assign_requires_triaged() {
+        assert!(TicketStatus::Open.try_assign().is_err());
+        assert!(TicketStatus::Assigned.try_assign().is_err());
+    }
+
+    #[test]
+    fn triage_sets_priority_and_timestamp_idempotently() {
+        let t1 = OffsetDateTime::UNIX_EPOCH + Duration::hours(1);
+        let t2 = t1 + Duration::hours(1);
+        let mut t = ticket(TicketStatus::Open);
+        t.triage(TicketPriority::High, t1).unwrap();
+        assert_eq!(t.status, TicketStatus::Triaged);
+        assert_eq!(t.priority, Some(TicketPriority::High));
+        assert_eq!(t.triaged_at, Some(t1));
+
+        // Re-triage after a reopen keeps the original triaged_at.
+        t.status = TicketStatus::Reopened;
+        t.triage(TicketPriority::Urgent, t2).unwrap();
+        assert_eq!(t.triaged_at, Some(t1), "triaged_at must not be overwritten");
+        assert_eq!(t.priority, Some(TicketPriority::Urgent));
+    }
+
+    #[test]
+    fn resolve_then_reopen_clears_resolution_timestamps() {
+        let t1 = OffsetDateTime::UNIX_EPOCH + Duration::hours(1);
+        let mut t = ticket(TicketStatus::InProgress);
+        t.resolve(t1).unwrap();
+        assert_eq!(t.resolved_at, Some(t1));
+        t.close(t1).unwrap();
+        assert_eq!(t.closed_at, Some(t1));
+
+        t.reopen(t1 + Duration::days(1)).unwrap();
+        assert_eq!(t.status, TicketStatus::Reopened);
+        assert_eq!(t.closed_at, None);
+        assert_eq!(t.resolved_at, None);
+    }
+
+    #[test]
+    fn reject_resolution_returns_to_in_progress_and_clears_resolved_at() {
+        let t1 = OffsetDateTime::UNIX_EPOCH + Duration::hours(1);
+        let mut t = ticket(TicketStatus::InProgress);
+        t.resolve(t1).unwrap();
+        t.reject_resolution(t1 + Duration::minutes(5)).unwrap();
+        assert_eq!(t.status, TicketStatus::InProgress);
+        assert_eq!(t.resolved_at, None);
+    }
+
+    #[test]
+    fn reopen_requires_closed() {
+        for s in [
+            TicketStatus::Open,
+            TicketStatus::Triaged,
+            TicketStatus::Assigned,
+            TicketStatus::InProgress,
+            TicketStatus::Resolved,
+            TicketStatus::Reopened,
+        ] {
+            assert!(s.try_reopen().is_err(), "{s:?} should not reopen");
+        }
+        assert_eq!(
+            TicketStatus::Closed.try_reopen().unwrap(),
+            TicketStatus::Reopened
+        );
+    }
+}

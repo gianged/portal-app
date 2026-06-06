@@ -12,7 +12,7 @@ use shared::dto::request::{
 use crate::api::client;
 use crate::api::error::FrontendError;
 
-/// Wire (snake_case) value for the `status` query filter.
+/// Wire (`snake_case`) value for the `status` query filter.
 fn status_param(status: RequestStatus) -> &'static str {
     match status {
         RequestStatus::Draft => "draft",
@@ -56,6 +56,7 @@ pub async fn create(req: &CreateRequestRequest) -> Result<RequestDto, FrontendEr
     client::post_json("/requests", req).await
 }
 
+#[allow(dead_code)] // TODO: unused, I will see it
 pub async fn update(
     id: RequestId,
     req: &UpdateRequestRequest,

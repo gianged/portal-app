@@ -26,6 +26,7 @@ pub async fn create(req: &CreateGroupRequest) -> Result<GroupDto, FrontendError>
     client::post_json("/groups", req).await
 }
 
+#[allow(dead_code)] // TODO: unused, I will see it
 pub async fn update(id: GroupId, req: &UpdateGroupRequest) -> Result<GroupDto, FrontendError> {
     client::patch_json(&format!("/groups/{}", id.0), req).await
 }

@@ -28,7 +28,9 @@ pub fn Composer(
     let text = RwSignal::new(String::new());
 
     let do_send = move || {
-        let Some(cid) = channel.get_untracked() else { return };
+        let Some(cid) = channel.get_untracked() else {
+            return;
+        };
         let body = text.get_untracked();
         if body.trim().is_empty() {
             return;
@@ -59,10 +61,9 @@ pub fn Composer(
     let on_input = Callback::new(move |v: String| {
         let typing = !v.trim().is_empty();
         text.set(v);
-        if typing
-            && let Some(cid) = channel.get_untracked() {
-                ws.send(ClientFrame::Typing { channel_id: cid });
-            }
+        if typing && let Some(cid) = channel.get_untracked() {
+            ws.send(ClientFrame::Typing { channel_id: cid });
+        }
     });
     let send_btn = Callback::new(move |_| do_send());
 

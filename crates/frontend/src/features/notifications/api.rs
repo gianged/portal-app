@@ -35,6 +35,8 @@ pub async fn list(unread_only: bool, limit: u32) -> Result<Vec<NotificationDto>,
 
 /// Mark notifications read; an empty list means "mark all" (`POST /notifications/mark-read`).
 pub async fn mark_read(ids: Vec<NotificationId>) -> Result<(), FrontendError> {
-    let req = MarkReadRequest { notification_ids: ids };
+    let req = MarkReadRequest {
+        notification_ids: ids,
+    };
     client::post_json_no_content("/notifications/mark-read", &req).await
 }

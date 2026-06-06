@@ -20,7 +20,7 @@ pub struct Toast {
 }
 
 /// How long a toast stays on screen before auto-dismissal.
-const TOAST_TTL: Duration = Duration::from_millis(4000);
+const TOAST_TTL: Duration = Duration::from_secs(4);
 
 #[derive(Clone, Copy)]
 pub struct ToastState {
