@@ -14,13 +14,13 @@
 --   - memberships (exactly one active leader per group)
 --   - a little sample activity: projects, requests, tickets
 --
--- All accounts share the password "123" (same Argon2id hash as the default
+-- All accounts share the password "admin123" (same Argon2id hash as the default
 -- admin). Idempotent: every statement either ON CONFLICT DO NOTHING or guards
 -- with NOT EXISTS, so re-running adds nothing. Authorisation tuples are written
 -- separately by `seed_authz` (this file only touches Postgres).
 -- =============================================================================
 
-\set pw_hash '$argon2id$v=19$m=19456,t=2,p=1$S7dTa5Ok0hyf9iKT36EBBw$ZSl6SxhfaAgKS8AqNwpMce1NjjApbWgMRO85deZToxA'
+\set pw_hash '$argon2id$v=19$m=19456,t=2,p=1$DDkH8BLeMSpBiPE2J7HqCA$Fx9mB5cw4NW/orBxwOv+Z+22t/QWpmLlNb7RY4wWHu4'
 
 BEGIN;
 

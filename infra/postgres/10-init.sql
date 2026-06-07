@@ -727,9 +727,9 @@ COMMENT ON TABLE audit.audit_log IS
 -- -----------------------------------------------------------------------------
 -- 10. Bootstrap account
 --     One default Director so a freshly-initialised database is immediately
---     loginable (email: admin@portal.local, password: 123). Idempotent:
+--     loginable (email: admin@portal.local, password: admin123). Idempotent:
 --     re-applying the schema or running this section by hand is a no-op once the
---     row exists. password_hash is a precomputed Argon2id PHC string for "123" --
+--     row exists. password_hash is a precomputed Argon2id PHC string for "admin123" --
 --     the parameters are embedded in the hash, so the application's
 --     Argon2::default().verify_password accepts it. Dev default; rotate before
 --     any non-local deployment. Richer demo data (groups, ~100 employees,
@@ -739,7 +739,7 @@ COMMENT ON TABLE audit.audit_log IS
 INSERT INTO auth.users (email, password_hash, full_name, status, system_role, first_logged_in_at)
 VALUES (
     'admin@portal.local',
-    '$argon2id$v=19$m=19456,t=2,p=1$S7dTa5Ok0hyf9iKT36EBBw$ZSl6SxhfaAgKS8AqNwpMce1NjjApbWgMRO85deZToxA',
+    '$argon2id$v=19$m=19456,t=2,p=1$DDkH8BLeMSpBiPE2J7HqCA$Fx9mB5cw4NW/orBxwOv+Z+22t/QWpmLlNb7RY4wWHu4',
     'Portal Admin',
     'active',
     'director',
