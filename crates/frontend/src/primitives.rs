@@ -8,6 +8,7 @@ pub mod center;
 pub mod checkbox;
 pub mod cluster;
 pub mod dialog;
+pub mod dots;
 pub mod dropdown;
 pub mod empty_state;
 pub mod grid;

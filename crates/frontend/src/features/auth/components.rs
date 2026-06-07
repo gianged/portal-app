@@ -8,6 +8,7 @@ use shared::validation::user::{validate_email, validate_password};
 use crate::features::auth::api;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::center::Center;
+use crate::primitives::dots::Dots;
 use crate::primitives::input::{FieldError, FieldLabel, Input};
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
@@ -124,7 +125,11 @@ pub fn LoginForm() -> impl IntoView {
                     disabled=submitting.get()
                     full_width=true
                 >
-                    {move || if submitting.get() { "Signing in…" } else { "Sign in" }}
+                    {move || if submitting.get() {
+                        view! { "Signing in"<Dots/> }.into_any()
+                    } else {
+                        view! { "Sign in" }.into_any()
+                    }}
                 </Button>
             </Stack>
         </form>
