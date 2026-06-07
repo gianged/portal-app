@@ -1,7 +1,7 @@
 use std::fmt;
 
 use async_trait::async_trait;
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 
 use domain::{
@@ -99,6 +99,33 @@ impl OpenFgaAuthzClient {
             )))
         }
     }
+
+    /// Single-tuple write that treats OpenFGA's "tuple already exists" 400 as
+    /// success — re-granting an existing relationship is a no-op `seed_company`
+    /// relies on at boot. Batch `write_tuples` stays strict (a partial duplicate
+    /// there must not silently drop the batch's new tuples).
+    async fn write_single(&self, req: &WriteRequest<'_>) -> Result<(), AuthzError> {
+        let url = self.store_url("write");
+        let mut http = self.http.post(&url).json(req);
+        if let Some(token) = &self.bearer_token {
+            http = http.bearer_auth(token);
+        }
+        let resp = http
+            .send()
+            .await
+            .map_err(|e| AuthzError::Backend(e.to_string()))?;
+        let status = resp.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        let detail = resp.text().await.unwrap_or_default();
+        if status == StatusCode::BAD_REQUEST && detail.contains("already exists") {
+            return Ok(());
+        }
+        Err(AuthzError::Backend(format!(
+            "openfga {url} returned {status}: {detail}"
+        )))
+    }
 }
 
 #[async_trait]
@@ -133,8 +160,7 @@ impl AuthzClient for OpenFgaAuthzClient {
             deletes: None,
             authorization_model_id: &self.authorization_model_id,
         };
-        let _: serde_json::Value = self.post_json(self.store_url("write"), &req).await?;
-        Ok(())
+        self.write_single(&req).await
     }
 
     async fn delete_tuple(

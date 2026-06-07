@@ -21,7 +21,10 @@ pub mod resolve;
 pub mod routes;
 pub mod telemetry;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
+
+/// Grace after the shutdown signal before the watchdog forces exit.
+const FORCE_EXIT_GRACE: Duration = Duration::from_secs(3);
 
 /// Loads configuration, builds the router, and serves until a shutdown signal.
 pub async fn run() -> anyhow::Result<()> {
@@ -34,6 +37,8 @@ pub async fn run() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(cfg.server_addr).await?;
     tracing::info!(addr = %cfg.server_addr, "server listening");
+    // Guarantees Ctrl-C exits even if graceful shutdown stalls (e.g. a live WS).
+    tokio::spawn(force_exit_watchdog());
     // `ConnectInfo` exposes the peer address to the per-IP rate limiter; graceful
     // shutdown lets in-flight requests and WebSocket connections drain on signal.
     axum::serve(
@@ -45,9 +50,23 @@ pub async fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Force-exits [`FORCE_EXIT_GRACE`] after the signal if graceful shutdown hasn't
+/// finished, so Ctrl-C reliably tears the process down.
+async fn force_exit_watchdog() {
+    wait_for_shutdown().await;
+    tokio::time::sleep(FORCE_EXIT_GRACE).await;
+    tracing::warn!("graceful shutdown timed out; forcing exit");
+    std::process::exit(0);
+}
+
 /// Resolves on the first shutdown signal: Ctrl-C on every platform, plus
 /// `SIGTERM` on Unix (the orchestrator's stop signal).
 async fn shutdown_signal() {
+    wait_for_shutdown().await;
+    tracing::info!("shutdown signal received");
+}
+
+async fn wait_for_shutdown() {
     let ctrl_c = async {
         if let Err(error) = tokio::signal::ctrl_c().await {
             tracing::error!(%error, "failed to install Ctrl-C handler");
@@ -70,5 +89,4 @@ async fn shutdown_signal() {
         () = ctrl_c => {}
         () = terminate => {}
     }
-    tracing::info!("shutdown signal received");
 }

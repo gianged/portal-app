@@ -495,8 +495,8 @@ impl Permissions {
             .map_err(map_authz_write)
     }
 
-    /// Seed the `company#member` wildcard (`user:*`) once at startup. Idempotent:
-    /// re-writing the identical tuple is a no-op in `OpenFGA`.
+    /// Seed the `company#member` wildcard (`user:*`) at startup. Idempotent: the
+    /// `AuthzClient` adapter treats an already-existing tuple as a no-op.
     ///
     /// # Errors
     /// Returns `Conflict` if the authz backend rejects the write, or a repository error if the authz backend is unavailable.

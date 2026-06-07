@@ -4,6 +4,8 @@ edition.workspace = true
 rust-version.workspace = true
 version.workspace = true
 license.workspace = true
+# Disambiguates `cargo run -p server`: the package has a second bin (seed_authz).
+default-run = "server"
 
 [[bin]]
 name = "server"

@@ -48,6 +48,19 @@ args = ["infra/scripts/backup.sh"]
 command = "C:\\Program Files\\Git\\usr\\bin\\sh.exe"
 args = ["infra/scripts/backup.sh"]
 
+# `cargo make seed` loads OPTIONAL demo data (dev/testing): applies
+# infra/seed/demo-seed.sql, then materialises the matching OpenFGA tuples via the
+# seed_authz binary. The schema's default admin (10-init.sql) is always present
+# without this; the seed only adds the ~100-employee simulation. Re-runnable.
+[tasks.seed]
+description = "Load optional demo data: ~100 employees + org + sample activity, then sync OpenFGA tuples."
+command = "sh"
+args = ["infra/seed/seed.sh"]
+
+[tasks.seed.windows]
+command = "C:\\Program Files\\Git\\usr\\bin\\sh.exe"
+args = ["infra/seed/seed.sh"]
+
 # ------------------------------------------------------------- Stack lifecycle
 # Day-to-day up/down of the infra stack. Both pass --env-file so Compose honors
 # the repo-root .env (POSTGRES_HOST_PORT, etc.). `cargo make bootstrap` is only
@@ -67,23 +80,26 @@ args = ["compose", "--env-file", ".env", "-f", "infra/docker-compose.infra.yml",
 # Run the app on the host (not in containers) so breakpoints / hot-reload work
 # and RustRover's debugger can attach.
 
+# `-p` scopes the package: a bare `--bin` from this virtual workspace root fails
+# "no bin target named ... in default-run packages" under run-all's parallelism.
 [tasks.run-server]
 description = "Run the backend server natively."
 command = "cargo"
-args = ["run", "--bin", "server"]
+args = ["run", "-p", "server", "--bin", "server"]
 env = { RUST_LOG = "info,portal=debug" }
 
 [tasks.run-workers]
 description = "Run the background workers natively."
 command = "cargo"
-args = ["run", "--bin", "workers"]
+args = ["run", "-p", "workers", "--bin", "workers"]
 env = { RUST_LOG = "info,portal=debug" }
 
 [tasks.run-frontend]
 description = "Run the Leptos dev server (trunk serve, port 8081)."
-cwd = "./crates/frontend"
+# `--config` instead of cargo-make `cwd`: under parallel run-all a task `cwd` does
+# a process-wide chdir that races into the sibling tasks' repo-relative paths.
 command = "trunk"
-args = ["serve"]
+args = ["serve", "--config", "crates/frontend/Trunk.toml"]
 
 # ---------------------------------------------------------------- Full stack
 

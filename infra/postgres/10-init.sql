@@ -722,3 +722,27 @@ COMMENT ON TABLE notification.notifications IS
 
 COMMENT ON TABLE audit.audit_log IS
     'Append-only audit trail. actor_user_id and entity_id intentionally have NO foreign keys so audit history survives deactivation and deletes (invariant 5).';
+
+
+-- -----------------------------------------------------------------------------
+-- 10. Bootstrap account
+--     One default Director so a freshly-initialised database is immediately
+--     loginable (email: admin@portal.local, password: 123). Idempotent:
+--     re-applying the schema or running this section by hand is a no-op once the
+--     row exists. password_hash is a precomputed Argon2id PHC string for "123" --
+--     the parameters are embedded in the hash, so the application's
+--     Argon2::default().verify_password accepts it. Dev default; rotate before
+--     any non-local deployment. Richer demo data (groups, ~100 employees,
+--     projects/tickets) is optional and lives outside this file -- see
+--     infra/seed/ (apply with `cargo make seed`).
+-- -----------------------------------------------------------------------------
+INSERT INTO auth.users (email, password_hash, full_name, status, system_role, first_logged_in_at)
+VALUES (
+    'admin@portal.local',
+    '$argon2id$v=19$m=19456,t=2,p=1$S7dTa5Ok0hyf9iKT36EBBw$ZSl6SxhfaAgKS8AqNwpMce1NjjApbWgMRO85deZToxA',
+    'Portal Admin',
+    'active',
+    'director',
+    NOW()
+)
+ON CONFLICT (email) DO NOTHING;

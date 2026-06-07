@@ -9,14 +9,15 @@ open = false
 
 # Proxy API calls to the backend during dev. The server mounts the API under
 # `/api/v1`; the frontend calls `/api/...`, so the rewrite bridges the version
-# prefix (request `/api/auth/me` -> `http://127.0.0.1:8080/api/v1/auth/me`).
+# prefix (request `/api/auth/me` -> `http://127.0.0.1:8090/api/v1/auth/me`).
+# Port must match the server's SERVER_PORT in .env (8090).
 [[proxy]]
-backend = "http://127.0.0.1:8080/api/v1/"
+backend = "http://127.0.0.1:8090/api/v1/"
 rewrite = "/api/"
 
 # WebSocket (chat): the live endpoint is `/api/v1/chat/ws`; the frontend dials
 # `/api/chat/ws` and this bridges the version prefix.
 [[proxy]]
-backend = "ws://127.0.0.1:8080/api/v1/chat/ws"
+backend = "ws://127.0.0.1:8090/api/v1/chat/ws"
 rewrite = "/api/chat/ws"
 ws = true

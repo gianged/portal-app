@@ -41,9 +41,13 @@ services:
   scylla:
     image: scylladb/scylla:5.4
     restart: unless-stopped
-    command: --smp 1 --memory 1G --overprovisioned 1 --reactor-backend=epoll
+    # Advertise a host-reachable rpc address: by default the node tells the host
+    # driver to use its internal bridge IP (172.x) -> connect timeout. Host-dev
+    # only; the containerized stack must not set this. 19042 = shard-aware port.
+    command: --smp 1 --memory 1G --overprovisioned 1 --reactor-backend=epoll --broadcast-rpc-address 127.0.0.1
     ports:
       - "${SCYLLA_HOST_PORT:-9042}:9042"
+      - "19042:19042"
     volumes:
       - scylla-data:/var/lib/scylla
     healthcheck:
