@@ -20,6 +20,9 @@ pub async fn build_pool(database_url: &str, max_connections: u32) -> Result<PgPo
 
     PgPoolOptions::new()
         .max_connections(max_connections)
+        // Warm floor so an idle-gap login reuses a live connection instead of
+        // paying a cold connect (TCP + auth + statement_timeout) on the request.
+        .min_connections(max_connections.min(2))
         .acquire_timeout(Duration::from_secs(30))
         .idle_timeout(Duration::from_mins(10))
         .max_lifetime(Duration::from_mins(30))

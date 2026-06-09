@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, OnceLock},
+};
 
 use domain::{
     ids::{ChannelId, GroupId, MembershipId, UserId},
@@ -21,6 +24,9 @@ pub struct GroupService {
     chats: Arc<dyn ChatRepository>,
     perms: Arc<Permissions>,
     events: Arc<EventBus>,
+    /// Memoized id of the single IT group, a stable org invariant. Populated on
+    /// first sighting so role resolution stops re-querying it on every login.
+    it_group: OnceLock<GroupId>,
 }
 
 impl GroupService {
@@ -38,6 +44,7 @@ impl GroupService {
             chats,
             perms,
             events,
+            it_group: OnceLock::new(),
         }
     }
 
@@ -476,10 +483,23 @@ impl GroupService {
 
     /// Id of the single `GroupKind::It` group, if one exists.
     ///
+    /// Memoized after the first hit: the IT group's id is stable, so a process
+    /// caches it for its lifetime. While no IT group exists yet the lookup keeps
+    /// hitting the datastore, so a later-created one is still picked up. A
+    /// deleted-then-recreated IT group with a new id requires a restart to clear.
+    ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
     pub async fn it_group_id(&self) -> Result<Option<GroupId>> {
-        Ok(self.groups.find_it_group().await?.map(|g| g.id))
+        if let Some(id) = self.it_group.get() {
+            return Ok(Some(*id));
+        }
+        let Some(group) = self.groups.find_it_group().await? else {
+            return Ok(None);
+        };
+        // First writer wins; a concurrent racer resolves the same id.
+        let _ = self.it_group.set(group.id);
+        Ok(Some(group.id))
     }
 
     /// Lists the membership roster for a group. Members of the group, HR, and

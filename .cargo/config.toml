@@ -6,4 +6,4 @@ rustflags = ["--cfg=web_sys_unstable_apis"]
 # dev Postgres. Build-time only - the server/workers binaries still read their
 # own DATABASE_URL at runtime via dotenvy/config. No `force`, so a developer who
 # exports their own DATABASE_URL still wins.
-DATABASE_URL = "postgres://portal:portal@localhost:5432/portal"
+DATABASE_URL = "postgres://portal:portal@127.0.0.1:5432/portal"
