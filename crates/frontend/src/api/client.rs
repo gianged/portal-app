@@ -1,6 +1,6 @@
 use reqwasm::http::Request;
 use serde::{Serialize, de::DeserializeOwned};
-use shared::dto::common::ApiError;
+use shared::dto::common::{ApiError, ErrorCode};
 use web_sys::FormData;
 
 use crate::api::error::FrontendError;
@@ -114,11 +114,7 @@ where
 {
     let status = resp.status();
     if !(200..300).contains(&status) {
-        let body = resp.text().await.unwrap_or_default();
-        // The server returns a stable `{ code, message }` body; surface its
-        // message, falling back to the raw text if it isn't an `ApiError`.
-        let message = serde_json::from_str::<ApiError>(&body).map_or(body, |err| err.message);
-        return Err(FrontendError::Http { status, message });
+        return Err(http_error(resp).await);
     }
     let parsed = resp.json::<T>().await?;
     Ok(parsed)
@@ -127,9 +123,27 @@ where
 async fn handle_empty(resp: reqwasm::http::Response) -> Result<(), FrontendError> {
     let status = resp.status();
     if !(200..300).contains(&status) {
-        let body = resp.text().await.unwrap_or_default();
-        let message = serde_json::from_str::<ApiError>(&body).map_or(body, |err| err.message);
-        return Err(FrontendError::Http { status, message });
+        return Err(http_error(resp).await);
     }
     Ok(())
+}
+
+/// Build a structured [`FrontendError::Http`] from a non-2xx response: parse the
+/// server's stable `{ code, message }` body and keep the `x-request-id` header
+/// for support references. A non-JSON body (e.g. a proxy/gateway error page)
+/// falls back to `Unknown` with the raw text as the message.
+async fn http_error(resp: reqwasm::http::Response) -> FrontendError {
+    let status = resp.status();
+    let request_id = resp.headers().get("x-request-id");
+    let body = resp.text().await.unwrap_or_default();
+    let (code, message) = match serde_json::from_str::<ApiError>(&body) {
+        Ok(err) => (err.code, err.message),
+        Err(_) => (ErrorCode::Unknown, body),
+    };
+    FrontendError::Http {
+        status,
+        code,
+        message,
+        request_id,
+    }
 }

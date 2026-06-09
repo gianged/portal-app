@@ -5,14 +5,16 @@ use leptos_router::hooks::use_navigate;
 use shared::dto::user::LoginRequest;
 use shared::validation::user::{validate_email, validate_password};
 
+use crate::api::display::ErrorDisplay;
 use crate::features::auth::api;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::center::Center;
 use crate::primitives::dots::Dots;
+use crate::primitives::error::ErrorCallout;
 use crate::primitives::input::{FieldError, FieldLabel, Input};
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
-use crate::theme::{class, color, radius, space, typography};
+use crate::theme::{class, color, typography};
 
 #[component]
 pub fn LoginForm() -> impl IntoView {
@@ -20,22 +22,11 @@ pub fn LoginForm() -> impl IntoView {
     let password = RwSignal::new(String::new());
     let email_error = RwSignal::new(None::<String>);
     let password_error = RwSignal::new(None::<String>);
-    let form_error = RwSignal::new(None::<String>);
+    let form_error = RwSignal::new(None::<ErrorDisplay>);
     let submitting = RwSignal::new(false);
 
     let auth = use_context::<AuthState>().expect("AuthState context");
     let navigate = use_navigate();
-
-    let banner_cls = class(format!(
-        "background: {bg}; color: {c}; border: 1px solid {b}; \
-         border-radius: {r}; padding: {p}; font-size: {fs};",
-        bg = color::DANGER_BG,
-        c = color::DANGER,
-        b = color::DANGER_BORDER,
-        r = radius::MD,
-        p = space::D3,
-        fs = typography::TEXT_SMALL,
-    ));
 
     let on_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
@@ -76,7 +67,7 @@ pub fn LoginForm() -> impl IntoView {
                     navigate("/dashboard", NavigateOptions::default());
                 }
                 Err(err) => {
-                    form_error.set(Some(err.to_string()));
+                    form_error.set(Some(ErrorDisplay::from(&err)));
                 }
             }
             submitting.set(false);
@@ -86,8 +77,8 @@ pub fn LoginForm() -> impl IntoView {
     view! {
         <form on:submit=on_submit>
             <Stack gap=Gap::Lg>
-                {move || form_error.get().map(|msg| view! {
-                    <div class=banner_cls.clone() role="alert">{msg}</div>
+                {move || form_error.get().map(|d| view! {
+                    <ErrorCallout display=d />
                 })}
 
                 <div>

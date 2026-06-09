@@ -23,6 +23,7 @@ use crate::util::format::{
 };
 
 pub use crate::util::load::Loadable;
+use crate::util::load::load_error;
 
 #[component]
 pub fn StatTiles(
@@ -116,10 +117,10 @@ pub fn RequestsPanel(requests: Loadable<Vec<RequestDto>>) -> impl IntoView {
                 <span></span>
             </TableToolbar>
             {move || match requests.get() {
-                None => note("Loading requests…", false, true),
-                Some(Err(e)) => note(&format!("Couldn't load requests: {e}"), true, true),
+                None => note("Loading requests…", true),
+                Some(Err(e)) => load_error(&e),
                 Some(Ok(items)) if items.is_empty() => {
-                    note("Nothing assigned to you right now.", false, true)
+                    note("Nothing assigned to you right now.", true)
                 }
                 Some(Ok(items)) => requests_table(items),
             }}
@@ -134,10 +135,10 @@ pub fn TicketsPanel(tickets: Loadable<Vec<TicketDto>>) -> impl IntoView {
             <Stack gap=Gap::Md>
                 {panel_heading("My IT tickets")}
                 {move || match tickets.get() {
-                    None => note("Loading tickets…", false, false),
-                    Some(Err(e)) => note(&format!("Couldn't load tickets: {e}"), true, false),
+                    None => note("Loading tickets…", false),
+                    Some(Err(e)) => load_error(&e),
                     Some(Ok(items)) if items.is_empty() => {
-                        note("You haven't raised any tickets.", false, false)
+                        note("You haven't raised any tickets.", false)
                     }
                     Some(Ok(items)) => tickets_list(items),
                 }}
@@ -153,9 +154,9 @@ pub fn ChannelsPanel(channels: Loadable<Vec<ChannelSummaryDto>>) -> impl IntoVie
             <Stack gap=Gap::Md>
                 {panel_heading("Channels")}
                 {move || match channels.get() {
-                    None => note("Loading channels…", false, false),
-                    Some(Err(e)) => note(&format!("Couldn't load channels: {e}"), true, false),
-                    Some(Ok(items)) if items.is_empty() => note("No channels yet.", false, false),
+                    None => note("Loading channels…", false),
+                    Some(Err(e)) => load_error(&e),
+                    Some(Ok(items)) if items.is_empty() => note("No channels yet.", false),
                     Some(Ok(items)) => channels_list(items),
                 }}
             </Stack>
@@ -327,17 +328,13 @@ fn panel_heading(text: &str) -> AnyView {
     view! { <span class=cls>{text.to_owned()}</span> }.into_any()
 }
 
-fn note(text: &str, danger: bool, padded: bool) -> AnyView {
-    let c = if danger {
-        color::DANGER
-    } else {
-        color::TEXT_MUTED
-    };
+fn note(text: &str, padded: bool) -> AnyView {
     let pad = if padded { space::D5 } else { "0px" };
     let cls = class(format!(
         "padding: {pad}; font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
+        c = color::TEXT_MUTED,
     ));
     view! { <div class=cls>{text.to_owned()}</div> }.into_any()
 }

@@ -21,7 +21,7 @@ use crate::state::notifications::NotificationsState;
 use crate::state::toast::ToastState;
 use crate::theme::{class, color, radius, space, typography};
 use crate::util::format::relative_time;
-use crate::util::load::{Loadable, load, note};
+use crate::util::load::{Loadable, load, load_error, note};
 
 fn payload_icon(p: &NotificationPayloadDto) -> IconName {
     match p {
@@ -120,7 +120,7 @@ pub fn InboxIndex() -> impl IntoView {
                     toast.success("All caught up");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
         refresh_badge();
@@ -147,8 +147,8 @@ pub fn InboxIndex() -> impl IntoView {
                 <Stack gap=Gap::Sm>
                     {section_heading("Inbox")}
                     {move || match items.get() {
-                        None => note("Loading…", false),
-                        Some(Err(e)) => note(&format!("Couldn't load notifications: {e}"), true),
+                        None => note("Loading…"),
+                        Some(Err(e)) => load_error(&e),
                         Some(Ok(list)) if list.is_empty() => view! {
                             <EmptyState icon=IconName::Inbox title="Inbox zero" description="You have no notifications." />
                         }.into_any(),

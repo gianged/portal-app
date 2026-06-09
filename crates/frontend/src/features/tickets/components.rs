@@ -38,7 +38,7 @@ use crate::theme::{class, color, space, typography};
 use crate::util::format::{
     relative_time, ticket_priority_variant, ticket_status_variant, tone_for,
 };
-use crate::util::load::{Loadable, load, note};
+use crate::util::load::{Loadable, load, load_error, note};
 
 fn category_wire(c: TicketCategory) -> &'static str {
     match c {
@@ -118,8 +118,8 @@ pub fn TicketsIndex() -> impl IntoView {
                     </Button>
                 </TableToolbar>
                 {move || match items.get() {
-                    None => note("Loading tickets…", false),
-                    Some(Err(e)) => note(&format!("Couldn't load tickets: {e}"), true),
+                    None => note("Loading tickets…"),
+                    Some(Err(e)) => load_error(&e),
                     Some(Ok(list)) if list.is_empty() => view! {
                         <EmptyState
                             icon=IconName::Ticket
@@ -247,7 +247,7 @@ fn RaiseTicketDialog(open: RwSignal<bool>, on_raised: Callback<()>) -> impl Into
                     open.set(false);
                     on_raised.run(());
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
             submitting.set(false);
         });
@@ -340,7 +340,7 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
                     toast.success("Ticket updated");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     };
@@ -359,7 +359,7 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
                     toast.success("Ticket triaged");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     });
@@ -382,7 +382,7 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
                     toast.success("Ticket assigned");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     });
@@ -394,8 +394,8 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
         <Stack gap=Gap::Lg>
             {back_link("/tickets", "Back to tickets")}
             {move || match detail.get() {
-                None => note("Loading ticket…", false),
-                Some(Err(e)) => note(&format!("Couldn't load ticket: {e}"), true),
+                None => note("Loading ticket…"),
+                Some(Err(e)) => load_error(&e),
                 Some(Ok(t)) => {
                     let status = t.status;
                     let priority = t.priority;

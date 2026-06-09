@@ -16,7 +16,7 @@ use crate::primitives::icon::{Icon, IconName};
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::toast::ToastState;
 use crate::theme::{class, color, radius, space, typography};
-use crate::util::load::{Loadable, load, note};
+use crate::util::load::{Loadable, load, load_error, note};
 
 fn channel_id(c: &ChannelDto) -> ChannelId {
     match c {
@@ -81,9 +81,9 @@ pub fn ChannelList(selected: RwSignal<Option<ChannelId>>) -> impl IntoView {
                 </Button>
             </div>
             {move || match channels.get() {
-                None => note("Loading…", false),
-                Some(Err(e)) => note(&format!("Couldn't load channels: {e}"), true),
-                Some(Ok(list)) if list.is_empty() => note("No channels yet.", false),
+                None => note("Loading…"),
+                Some(Err(e)) => load_error(&e),
+                Some(Ok(list)) if list.is_empty() => note("No channels yet."),
                 Some(Ok(list)) => {
                     let rows = list.into_iter().map(|c| channel_row(c, selected)).collect_view();
                     view! { <div class=list_cls.clone()>{rows}</div> }.into_any()
@@ -166,7 +166,7 @@ fn NewDmDialog(open: RwSignal<bool>, on_opened: Callback<ChannelId>) -> impl Int
                     target.set(None);
                     on_opened.run(channel_id(&channel));
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     });

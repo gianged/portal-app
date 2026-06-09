@@ -29,7 +29,7 @@ use crate::primitives::table::{Table, TableToolbar, TableWrap};
 use crate::state::toast::ToastState;
 use crate::theme::{class, color, space, typography};
 use crate::util::format::tone_for;
-use crate::util::load::{Loadable, load, note};
+use crate::util::load::{Loadable, load, load_error, note};
 
 fn status_variant(s: UserStatus) -> BadgeVariant {
     match s {
@@ -120,8 +120,8 @@ pub fn UsersIndex() -> impl IntoView {
                     </Button>
                 </TableToolbar>
                 {move || match users.get() {
-                    None => note("Loading people…", false),
-                    Some(Err(e)) => note(&format!("Couldn't load people: {e}"), true),
+                    None => note("Loading people…"),
+                    Some(Err(e)) => load_error(&e),
                     Some(Ok(list)) if list.is_empty() => view! {
                         <EmptyState icon=IconName::Building title="No people yet" description="Provision the first account." />
                     }.into_any(),
@@ -226,7 +226,7 @@ fn CreateUserDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl Into
                     open.set(false);
                     on_created.run(());
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
             submitting.set(false);
         });
@@ -312,7 +312,7 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
                     });
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     };
@@ -324,8 +324,8 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
         <Stack gap=Gap::Lg>
             {back_link("/users", "Back to people")}
             {move || match profile.get() {
-                None => note("Loading profile…", false),
-                Some(Err(e)) => note(&format!("Couldn't load profile: {e}"), true),
+                None => note("Loading profile…"),
+                Some(Err(e)) => load_error(&e),
                 Some(Ok(p)) => {
                     let name = p.full_name.clone();
                     let status = p.status;
@@ -466,7 +466,7 @@ fn EditProfileDialog(
                     open.set(false);
                     on_saved.run(());
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
             submitting.set(false);
         });

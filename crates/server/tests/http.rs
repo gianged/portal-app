@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use domain::ids::UserId;
 use shared::dto::{
-    common::ApiError,
+    common::{ApiError, ErrorCode},
     user::{LoginRequest, UserDto},
 };
 
@@ -66,7 +66,7 @@ async fn protected_route_without_cookie_is_401() {
     let response = router(app.state).oneshot(get("/api/v1/me")).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let body: ApiError = decode(response).await;
-    assert_eq!(body.code, "unauthenticated");
+    assert_eq!(body.code, ErrorCode::Unauthenticated);
 }
 
 #[tokio::test]
@@ -78,7 +78,7 @@ async fn protected_route_with_garbage_cookie_is_401() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let body: ApiError = decode(response).await;
-    assert_eq!(body.code, "unauthenticated");
+    assert_eq!(body.code, ErrorCode::Unauthenticated);
 }
 
 #[tokio::test]
@@ -97,7 +97,7 @@ async fn login_with_unknown_email_is_401_invalid_credentials() {
     let response = router(app.state).oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let body: ApiError = decode(response).await;
-    assert_eq!(body.code, "invalid_credentials");
+    assert_eq!(body.code, ErrorCode::InvalidCredentials);
 }
 
 #[tokio::test]
@@ -110,7 +110,7 @@ async fn me_with_valid_cookie_but_missing_user_is_404() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let body: ApiError = decode(response).await;
-    assert_eq!(body.code, "not_found");
+    assert_eq!(body.code, ErrorCode::NotFound);
 }
 
 #[tokio::test]
@@ -143,7 +143,7 @@ async fn per_user_rate_limit_returns_429() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     let body: ApiError = decode(response).await;
-    assert_eq!(body.code, "rate_limited");
+    assert_eq!(body.code, ErrorCode::RateLimited);
 }
 
 #[tokio::test]

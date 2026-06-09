@@ -4,7 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use shared::dto::common::ApiError;
+use shared::dto::common::{ApiError, ErrorCode};
 
 /// HTTP-facing error. Its `IntoResponse` impl is the single place where an
 /// `application::Error` (or a handler-level validation failure) is mapped to a
@@ -38,55 +38,63 @@ pub enum AuthError {
 }
 
 impl AppError {
-    fn parts(&self) -> (StatusCode, &'static str, String) {
+    fn parts(&self) -> (StatusCode, ErrorCode, String) {
         match self {
-            Self::Validation(message) => (StatusCode::BAD_REQUEST, "validation", message.clone()),
+            Self::Validation(message) => (
+                StatusCode::BAD_REQUEST,
+                ErrorCode::Validation,
+                message.clone(),
+            ),
             Self::RateLimited => (
                 StatusCode::TOO_MANY_REQUESTS,
-                "rate_limited",
+                ErrorCode::RateLimited,
                 "too many requests".to_owned(),
             ),
             Self::Auth(err) => match err {
                 AuthError::Missing => (
                     StatusCode::UNAUTHORIZED,
-                    "unauthenticated",
+                    ErrorCode::Unauthenticated,
                     "authentication required".to_owned(),
                 ),
                 AuthError::Invalid => (
                     StatusCode::UNAUTHORIZED,
-                    "unauthenticated",
+                    ErrorCode::Unauthenticated,
                     "invalid or expired session".to_owned(),
                 ),
                 AuthError::InvalidCredentials => (
                     StatusCode::UNAUTHORIZED,
-                    "invalid_credentials",
+                    ErrorCode::InvalidCredentials,
                     "invalid email or password".to_owned(),
                 ),
             },
             Self::Domain(err) => match err {
                 application::Error::NotFound(what) => (
                     StatusCode::NOT_FOUND,
-                    "not_found",
+                    ErrorCode::NotFound,
                     format!("{what} not found"),
                 ),
-                application::Error::Validation(message) => {
-                    (StatusCode::BAD_REQUEST, "validation", message.clone())
-                }
-                application::Error::Forbidden => {
-                    (StatusCode::FORBIDDEN, "forbidden", "forbidden".to_owned())
-                }
+                application::Error::Validation(message) => (
+                    StatusCode::BAD_REQUEST,
+                    ErrorCode::Validation,
+                    message.clone(),
+                ),
+                application::Error::Forbidden => (
+                    StatusCode::FORBIDDEN,
+                    ErrorCode::Forbidden,
+                    "forbidden".to_owned(),
+                ),
                 application::Error::Conflict(message) => {
-                    (StatusCode::CONFLICT, "conflict", message.clone())
+                    (StatusCode::CONFLICT, ErrorCode::Conflict, message.clone())
                 }
                 application::Error::Transition(err) => {
-                    (StatusCode::CONFLICT, "conflict", err.to_string())
+                    (StatusCode::CONFLICT, ErrorCode::Conflict, err.to_string())
                 }
                 application::Error::Repository(_)
                 | application::Error::Storage(_)
                 | application::Error::Event(_)
                 | application::Error::Job(_) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "internal",
+                    ErrorCode::Internal,
                     "internal server error".to_owned(),
                 ),
             },
@@ -102,10 +110,7 @@ impl IntoResponse for AppError {
         if status.is_server_error() {
             tracing::error!(error = %self, "request failed");
         }
-        let body = ApiError {
-            code: code.to_owned(),
-            message,
-        };
+        let body = ApiError { code, message };
         (status, Json(body)).into_response()
     }
 }
@@ -129,85 +134,88 @@ mod tests {
 
     #[tokio::test]
     async fn maps_every_variant_to_its_status_and_code() {
-        let cases: Vec<(AppError, StatusCode, &str)> = vec![
+        let cases: Vec<(AppError, StatusCode, ErrorCode)> = vec![
             (
                 AppError::Validation("bad field".to_owned()),
                 StatusCode::BAD_REQUEST,
-                "validation",
+                ErrorCode::Validation,
             ),
             (
                 AppError::RateLimited,
                 StatusCode::TOO_MANY_REQUESTS,
-                "rate_limited",
+                ErrorCode::RateLimited,
             ),
             (
                 AuthError::Missing.into(),
                 StatusCode::UNAUTHORIZED,
-                "unauthenticated",
+                ErrorCode::Unauthenticated,
             ),
             (
                 AuthError::Invalid.into(),
                 StatusCode::UNAUTHORIZED,
-                "unauthenticated",
+                ErrorCode::Unauthenticated,
             ),
             (
                 AuthError::InvalidCredentials.into(),
                 StatusCode::UNAUTHORIZED,
-                "invalid_credentials",
+                ErrorCode::InvalidCredentials,
             ),
             (
                 application::Error::NotFound("user").into(),
                 StatusCode::NOT_FOUND,
-                "not_found",
+                ErrorCode::NotFound,
             ),
             (
                 application::Error::Validation("nope".to_owned()).into(),
                 StatusCode::BAD_REQUEST,
-                "validation",
+                ErrorCode::Validation,
             ),
             (
                 application::Error::Forbidden.into(),
                 StatusCode::FORBIDDEN,
-                "forbidden",
+                ErrorCode::Forbidden,
             ),
             (
                 application::Error::Conflict("dup".to_owned()).into(),
                 StatusCode::CONFLICT,
-                "conflict",
+                ErrorCode::Conflict,
             ),
             (
                 application::Error::Transition(TransitionError::invalid("open", "closed")).into(),
                 StatusCode::CONFLICT,
-                "conflict",
+                ErrorCode::Conflict,
             ),
             (
                 application::Error::Repository(RepositoryError::Backend("db down".to_owned()))
                     .into(),
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "internal",
+                ErrorCode::Internal,
             ),
             (
                 application::Error::Storage(StorageError::Backend("disk".to_owned())).into(),
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "internal",
+                ErrorCode::Internal,
             ),
             (
                 application::Error::Event(EventError::Backend("bus".to_owned())).into(),
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "internal",
+                ErrorCode::Internal,
             ),
             (
                 application::Error::Job(JobError::Backend("queue".to_owned())).into(),
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "internal",
+                ErrorCode::Internal,
             ),
         ];
 
         for (err, want_status, want_code) in cases {
             let (status, body) = decode(err).await;
-            assert_eq!(status, want_status, "status for code `{want_code}`");
+            assert_eq!(status, want_status, "status for code `{want_code:?}`");
             assert_eq!(body.code, want_code, "code mismatch");
-            assert!(!body.message.is_empty(), "empty message for `{want_code}`");
+            assert!(
+                !body.message.is_empty(),
+                "empty message for `{want_code:?}`"
+            );
         }
     }
 

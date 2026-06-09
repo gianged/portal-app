@@ -35,7 +35,7 @@ use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
 use crate::theme::{class, color, space, typography};
 use crate::util::format::project_status_variant;
-use crate::util::load::{Loadable, load, note};
+use crate::util::load::{Loadable, load, load_error, note};
 
 // ─────────────────────────── Index ───────────────────────────
 
@@ -115,8 +115,8 @@ pub fn ProjectsIndex() -> impl IntoView {
                     }.into_any();
                 }
                 match projects.get() {
-                    None => note("Loading projects…", false),
-                    Some(Err(e)) => note(&format!("Couldn't load projects: {e}"), true),
+                    None => note("Loading projects…"),
+                    Some(Err(e)) => load_error(&e),
                     Some(Ok(list)) if list.is_empty() => view! {
                         <EmptyState
                             icon=IconName::Folder
@@ -193,7 +193,7 @@ fn InvitesInbox(
                     });
                     on_responded.run(());
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     };
@@ -283,7 +283,7 @@ fn CreateProjectDialog(
                     open.set(false);
                     on_created.run(());
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
             submitting.set(false);
         });
@@ -367,7 +367,7 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                     toast.success("Project updated");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     };
@@ -382,7 +382,7 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                     toast.success("Collaborator removed");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     };
@@ -394,7 +394,7 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                     toast.success("Invite revoked");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     };
@@ -406,8 +406,8 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
         <Stack gap=Gap::Lg>
             {back_link("/projects", "Back to projects")}
             {move || match detail.get() {
-                None => note("Loading project…", false),
-                Some(Err(e)) => note(&format!("Couldn't load project: {e}"), true),
+                None => note("Loading project…"),
+                Some(Err(e)) => load_error(&e),
                 Some(Ok(d)) => {
                     let status = d.project.status;
                     let title_v = page_title(&d.project.name);
@@ -565,8 +565,8 @@ fn ProjectRequests(requests: Loadable<Vec<RequestDto>>) -> impl IntoView {
             <Stack gap=Gap::Md>
                 {section_heading("Requests")}
                 {move || match requests.get() {
-                    None => note("Loading…", false),
-                    Some(Err(e)) => note(&format!("Couldn't load requests: {e}"), true),
+                    None => note("Loading…"),
+                    Some(Err(e)) => load_error(&e),
                     Some(Ok(list)) if list.is_empty() => subtle("No requests against this project yet."),
                     Some(Ok(list)) => {
                         let rows = list.into_iter().map(|r| {
@@ -630,7 +630,7 @@ fn InviteGroupDialog(
                     toast.success("Group invited");
                     on_invited.run(());
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     });

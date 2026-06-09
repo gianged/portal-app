@@ -1,10 +1,14 @@
 //! Transient toast notifications. Provided once at the app root and rendered by
 //! [`crate::primitives::toast::ToastHost`]. Mutation flows call
-//! [`ToastState::success`] / [`ToastState::error`]; each toast auto-dismisses.
+//! [`ToastState::success`] / [`ToastState::error`] / [`ToastState::error_from`];
+//! each toast auto-dismisses.
 
 use std::time::Duration;
 
 use leptos::prelude::*;
+
+use crate::api::display::ErrorDisplay;
+use crate::api::error::FrontendError;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {
@@ -15,6 +19,8 @@ pub enum ToastKind {
 #[derive(Clone)]
 pub struct Toast {
     pub id: u64,
+    /// Bold heading shown above the message; `None` for plain toasts.
+    pub title: Option<String>,
     pub message: String,
     pub kind: ToastKind,
 }
@@ -44,21 +50,36 @@ impl ToastState {
     }
 
     pub fn success(&self, message: impl Into<String>) {
-        self.push(ToastKind::Success, message.into());
+        self.push(ToastKind::Success, None, message.into());
     }
 
+    /// A plain error toast from a literal message (client-side guard strings).
     pub fn error(&self, message: impl Into<String>) {
-        self.push(ToastKind::Error, message.into());
+        self.push(ToastKind::Error, None, message.into());
+    }
+
+    /// The primary helper for failed mutations: renders a friendly title above
+    /// the human message via [`ErrorDisplay`].
+    pub fn error_from(&self, err: &FrontendError) {
+        let display = ErrorDisplay::from(err);
+        self.push(ToastKind::Error, Some(display.title), display.message);
     }
 
     pub fn dismiss(&self, id: u64) {
         self.items.update(|v| v.retain(|t| t.id != id));
     }
 
-    fn push(&self, kind: ToastKind, message: String) {
+    fn push(&self, kind: ToastKind, title: Option<String>, message: String) {
         let id = self.next_id.get_untracked();
         self.next_id.set(id + 1);
-        self.items.update(|v| v.push(Toast { id, message, kind }));
+        self.items.update(|v| {
+            v.push(Toast {
+                id,
+                title,
+                message,
+                kind,
+            });
+        });
         let this = *self;
         set_timeout(move || this.dismiss(id), TOAST_TTL);
     }

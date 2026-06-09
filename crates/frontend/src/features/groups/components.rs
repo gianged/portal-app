@@ -31,7 +31,7 @@ use crate::primitives::textarea::Textarea;
 use crate::state::toast::ToastState;
 use crate::theme::{class, color, space, typography};
 use crate::util::format::tone_for;
-use crate::util::load::{Loadable, load, note};
+use crate::util::load::{Loadable, load, load_error, note};
 
 fn role_wire(r: GroupRole) -> &'static str {
     match r {
@@ -81,8 +81,8 @@ pub fn GroupsIndex() -> impl IntoView {
                 </Button>
             </Cluster>
             {move || match groups.get() {
-                None => note("Loading groups…", false),
-                Some(Err(e)) => note(&format!("Couldn't load groups: {e}"), true),
+                None => note("Loading groups…"),
+                Some(Err(e)) => load_error(&e),
                 Some(Ok(list)) if list.is_empty() => view! {
                     <EmptyState icon=IconName::Users title="No groups yet" description="Create the first group to get started." />
                 }.into_any(),
@@ -195,7 +195,7 @@ fn CreateGroupDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl Int
                     open.set(false);
                     on_created.run(());
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
             submitting.set(false);
         });
@@ -263,7 +263,7 @@ pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
                     toast.success("Role updated");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     };
@@ -277,7 +277,7 @@ pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
                     toast.success("Member removed");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     };
@@ -301,8 +301,8 @@ pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
         <Stack gap=Gap::Lg>
             {back_link("/groups", "Back to groups")}
             {move || match detail.get() {
-                None => note("Loading group…", false),
-                Some(Err(e)) => note(&format!("Couldn't load group: {e}"), true),
+                None => note("Loading group…"),
+                Some(Err(e)) => load_error(&e),
                 Some(Ok(d)) => {
                     let title_v = page_title(&d.group.name);
                     let kind = d.group.kind;
@@ -461,7 +461,7 @@ fn AddMemberDialog(
                     target.set(None);
                     on_added.run(());
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     });
@@ -526,7 +526,7 @@ fn TransferDialog(
                     target.set(None);
                     on_transferred.run(());
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     });

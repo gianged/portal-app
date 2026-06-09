@@ -43,7 +43,7 @@ use crate::theme::{class, color, space, typography};
 use crate::util::format::{
     relative_time, request_priority_variant, request_status_variant, tone_for,
 };
-use crate::util::load::{Loadable, load, note};
+use crate::util::load::{Loadable, load, load_error, note};
 
 const ALL_STATUSES: [RequestStatus; 7] = [
     RequestStatus::Draft,
@@ -148,8 +148,8 @@ pub fn RequestsIndex() -> impl IntoView {
                     </Cluster>
                 </TableToolbar>
                 {move || match items.get() {
-                    None => note("Loading requests…", false),
-                    Some(Err(e)) => note(&format!("Couldn't load requests: {e}"), true),
+                    None => note("Loading requests…"),
+                    Some(Err(e)) => load_error(&e),
                     Some(Ok(list)) if list.is_empty() => view! {
                         <EmptyState
                             icon=IconName::Doc
@@ -290,7 +290,7 @@ fn CreateRequestDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl I
                     open.set(false);
                     on_created.run(());
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
             submitting.set(false);
         });
@@ -444,7 +444,7 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                     toast.success("Request updated");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     };
@@ -467,7 +467,7 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                     toast.success("Request assigned");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     });
@@ -491,7 +491,7 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                     toast.success("Attachment uploaded");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     });
@@ -518,8 +518,8 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                 <Icon name=IconName::ChevronLeft size=14 /> "Back to requests"
             </A>
             {move || match detail.get() {
-                None => note("Loading request…", false),
-                Some(Err(e)) => note(&format!("Couldn't load request: {e}"), true),
+                None => note("Loading request…"),
+                Some(Err(e)) => load_error(&e),
                 Some(Ok(d)) => {
                     let r = &d.request;
                     let status = r.status;

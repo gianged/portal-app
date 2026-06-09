@@ -7,7 +7,9 @@ use std::future::Future;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+use crate::api::display::ErrorDisplay;
 use crate::api::error::FrontendError;
+use crate::primitives::error::ErrorCallout;
 use crate::theme::{class, color, space, typography};
 
 /// A value fetched over the network: `None` while loading, then `Ok`/`Err`.
@@ -27,19 +29,23 @@ where
     });
 }
 
-/// A small inline status line (loading / error / empty).
+/// Render a load failure as a themed [`ErrorCallout`]. Use in the `Err` arm of a
+/// [`Loadable`] match; `note` still serves the loading / empty lines.
 #[must_use]
-pub fn note(text: &str, danger: bool) -> AnyView {
-    let c = if danger {
-        color::DANGER
-    } else {
-        color::TEXT_MUTED
-    };
+pub fn load_error(e: &FrontendError) -> AnyView {
+    view! { <ErrorCallout display=ErrorDisplay::from(e) /> }.into_any()
+}
+
+/// A small inline status line (loading / empty). Error states use
+/// [`load_error`] instead.
+#[must_use]
+pub fn note(text: &str) -> AnyView {
     let cls = class(format!(
         "padding: {p}; font-family: {ff}; font-size: {fs}; color: {c};",
         p = space::D5,
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
+        c = color::TEXT_MUTED,
     ));
     view! { <div class=cls>{text.to_owned()}</div> }.into_any()
 }

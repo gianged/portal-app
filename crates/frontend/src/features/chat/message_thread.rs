@@ -55,7 +55,7 @@ pub fn MessageThread(
     let do_delete = move |cid: ChannelId, mid: MessageId| {
         spawn_local(async move {
             if let Err(e) = api::delete(cid, mid).await {
-                toast.error(e.to_string());
+                toast.error_from(&e);
             }
         });
     };
@@ -281,7 +281,7 @@ fn MessageEditDialog(
                     toast.success("Message updated");
                     open.set(false);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
             submitting.set(false);
         });

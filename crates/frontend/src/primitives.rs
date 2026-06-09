@@ -11,6 +11,7 @@ pub mod dialog;
 pub mod dots;
 pub mod dropdown;
 pub mod empty_state;
+pub mod error;
 pub mod grid;
 pub mod icon;
 pub mod input;

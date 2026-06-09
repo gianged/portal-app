@@ -32,6 +32,8 @@ pub enum IconName {
     Settings,
     Logout,
     AlertCircle,
+    AlertTriangle,
+    Info,
     Send,
     Paperclip,
     Pin,
@@ -123,6 +125,16 @@ impl IconName {
             Self::AlertCircle => view! {
                 <circle cx="12" cy="12" r="9"></circle>
                 <path d="M12 8v5M12 16.5v.5"></path>
+            }
+            .into_any(),
+            Self::AlertTriangle => view! {
+                <path d="M10.3 4 2 18a1.5 1.5 0 0 0 1.3 2.3h17.4A1.5 1.5 0 0 0 22 18L13.7 4a1.5 1.5 0 0 0-2.6 0z"></path>
+                <path d="M12 9v5M12 17.5v.5"></path>
+            }
+            .into_any(),
+            Self::Info => view! {
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="M12 16v-5M12 8v.5"></path>
             }
             .into_any(),
             Self::Send => view! { <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"></path> }.into_any(),

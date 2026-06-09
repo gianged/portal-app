@@ -30,7 +30,7 @@ use crate::primitives::textarea::Textarea;
 use crate::state::toast::ToastState;
 use crate::theme::{class, color, typography};
 use crate::util::format::{relative_time, tone_for};
-use crate::util::load::{Loadable, load, note};
+use crate::util::load::{Loadable, load, load_error, note};
 
 /// Minutes left in the edit grace window, or `None` once it has closed.
 fn remaining_edit_minutes(created_at: OffsetDateTime) -> Option<i64> {
@@ -94,7 +94,7 @@ pub fn AnnouncementsIndex() -> impl IntoView {
                     toast.success("Announcement deleted");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
         });
     };
@@ -124,8 +124,8 @@ pub fn AnnouncementsIndex() -> impl IntoView {
             </Cluster>
 
             {move || match items.get() {
-                None => note("Loading announcements…", false),
-                Some(Err(e)) => note(&format!("Couldn't load announcements: {e}"), true),
+                None => note("Loading announcements…"),
+                Some(Err(e)) => load_error(&e),
                 Some(Ok(list)) if list.is_empty() => view! {
                     <EmptyState icon=IconName::Megaphone title="No announcements" description="Broadcasts to this channel appear here." />
                 }.into_any(),
@@ -253,7 +253,7 @@ fn PostAnnouncementDialog(
                     open.set(false);
                     on_posted.run(());
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
             submitting.set(false);
         });
@@ -309,7 +309,7 @@ fn EditAnnouncementDialog(
                     open.set(false);
                     on_saved.run(());
                 }
-                Err(e) => toast.error(e.to_string()),
+                Err(e) => toast.error_from(&e),
             }
             submitting.set(false);
         });

@@ -52,7 +52,7 @@ pub fn Composer(
                 };
                 match api::send(cid, &req).await {
                     Ok(msg) => push_message(messages, msg),
-                    Err(e) => toast.error(e.to_string()),
+                    Err(e) => toast.error_from(&e),
                 }
             });
         }

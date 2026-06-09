@@ -1,3 +1,4 @@
+use shared::dto::common::ErrorCode;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Error)]
@@ -5,7 +6,13 @@ pub enum FrontendError {
     #[error("network error: {0}")]
     Network(String),
     #[error("server returned HTTP {status}: {message}")]
-    Http { status: u16, message: String },
+    Http {
+        status: u16,
+        code: ErrorCode,
+        message: String,
+        /// `x-request-id` echoed by the server; surfaced on 5xx for support.
+        request_id: Option<String>,
+    },
     #[error("invalid response: {0}")]
     Serde(String),
     #[allow(dead_code)] // TODO: unused, I will see it

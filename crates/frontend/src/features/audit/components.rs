@@ -14,7 +14,7 @@ use crate::primitives::icon::IconName;
 use crate::primitives::stack::{Gap, Stack};
 use crate::theme::{class, color, space, typography};
 use crate::util::format::{relative_time, tone_for};
-use crate::util::load::{Loadable, load, note};
+use crate::util::load::{Loadable, load, load_error, note};
 
 const PAGE: u32 = 100;
 
@@ -39,8 +39,8 @@ pub fn AuditLogIndex() -> impl IntoView {
             <Stack gap=Gap::Sm>
                 {section_heading("Recent activity")}
                 {move || match items.get() {
-                    None => note("Loading audit log…", false),
-                    Some(Err(e)) => note(&format!("Couldn't load the audit log: {e}"), true),
+                    None => note("Loading audit log…"),
+                    Some(Err(e)) => load_error(&e),
                     Some(Ok(list)) if list.is_empty() => view! {
                         <EmptyState
                             icon=IconName::Clock

@@ -40,7 +40,13 @@ pub fn ToastHost() -> impl IntoView {
                         ff = typography::FONT_SANS,
                         fs = typography::TEXT_SMALL,
                     ));
-                    let body = class("flex: 1; min-width: 0; word-wrap: break-word;");
+                    let body = class("flex: 1; min-width: 0; display: flex; \
+                                      flex-direction: column; word-wrap: break-word;");
+                    let title_cls = class(format!(
+                        "font-weight: {fw}; margin-bottom: {mb};",
+                        fw = typography::WEIGHT_SEMIBOLD,
+                        mb = space::D1,
+                    ));
                     let close = class("background: transparent; border: none; color: inherit; \
                                        cursor: pointer; opacity: 0.7; display: inline-flex; \
                                        padding: 0; &:hover { opacity: 1; }");
@@ -52,7 +58,10 @@ pub fn ToastHost() -> impl IntoView {
                     view! {
                         <div class=cls role="status">
                             <Icon name=icon size=16 />
-                            <span class=body>{toast.message}</span>
+                            <div class=body>
+                                {toast.title.map(|t| view! { <div class=title_cls>{t}</div> })}
+                                <span>{toast.message}</span>
+                            </div>
                             <button class=close on:click=move |_| toasts.dismiss(id)>
                                 <Icon name=IconName::Close size=14 />
                             </button>
