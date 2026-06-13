@@ -4,7 +4,8 @@ use uuid::Uuid;
 
 use shared::dto::ids::GroupId;
 
-use crate::features::groups::components::{GroupDetail, GroupsIndex};
+use crate::features::groups::detail::GroupDetail;
+use crate::features::groups::list::GroupsIndex;
 use crate::features::home::shell::AuthedPage;
 
 #[component]

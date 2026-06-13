@@ -5,7 +5,8 @@ use uuid::Uuid;
 use shared::dto::ids::UserId;
 
 use crate::features::home::shell::AuthedPage;
-use crate::features::users::components::{UserDetail, UsersIndex};
+use crate::features::users::detail::UserDetail;
+use crate::features::users::list::UsersIndex;
 
 #[component]
 pub fn UsersPage() -> impl IntoView {

@@ -5,7 +5,8 @@ use uuid::Uuid;
 use shared::dto::ids::TicketId;
 
 use crate::features::home::shell::AuthedPage;
-use crate::features::tickets::components::{TicketDetail, TicketsIndex};
+use crate::features::tickets::detail::TicketDetail;
+use crate::features::tickets::list::TicketsIndex;
 
 #[component]
 pub fn TicketsPage() -> impl IntoView {

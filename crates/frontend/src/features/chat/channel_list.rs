@@ -9,7 +9,7 @@ use shared::dto::ids::{ChannelId, UserId};
 
 use crate::features::chat::api;
 use crate::features::ui::section_heading;
-use crate::features::users::components::UserPicker;
+use crate::features::users::picker::UserPicker;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::dialog::{Dialog, DialogBody, DialogFooter, DialogHeader};
 use crate::primitives::icon::{Icon, IconName};

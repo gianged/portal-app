@@ -5,7 +5,8 @@ use uuid::Uuid;
 use shared::dto::ids::ProjectId;
 
 use crate::features::home::shell::AuthedPage;
-use crate::features::projects::components::{ProjectDetail, ProjectsIndex};
+use crate::features::projects::detail::ProjectDetail;
+use crate::features::projects::list::ProjectsIndex;
 
 #[component]
 pub fn ProjectsPage() -> impl IntoView {

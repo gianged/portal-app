@@ -5,7 +5,8 @@ use uuid::Uuid;
 use shared::dto::ids::RequestId;
 
 use crate::features::home::shell::AuthedPage;
-use crate::features::requests::components::{RequestDetail, RequestsIndex};
+use crate::features::requests::detail::RequestDetail;
+use crate::features::requests::list::RequestsIndex;
 
 #[component]
 pub fn RequestsPage() -> impl IntoView {
