@@ -32,7 +32,9 @@ fn payload_icon(p: &NotificationPayloadDto) -> IconName {
         | NotificationPayloadDto::TicketStatusChange { .. }
         | NotificationPayloadDto::TicketRaised { .. } => IconName::Ticket,
         NotificationPayloadDto::RequestAssigned { .. }
-        | NotificationPayloadDto::RequestStatusChange { .. } => IconName::Doc,
+        | NotificationPayloadDto::RequestStatusChange { .. }
+        | NotificationPayloadDto::RequestComment { .. } => IconName::Doc,
+        NotificationPayloadDto::TicketComment { .. } => IconName::Ticket,
         NotificationPayloadDto::ProjectInvite { .. }
         | NotificationPayloadDto::ProjectInviteResponse { .. } => IconName::Folder,
         NotificationPayloadDto::System { .. } => IconName::AlertCircle,
@@ -50,8 +52,12 @@ fn payload_href(p: &NotificationPayloadDto) -> Option<String> {
             Some(format!("/tickets/{}", ticket_id.0))
         }
         NotificationPayloadDto::RequestAssigned { request_id }
-        | NotificationPayloadDto::RequestStatusChange { request_id, .. } => {
+        | NotificationPayloadDto::RequestStatusChange { request_id, .. }
+        | NotificationPayloadDto::RequestComment { request_id, .. } => {
             Some(format!("/requests/{}", request_id.0))
+        }
+        NotificationPayloadDto::TicketComment { ticket_id, .. } => {
+            Some(format!("/tickets/{}", ticket_id.0))
         }
         NotificationPayloadDto::ProjectInvite { project_id, .. }
         | NotificationPayloadDto::ProjectInviteResponse { project_id, .. } => {
@@ -85,6 +91,8 @@ fn payload_summary(p: &NotificationPayloadDto) -> String {
             format!("Project invite {}", status.label().to_lowercase())
         }
         NotificationPayloadDto::TicketRaised { .. } => "A new ticket was raised".to_owned(),
+        NotificationPayloadDto::RequestComment { .. } => "New comment on a request".to_owned(),
+        NotificationPayloadDto::TicketComment { .. } => "New comment on a ticket".to_owned(),
         NotificationPayloadDto::System { message } => message.clone(),
     }
 }

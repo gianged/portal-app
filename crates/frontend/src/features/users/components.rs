@@ -8,10 +8,15 @@ use uuid::Uuid;
 
 use shared::dto::ids::UserId;
 use shared::dto::user::{
-    CreateUserRequest, SystemRole, UpdateProfileRequest, UserDto, UserProfileDto, UserStatus,
+    ChangePasswordRequest, CreateUserRequest, ResetPasswordRequest, SystemRole,
+    UpdateProfileRequest, UserDto, UserProfileDto, UserRole, UserStatus,
 };
-use shared::validation::user::{validate_create_user, validate_update_profile};
+use shared::validation::user::{
+    validate_change_password, validate_create_user, validate_reset_password,
+    validate_update_profile,
+};
 
+use crate::features::auth::api as auth_api;
 use crate::features::ui::{back_link, page_title, section_heading, subtle};
 use crate::features::users::api;
 use crate::primitives::avatar::{Avatar, AvatarSize};
@@ -26,8 +31,10 @@ use crate::primitives::input::{FieldLabel, Input};
 use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::table::{Table, TableToolbar, TableWrap};
+use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
 use crate::theme::{class, color, space, typography};
+use crate::util::debounce::debounced;
 use crate::util::format::tone_for;
 use crate::util::load::{Loadable, load, load_error, note};
 
@@ -68,7 +75,7 @@ pub fn UserPicker(
 ) -> impl IntoView {
     let placeholder = placeholder.unwrap_or_else(|| "Select a person…".to_owned());
     let users: Loadable<Vec<UserDto>> = RwSignal::new(None);
-    load(users, api::list());
+    load(users, api::list(None));
 
     let value = Signal::derive(move || selected.get().map(|u| u.0.to_string()).unwrap_or_default());
     let handle = Callback::new(move |s: String| {
@@ -101,23 +108,32 @@ pub fn UsersIndex() -> impl IntoView {
     let users: Loadable<Vec<UserDto>> = RwSignal::new(None);
     let reload = RwSignal::new(0u32);
     let create_open = RwSignal::new(false);
+    let search = RwSignal::new(String::new());
+    let dq = debounced(search.into(), 300);
 
     Effect::new(move |_| {
         let _ = reload.get();
-        load(users, api::list());
+        let term = dq.get().trim().to_owned();
+        load(users, api::list((!term.is_empty()).then_some(term)));
     });
 
     let open_create = Callback::new(move |_| create_open.set(true));
     let created = Callback::new(move |()| reload.update(|n| *n += 1));
+    let search_wrap = class("width: 220px;");
 
     view! {
         <Stack gap=Gap::Lg>
             <TableWrap>
                 <TableToolbar>
                     {section_heading("People")}
-                    <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_create>
-                        <Icon name=IconName::Plus size=14 /> " New user"
-                    </Button>
+                    <Cluster gap=Gap::Sm>
+                        <div class=search_wrap>
+                            <Input value=search on_input=Callback::new(move |v| search.set(v)) placeholder="Search people…" />
+                        </div>
+                        <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_create>
+                            <Icon name=IconName::Plus size=14 /> " New user"
+                        </Button>
+                    </Cluster>
                 </TableToolbar>
                 {move || match users.get() {
                     None => note("Loading people…"),
@@ -282,9 +298,12 @@ fn CreateUserDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl Into
 #[component]
 pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
+    let auth = use_context::<AuthState>().expect("AuthState context");
     let profile: Loadable<UserProfileDto> = RwSignal::new(None);
     let reload = RwSignal::new(0u32);
     let edit_open = RwSignal::new(false);
+    let pwd_open = RwSignal::new(false);
+    let reset_open = RwSignal::new(false);
 
     Effect::new(move |_| {
         let _ = reload.get();
@@ -318,6 +337,8 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
     };
 
     let open_edit = Callback::new(move |_| edit_open.set(true));
+    let open_pwd = Callback::new(move |_| pwd_open.set(true));
+    let open_reset = Callback::new(move |_| reset_open.set(true));
     let saved = Callback::new(move |()| reload.update(|n| *n += 1));
 
     view! {
@@ -345,6 +366,15 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
                             <Button variant=ButtonVariant::Destructive size=ButtonSize::Sm on_click=deactivate_cb>"Deactivate"</Button>
                         }.into_any(),
                     };
+                    let viewer = auth.user.get();
+                    let is_self = viewer.as_ref().map(|u| u.id) == id.get();
+                    let is_hr = viewer.as_ref().is_some_and(|u| u.role == UserRole::Hr);
+                    let pwd_action = is_self.then(|| view! {
+                        <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_pwd>"Change password"</Button>
+                    });
+                    let reset_action = (is_hr && !is_self).then(|| view! {
+                        <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_reset>"Reset password"</Button>
+                    });
                     view! {
                         <Stack gap=Gap::Lg>
                             <Card>
@@ -362,6 +392,8 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
                                             <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_edit>
                                                 <Icon name=IconName::Edit size=14 /> " Edit"
                                             </Button>
+                                            {pwd_action}
+                                            {reset_action}
                                             {action}
                                         </Cluster>
                                     </Cluster>
@@ -380,7 +412,146 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
                     }.into_any()
                 }
             }}
+            <ChangePasswordDialog open=pwd_open />
+            <ResetPasswordDialog open=reset_open id=id />
         </Stack>
+    }
+}
+
+/// Self-service password change; revokes every session server-side, so it signs the user out and lets the guard redirect.
+#[component]
+fn ChangePasswordDialog(open: RwSignal<bool>) -> impl IntoView {
+    let toast = use_context::<ToastState>().expect("ToastState context");
+    let auth = use_context::<AuthState>().expect("AuthState context");
+    let current = RwSignal::new(String::new());
+    let new_pw = RwSignal::new(String::new());
+    let confirm = RwSignal::new(String::new());
+    let submitting = RwSignal::new(false);
+
+    let on_close = Callback::new(move |()| open.set(false));
+    let cancel = Callback::new(move |_| open.set(false));
+
+    let submit = Callback::new(move |_| {
+        if submitting.get_untracked() {
+            return;
+        }
+        if new_pw.get_untracked() != confirm.get_untracked() {
+            toast.error("New passwords do not match");
+            return;
+        }
+        let req = ChangePasswordRequest {
+            current_password: current.get_untracked(),
+            new_password: new_pw.get_untracked(),
+        };
+        if let Err(e) = validate_change_password(&req) {
+            toast.error(e.to_string());
+            return;
+        }
+        submitting.set(true);
+        spawn_local(async move {
+            match auth_api::change_password(&req).await {
+                Ok(()) => {
+                    toast.success("Password changed — sign in with the new password");
+                    open.set(false);
+                    // The old token is already revoked; logout just clears the
+                    // stale cookie, then the auth guard redirects to /login.
+                    let _ = auth_api::logout().await;
+                    auth.clear();
+                }
+                Err(e) => toast.error_from(&e),
+            }
+            submitting.set(false);
+        });
+    });
+
+    view! {
+        <Dialog open=open on_close=on_close>
+            <DialogHeader title="Change password" subtitle="You will be signed out everywhere and must log in again." />
+            <DialogBody>
+                <Stack gap=Gap::Lg>
+                    <div>
+                        <FieldLabel for_id="cp-current">"Current password"</FieldLabel>
+                        <Input value=current on_input=Callback::new(move |v| current.set(v)) type_="password" placeholder="••••••••" />
+                    </div>
+                    <div>
+                        <FieldLabel for_id="cp-new">"New password"</FieldLabel>
+                        <Input value=new_pw on_input=Callback::new(move |v| new_pw.set(v)) type_="password" placeholder="••••••••" />
+                    </div>
+                    <div>
+                        <FieldLabel for_id="cp-confirm">"Confirm new password"</FieldLabel>
+                        <Input value=confirm on_input=Callback::new(move |v| confirm.set(v)) type_="password" placeholder="••••••••" />
+                    </div>
+                </Stack>
+            </DialogBody>
+            <DialogFooter>
+                <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting.get()>
+                    {move || if submitting.get() { "Changing…" } else { "Change password" }}
+                </Button>
+            </DialogFooter>
+        </Dialog>
+    }
+}
+
+/// HR sets a temporary password (mirrors `CreateUserDialog`); the target's sessions are revoked server-side.
+#[component]
+fn ResetPasswordDialog(
+    open: RwSignal<bool>,
+    #[prop(into)] id: Signal<Option<UserId>>,
+) -> impl IntoView {
+    let toast = use_context::<ToastState>().expect("ToastState context");
+    let password = RwSignal::new(String::new());
+    let submitting = RwSignal::new(false);
+
+    let on_close = Callback::new(move |()| open.set(false));
+    let cancel = Callback::new(move |_| open.set(false));
+
+    let submit = Callback::new(move |_| {
+        if submitting.get_untracked() {
+            return;
+        }
+        let Some(uid) = id.get_untracked() else {
+            return;
+        };
+        let req = ResetPasswordRequest {
+            new_password: password.get_untracked(),
+        };
+        if let Err(e) = validate_reset_password(&req) {
+            toast.error(e.to_string());
+            return;
+        }
+        submitting.set(true);
+        spawn_local(async move {
+            match api::reset_password(uid, &req).await {
+                Ok(()) => {
+                    toast.success("Temporary password set — share it securely");
+                    password.set(String::new());
+                    open.set(false);
+                }
+                Err(e) => toast.error_from(&e),
+            }
+            submitting.set(false);
+        });
+    });
+
+    view! {
+        <Dialog open=open on_close=on_close>
+            <DialogHeader title="Reset password" subtitle="Set a temporary password and share it with the user out-of-band. Their sessions end immediately." />
+            <DialogBody>
+                <Stack gap=Gap::Lg>
+                    <div>
+                        <FieldLabel for_id="rp-pass">"Temporary password"</FieldLabel>
+                        <Input value=password on_input=Callback::new(move |v| password.set(v)) type_="password" placeholder="••••••••" />
+                    </div>
+                </Stack>
+            </DialogBody>
+            <DialogFooter>
+                <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting.get()>
+                    {move || if submitting.get() { "Resetting…" } else { "Reset password" }}
+                </Button>
+            </DialogFooter>
+        </Dialog>
     }
 }
 

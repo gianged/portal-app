@@ -27,7 +27,27 @@ pub async fn require_auth(
         .get(SESSION_COOKIE)
         .map(Cookie::value)
         .ok_or(AppError::Auth(AuthError::Missing))?;
-    let user_id = state.token.verify(token)?;
-    req.extensions_mut().insert(AuthUser { user_id });
+    let verified = state.token.verify(token)?;
+    // Revocation check (logout denylist / stale version); fail-closed, same posture as the rate limiter in this path.
+    if state
+        .revocation
+        .is_revoked(verified.jti)
+        .await
+        .map_err(application::Error::from)?
+    {
+        return Err(AuthError::Invalid.into());
+    }
+    if state
+        .revocation
+        .version(verified.user_id)
+        .await
+        .map_err(application::Error::from)?
+        != verified.version
+    {
+        return Err(AuthError::Invalid.into());
+    }
+    req.extensions_mut().insert(AuthUser {
+        user_id: verified.user_id,
+    });
     Ok(next.run(req).await)
 }

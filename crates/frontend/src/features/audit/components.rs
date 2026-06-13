@@ -1,8 +1,11 @@
-//! Admin audit-log viewer: the most-recent state changes across the org.
+//! Admin audit-log viewer: the most-recent state changes across the org, plus
+//! the per-entity [`AuditTrailPanel`] embedded on detail pages.
 
 use leptos::prelude::*;
+use uuid::Uuid;
 
 use shared::dto::audit::{AuditAction, AuditLogDto};
+use shared::dto::user::UserRole;
 
 use crate::features::audit::api;
 use crate::features::ui::section_heading;
@@ -12,11 +15,13 @@ use crate::primitives::card::Card;
 use crate::primitives::empty_state::EmptyState;
 use crate::primitives::icon::IconName;
 use crate::primitives::stack::{Gap, Stack};
+use crate::state::auth::AuthState;
 use crate::theme::{class, color, space, typography};
 use crate::util::format::{relative_time, tone_for};
 use crate::util::load::{Loadable, load, load_error, note};
 
 const PAGE: u32 = 100;
+const TRAIL_PAGE: u32 = 50;
 
 fn action_variant(action: AuditAction) -> BadgeVariant {
     match action {
@@ -55,6 +60,73 @@ pub fn AuditLogIndex() -> impl IntoView {
                 }}
             </Stack>
         </Card>
+    }
+}
+
+/// Which entity an [`AuditTrailPanel`] shows history for; dispatches to the
+/// typed api wrappers so the projector's schema/table strings stay in one place.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum TrailKind {
+    Request,
+    Ticket,
+    Project,
+}
+
+/// Per-entity audit history on detail pages (Director/HR only; server enforces a 403).
+/// `refresh` re-fetches after lifecycle actions; rows lag slightly (async projection).
+#[component]
+pub fn AuditTrailPanel(
+    #[prop(into)] id: Signal<Option<Uuid>>,
+    kind: TrailKind,
+    #[prop(into)] refresh: Signal<u32>,
+) -> impl IntoView {
+    let auth = use_context::<AuthState>().expect("AuthState context");
+    let items: Loadable<Vec<AuditLogDto>> = RwSignal::new(None);
+
+    let is_admin = Signal::derive(move || {
+        auth.user.with(|u| {
+            u.as_ref()
+                .is_some_and(|u| matches!(u.role, UserRole::Director | UserRole::Hr))
+        })
+    });
+
+    Effect::new(move |_| {
+        let _ = refresh.get();
+        if !is_admin.get() {
+            return;
+        }
+        if let Some(eid) = id.get() {
+            match kind {
+                TrailKind::Request => load(items, api::request_trail(eid, TRAIL_PAGE)),
+                TrailKind::Ticket => load(items, api::ticket_trail(eid, TRAIL_PAGE)),
+                TrailKind::Project => load(items, api::project_trail(eid, TRAIL_PAGE)),
+            }
+        }
+    });
+
+    view! {
+        {move || {
+            if !is_admin.get() {
+                return ().into_any();
+            }
+            view! {
+                <Card>
+                    <Stack gap=Gap::Sm>
+                        {section_heading("History")}
+                        {move || match items.get() {
+                            None => note("Loading history…"),
+                            Some(Err(e)) => load_error(&e),
+                            Some(Ok(list)) if list.is_empty() => note("No recorded changes yet."),
+                            Some(Ok(list)) => {
+                                let rows = list.into_iter().map(audit_row).collect_view();
+                                view! { <div>{rows}</div> }.into_any()
+                            }
+                        }}
+                    </Stack>
+                </Card>
+            }
+            .into_any()
+        }}
     }
 }
 

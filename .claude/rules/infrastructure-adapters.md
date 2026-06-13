@@ -1,7 +1,7 @@
 ---
 paths:
   - "crates/infrastructure/**/*.rs"
-  - "migrations/**/*.sql"
+  - "infra/postgres/*.sql"
 ---
 
 # Infrastructure Adapter Rules
@@ -40,13 +40,12 @@ The shortcut `e.is_unique_violation()` is fine when only that one kind is intere
 
 `sqlx::Error` must never appear in a public function signature.
 
-## Migrations
+## Schema
 
-Migrations live under `migrations/` and run via `sqlx migrate run`.
+The relational schema is database-first and lives entirely in `infra/postgres/10-init.sql` — the single source of truth. There is no incremental-migration workflow.
 
-- **Forward-only.** sqlx supports down migrations but the team does not run them — they rot.
-- Filename: `{YYYYMMDDHHMMSS}_{snake_case_description}.sql`. sqlx enforces the timestamp prefix.
-- A migration that has been applied to any shared database (staging, prod, a teammate's local) is immutable. To change behaviour, add a new migration.
+- Change the schema by editing `10-init.sql` directly, then reinitialize the dev DB (Postgres only runs the init script on an empty volume): `docker compose --env-file .env -f infra/docker-compose.infra.yml down -v`, then `cargo make bootstrap`, then `cargo make sqlx-prepare`.
+- Keep the file's sectioned layout: tables in §5, foreign keys in §6, indexes in §7, triggers in §8.
 - Column types:
   - Timestamps: `TIMESTAMPTZ NOT NULL`. Never `TIMESTAMP`.
   - Primary keys: `UUID NOT NULL`, populated with UUIDv7 from the application layer. No `SERIAL` / `BIGSERIAL`.

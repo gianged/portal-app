@@ -233,27 +233,32 @@ impl TicketService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not an IT member, or a repository or authz-backed repository error if the datastore is unavailable.
-    pub async fn list_open_for_triage(&self, actor: UserId, limit: u32) -> Result<Vec<Ticket>> {
+    pub async fn list_open_for_triage(
+        &self,
+        actor: UserId,
+        limit: u32,
+        q: Option<&str>,
+    ) -> Result<Vec<Ticket>> {
         self.perms.require_it_member(actor).await?;
-        Ok(self.tickets.list_open_for_triage(limit).await?)
+        Ok(self.tickets.list_open_for_triage(limit, q).await?)
     }
 
     /// Lists tickets assigned to the actor. IT-only.
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not an IT member, or a repository or authz-backed repository error if the datastore is unavailable.
-    pub async fn list_for_assignee(&self, actor: UserId) -> Result<Vec<Ticket>> {
+    pub async fn list_for_assignee(&self, actor: UserId, q: Option<&str>) -> Result<Vec<Ticket>> {
         self.perms.require_it_member(actor).await?;
-        Ok(self.tickets.list_for_assignee(actor).await?)
+        Ok(self.tickets.list_for_assignee(actor, q).await?)
     }
 
     /// Lists tickets raised by the actor.
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not active, or a repository or authz-backed repository error if the datastore is unavailable.
-    pub async fn list_for_requester(&self, actor: UserId) -> Result<Vec<Ticket>> {
+    pub async fn list_for_requester(&self, actor: UserId, q: Option<&str>) -> Result<Vec<Ticket>> {
         self.perms.require_active(actor).await?;
-        Ok(self.tickets.list_for_requester(actor).await?)
+        Ok(self.tickets.list_for_requester(actor, q).await?)
     }
 
     /// Finds a ticket the actor is permitted to view.

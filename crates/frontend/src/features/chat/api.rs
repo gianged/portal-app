@@ -3,9 +3,11 @@
 //! history and the REST fallback for sending/editing.
 
 use serde::Serialize;
+use web_sys::FormData;
 
 use shared::dto::chat::{
-    ChannelDto, ChannelSummaryDto, EditMessageRequest, MessageDto, SendMessageRequest,
+    ChannelDto, ChannelSummaryDto, ChatAttachmentDto, EditMessageRequest, MessageDto,
+    SendMessageRequest,
 };
 use shared::dto::ids::{ChannelId, MessageId, UserId};
 
@@ -78,4 +80,13 @@ pub async fn delete(channel: ChannelId, message: MessageId) -> Result<(), Fronte
 
 pub async fn mark_read(channel: ChannelId) -> Result<(), FrontendError> {
     client::post_no_content(&format!("/chat/channels/{}/read", channel.0)).await
+}
+
+/// Upload one file for a channel (multipart). The returned `storage_key` goes
+/// into a subsequent message's `attachment_keys`.
+pub async fn upload_attachment(
+    channel: ChannelId,
+    form: FormData,
+) -> Result<ChatAttachmentDto, FrontendError> {
+    client::post_multipart(&format!("/chat/channels/{}/attachments", channel.0), form).await
 }

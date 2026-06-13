@@ -131,6 +131,20 @@ pub struct UpdateProfileRequest {
     pub avatar_storage_key: Option<String>,
 }
 
+/// Self-service password change: the current password is re-verified before
+/// the new one is accepted, and every existing session is revoked on success.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+/// HR-set temporary password for another user (revokes the target's sessions).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResetPasswordRequest {
+    pub new_password: String,
+}
+
 /// Assign a user to a group with an initial role (HR action).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssignUserToGroupRequest {

@@ -1,4 +1,6 @@
 pub mod audit;
+pub mod chat_attachment;
+pub mod comment;
 pub mod group;
 pub mod notification;
 pub mod project;
@@ -7,6 +9,8 @@ pub mod ticket;
 pub mod user;
 
 pub use audit::PgAuditRepo;
+pub use chat_attachment::PgChatAttachmentRepo;
+pub use comment::PgCommentRepo;
 pub use group::PgGroupRepo;
 pub use notification::PgNotificationRepo;
 pub use project::PgProjectRepo;

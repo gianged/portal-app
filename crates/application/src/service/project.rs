@@ -414,9 +414,10 @@ impl ProjectService {
         &self,
         actor: UserId,
         group_id: GroupId,
+        q: Option<&str>,
     ) -> Result<Vec<Project>> {
         self.perms.require_group_member(actor, group_id).await?;
-        Ok(self.projects.list_for_owner_group(group_id).await?)
+        Ok(self.projects.list_for_owner_group(group_id, q).await?)
     }
 
     /// Lists pending invites addressed to the given group.
@@ -491,7 +492,7 @@ impl ProjectService {
         for status in OPEN_REQUEST_STATUSES {
             let open = self
                 .requests
-                .list_for_project(project_id, Some(*status))
+                .list_for_project(project_id, Some(*status), None)
                 .await?;
             for mut request in open {
                 let from = request.status;

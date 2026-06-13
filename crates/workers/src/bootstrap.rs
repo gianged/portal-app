@@ -3,21 +3,29 @@ use std::sync::Arc;
 use anyhow::Context;
 use apalis_redis::RedisStorage;
 
-use application::{AuditProjector, MaintenanceService, NotificationFanout};
+use application::{
+    AuditProjector, EmailNotifier, MaintenanceService, NotificationFanout, events::EventBus,
+};
 use domain::{
-    ports::file_storage::FileStorage,
+    ports::{file_storage::FileStorage, mailer::Mailer},
     repository::{
-        AuditRepository, ChatRepository, GroupRepository, NotificationRepository,
-        ProjectRepository, RequestRepository, TicketRepository, UserRepository,
+        AuditRepository, ChatAttachmentRepository, ChatRepository, GroupRepository,
+        NotificationRepository, ProjectRepository, RequestRepository, TicketRepository,
+        UserRepository,
     },
 };
 use infrastructure::{
-    jobs::{AuditEnvelope, NotificationEnvelope, audit_storage, notification_storage},
-    local_storage::LocalStorage,
-    postgres::{
-        PgAuditRepo, PgGroupRepo, PgNotificationRepo, PgProjectRepo, PgRequestRepo, PgTicketRepo,
-        PgUserRepo, build_pool,
+    jobs::{
+        ApalisAuditQueue, ApalisEmailQueue, ApalisNotificationQueue, AuditEnvelope, EmailEnvelope,
+        NotificationEnvelope, audit_storage, email_storage, notification_storage,
     },
+    local_storage::LocalStorage,
+    mailer::{LogMailer, SmtpMailer, SmtpTls},
+    postgres::{
+        PgAuditRepo, PgChatAttachmentRepo, PgGroupRepo, PgNotificationRepo, PgProjectRepo,
+        PgRequestRepo, PgTicketRepo, PgUserRepo, build_pool,
+    },
+    redis::RedisEventPublisher,
     scylla::{ScyllaChatRepo, build_session},
     signed_url::SignedUrl,
 };
@@ -31,6 +39,8 @@ pub struct WorkerContext {
     pub audit_projector: Arc<AuditProjector>,
     pub audit_storage: RedisStorage<AuditEnvelope>,
     pub maintenance: Arc<MaintenanceService>,
+    pub mailer: Arc<dyn Mailer>,
+    pub email_storage: RedisStorage<EmailEnvelope>,
 }
 
 /// Builds the infrastructure adapters, wires the notification fan-out service,
@@ -66,33 +76,83 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         signer,
     ));
 
-    // Built before the fan-out moves the repo handles below.
-    let maintenance = Arc::new(MaintenanceService::new(
-        notifications.clone(),
-        requests.clone(),
-        users.clone(),
-        file_storage,
-    ));
-
-    let audit: Arc<dyn AuditRepository> = Arc::new(PgAuditRepo::new(pool.clone()));
-    let audit_projector = Arc::new(AuditProjector::new(audit));
-
-    let fanout = Arc::new(NotificationFanout::new(
-        notifications,
-        groups,
-        users,
-        requests,
-        chats,
-        tickets,
-        projects,
-    ));
-
     let storage = notification_storage(&cfg.redis_url)
         .await
         .context("connecting apalis redis (jobs)")?;
     let audit_storage = audit_storage(&cfg.redis_url)
         .await
         .context("connecting apalis redis (audit jobs)")?;
+    let email_store = email_storage(&cfg.redis_url)
+        .await
+        .context("connecting apalis redis (email jobs)")?;
+
+    // Event bus for system events (ticket auto-close); same wiring as the server -
+    // broadcast publisher + the two durable queues this process consumes.
+    let publisher = Arc::new(
+        RedisEventPublisher::new(&cfg.redis_url)
+            .await
+            .context("connecting redis (events)")?,
+    );
+    let events = Arc::new(EventBus::new(
+        publisher,
+        Arc::new(ApalisNotificationQueue::new(storage.clone())),
+        Arc::new(ApalisAuditQueue::new(audit_storage.clone())),
+    ));
+
+    // Built before the fan-out moves the repo handles below.
+    let chat_attachments: Arc<dyn ChatAttachmentRepository> =
+        Arc::new(PgChatAttachmentRepo::new(pool.clone()));
+    let maintenance = Arc::new(MaintenanceService::new(
+        notifications.clone(),
+        requests.clone(),
+        tickets.clone(),
+        chat_attachments,
+        users.clone(),
+        file_storage,
+        events,
+    ));
+
+    let audit: Arc<dyn AuditRepository> = Arc::new(PgAuditRepo::new(pool.clone()));
+    let audit_projector = Arc::new(AuditProjector::new(audit));
+
+    // SMTP when enabled, log-only otherwise (config validated host/from).
+    let mailer: Arc<dyn Mailer> = if cfg.email_enabled {
+        let tls = match cfg.smtp_tls.as_str() {
+            "none" => SmtpTls::None,
+            _ => SmtpTls::StartTls,
+        };
+        Arc::new(
+            SmtpMailer::new(
+                cfg.smtp_host.as_deref().unwrap_or_default(),
+                cfg.smtp_port,
+                cfg.smtp_username.as_deref(),
+                cfg.smtp_password.as_deref(),
+                cfg.smtp_from.as_deref().unwrap_or_default(),
+                tls,
+            )
+            .context("building smtp mailer")?,
+        )
+    } else {
+        Arc::new(LogMailer)
+    };
+    let notifier = Arc::new(EmailNotifier::new(
+        users.clone(),
+        Arc::new(ApalisEmailQueue::new(email_store.clone())),
+        cfg.portal_base_url.clone(),
+    ));
+
+    let fanout = Arc::new(
+        NotificationFanout::new(
+            notifications,
+            groups,
+            users,
+            requests,
+            chats,
+            tickets,
+            projects,
+        )
+        .with_email(notifier),
+    );
 
     Ok(WorkerContext {
         fanout,
@@ -100,5 +160,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         audit_projector,
         audit_storage,
         maintenance,
+        mailer,
+        email_storage: email_store,
     })
 }

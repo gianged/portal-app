@@ -1,6 +1,7 @@
 pub mod announcement;
 pub mod audit;
 pub mod chat;
+pub mod comment;
 pub mod group;
 pub mod notification;
 pub mod project;
@@ -11,8 +12,10 @@ pub mod user;
 pub use announcement::{Announcement, EDIT_GRACE};
 pub use audit::{AuditAction, AuditLog};
 pub use chat::{
-    Channel, ChannelKind, ChannelMembership, DirectChannel, GeneralChannel, GroupChannel, Message,
+    Channel, ChannelKind, ChannelMembership, ChatAttachment, DirectChannel, GeneralChannel,
+    GroupChannel, Message,
 };
+pub use comment::{Comment, CommentEntity};
 pub use group::{Group, GroupKind, GroupRole, Membership};
 pub use notification::{Notification, NotificationKind, NotificationPayload};
 pub use project::{

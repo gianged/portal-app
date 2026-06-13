@@ -7,22 +7,28 @@ use std::time::Duration;
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
-    routing::{get, post},
+    http::StatusCode,
+    routing::{get, patch, post},
 };
 use serde::Deserialize;
 use uuid::Uuid;
 
 use application::commands::request::AddAttachmentCommand;
 use domain::{
-    ids::{ProjectId, RequestId, UserId},
-    model::Request,
+    ids::{CommentId, ProjectId, RequestId, UserId},
+    model::{CommentEntity, Request},
     ports::file_storage::FileStorage,
 };
+use shared::dto::comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest};
 use shared::dto::request::{
     AssignRequestRequest, CreateRequestRequest, RequestAttachmentDto, RequestDetailDto, RequestDto,
     RequestStatus as WireRequestStatus, UpdateRequestRequest,
 };
-use shared::validation::request::{validate_request_description, validate_request_title};
+use shared::validation::{
+    comment::validate_comment_body,
+    file::sanitize_filename,
+    request::{validate_request_description, validate_request_title},
+};
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
 
@@ -30,7 +36,7 @@ use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser
 const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 
 /// Lifetime of a presigned attachment download URL handed to clients.
-const DOWNLOAD_URL_TTL: Duration = Duration::from_secs(3600);
+const DOWNLOAD_URL_TTL: Duration = Duration::from_hours(1);
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -47,6 +53,120 @@ pub fn router() -> Router<AppState> {
             "/requests/{id}/attachments",
             post(add_attachment).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)),
         )
+        .route(
+            "/requests/{id}/comments",
+            get(list_comments).post(add_comment),
+        )
+        .route(
+            "/requests/{id}/comments/{comment_id}",
+            patch(edit_comment).delete(delete_comment),
+        )
+}
+
+#[derive(Deserialize)]
+struct CommentsQuery {
+    /// Exclusive newest-first cursor (a comment id).
+    before: Option<Uuid>,
+    limit: Option<u32>,
+}
+
+async fn list_comments(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Query(q): Query<CommentsQuery>,
+) -> Result<Json<Vec<CommentDto>>, AppError> {
+    let entity = CommentEntity::Request {
+        request_id: RequestId(id),
+    };
+    let before = q.before.map(CommentId);
+    let limit = q.limit.unwrap_or(50).clamp(1, 200);
+    let comments = state
+        .comment
+        .list(auth.user_id, entity, before, limit)
+        .await?;
+    comments_to_dtos(&state, auth.user_id, comments).await
+}
+
+async fn add_comment(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<CreateCommentRequest>,
+) -> Result<Json<CommentDto>, AppError> {
+    validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
+    let entity = CommentEntity::Request {
+        request_id: RequestId(id),
+    };
+    let comment = state.comment.add(auth.user_id, entity, body.body).await?;
+    comment_to_dto(&state, auth.user_id, &comment).await
+}
+
+async fn edit_comment(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path((id, comment_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<UpdateCommentRequest>,
+) -> Result<Json<CommentDto>, AppError> {
+    validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
+    let entity = CommentEntity::Request {
+        request_id: RequestId(id),
+    };
+    let comment = state
+        .comment
+        .edit(auth.user_id, entity, CommentId(comment_id), body.body)
+        .await?;
+    comment_to_dto(&state, auth.user_id, &comment).await
+}
+
+async fn delete_comment(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path((id, comment_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, AppError> {
+    let entity = CommentEntity::Request {
+        request_id: RequestId(id),
+    };
+    state
+        .comment
+        .remove(auth.user_id, entity, CommentId(comment_id))
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Resolves one comment's author summary.
+async fn comment_to_dto(
+    state: &AppState,
+    viewer: UserId,
+    comment: &domain::model::Comment,
+) -> Result<Json<CommentDto>, AppError> {
+    let author = resolve::user_summary(&state.user, &state.group, comment.author_user_id).await?;
+    let now = time::OffsetDateTime::now_utc();
+    Ok(Json(dto::comment_dto(comment, author, viewer, now)))
+}
+
+/// Resolves a page of comments with one deduped author lookup.
+async fn comments_to_dtos(
+    state: &AppState,
+    viewer: UserId,
+    comments: Vec<domain::model::Comment>,
+) -> Result<Json<Vec<CommentDto>>, AppError> {
+    let authors = resolve::user_map(
+        &state.user,
+        &state.group,
+        comments.iter().map(|c| c.author_user_id),
+    )
+    .await?;
+    let now = time::OffsetDateTime::now_utc();
+    Ok(Json(
+        comments
+            .iter()
+            .map(|c| {
+                let author = resolve::summary_from(&authors, c.author_user_id);
+                dto::comment_dto(c, author, viewer, now)
+            })
+            .collect(),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -58,6 +178,8 @@ struct ListQuery {
     mine: bool,
     /// Optional status filter.
     status: Option<WireRequestStatus>,
+    /// Substring search on the request title.
+    q: Option<String>,
 }
 
 async fn create(
@@ -81,15 +203,17 @@ async fn list(
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<RequestDto>>, AppError> {
     let status = q.status.map(dto::request_status_domain);
+    let search = crate::routes::norm_q(q.q);
+    let search = search.as_deref();
     let requests = if let Some(project) = q.project {
         state
             .request
-            .list_for_project(auth.user_id, ProjectId(project), status)
+            .list_for_project(auth.user_id, ProjectId(project), status, search)
             .await?
     } else if q.mine {
         state
             .request
-            .list_for_assignee(auth.user_id, status)
+            .list_for_assignee(auth.user_id, status, search)
             .await?
     } else {
         return Err(AppError::Validation(
@@ -114,7 +238,7 @@ async fn detail(
     for a in &attachments {
         let download_url = state
             .storage
-            .presign_get(&a.storage_key, DOWNLOAD_URL_TTL)
+            .presign_get(&a.storage_key, DOWNLOAD_URL_TTL, auth.user_id)
             .await
             .map_err(|e| AppError::Domain(application::Error::Storage(e)))?;
         attachment_dtos.push(dto::request_attachment_dto(
@@ -237,8 +361,9 @@ async fn add_attachment(
         .ok_or_else(|| AppError::Validation("no file field in upload".into()))?;
     let filename = field
         .file_name()
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| AppError::Validation("upload field has no filename".into()))?;
+        .map(sanitize_filename)
+        .ok_or_else(|| AppError::Validation("upload field has no filename".into()))?
+        .map_err(|e| AppError::Validation(e.to_string()))?;
     let content_type = field
         .content_type()
         .map_or_else(|| "application/octet-stream".to_owned(), ToOwned::to_owned);
@@ -264,7 +389,7 @@ async fn add_attachment(
         resolve::user_summary(&state.user, &state.group, attachment.uploaded_by_user_id).await?;
     let download_url = state
         .storage
-        .presign_get(&attachment.storage_key, DOWNLOAD_URL_TTL)
+        .presign_get(&attachment.storage_key, DOWNLOAD_URL_TTL, auth.user_id)
         .await
         .map_err(|e| AppError::Domain(application::Error::Storage(e)))?;
     Ok(Json(dto::request_attachment_dto(

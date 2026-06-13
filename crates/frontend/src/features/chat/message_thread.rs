@@ -17,6 +17,7 @@ use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::cluster::Cluster;
 use crate::primitives::dialog::{Dialog, DialogBody, DialogFooter, DialogHeader};
+use crate::primitives::icon::{Icon, IconName};
 use crate::primitives::pagination::LoadMore;
 use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::textarea::Textarea;
@@ -167,6 +168,7 @@ fn message_row(
     let mid = m.id;
     let edit_seed = m.body.clone();
     let body = m.body.clone();
+    let attachments = m.attachments.clone();
 
     let row = class(format!(
         "display: flex; gap: {g}; padding: {py} {px}; border-radius: {r}; \
@@ -244,8 +246,69 @@ fn message_row(
                 } else {
                     view! { <div class=text_cls>{body}</div> }.into_any()
                 }}
+                {if deleted || attachments.is_empty() {
+                    ().into_any()
+                } else {
+                    attachment_views(attachments)
+                }}
             </div>
         </div>
+    }
+}
+
+/// Renders a message's attachments: images inline (linked to the full file),
+/// everything else as a paperclip file row. URLs are presigned per viewer.
+fn attachment_views(attachments: Vec<shared::dto::chat::ChatAttachmentDto>) -> AnyView {
+    let img_cls = class(format!(
+        "max-width: 320px; max-height: 240px; border-radius: 6px; border: 1px solid {b}; \
+         display: block;",
+        b = color::BORDER,
+    ));
+    let file_cls = class(format!(
+        "display: inline-flex; align-items: center; gap: 6px; font-family: {ff}; \
+         font-size: {fs}; color: {c}; text-decoration: none; &:hover {{ color: {a}; }}",
+        ff = typography::FONT_SANS,
+        fs = typography::TEXT_SMALL,
+        c = color::TEXT_MUTED,
+        a = color::ACCENT,
+    ));
+    let views = attachments
+        .into_iter()
+        .map(|a| {
+            let href = a.download_url.clone();
+            if a.content_type.starts_with("image/") {
+                let img = img_cls.clone();
+                let src = href.clone();
+                let alt = a.filename.clone();
+                view! {
+                    <a href=href target="_blank" rel="noopener">
+                        <img class=img src=src alt=alt />
+                    </a>
+                }
+                .into_any()
+            } else {
+                let file = file_cls.clone();
+                let label = format!("{} ({})", a.filename, human_size(a.size_bytes));
+                view! {
+                    <a class=file href=href target="_blank" rel="noopener">
+                        <Icon name=IconName::Paperclip size=13 />
+                        {label}
+                    </a>
+                }
+                .into_any()
+            }
+        })
+        .collect_view();
+    view! { <Stack gap=Gap::Xs>{views}</Stack> }.into_any()
+}
+
+fn human_size(bytes: u64) -> String {
+    if bytes >= 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else if bytes >= 1024 {
+        format!("{:.0} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{bytes} B")
     }
 }
 

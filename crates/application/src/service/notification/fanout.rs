@@ -3,8 +3,8 @@ use std::{collections::HashSet, sync::Arc};
 use domain::{
     ids::{ChannelId, GroupId, NotificationId, UserId},
     model::{
-        Channel, GroupRole, Membership, Notification, NotificationPayload, ProjectInviteStatus,
-        TicketPriority, TicketStatus,
+        Channel, CommentEntity, GroupRole, Membership, Notification, NotificationPayload,
+        ProjectInviteStatus, TicketPriority, TicketStatus,
     },
     repository::{
         ChatRepository, GroupRepository, NotificationRepository, ProjectRepository,
@@ -35,6 +35,9 @@ pub struct NotificationFanout {
     chats: Arc<dyn ChatRepository>,
     tickets: Arc<dyn TicketRepository>,
     projects: Arc<dyn ProjectRepository>,
+    /// Optional email side-channel ([`Self::with_email`]); `None` keeps the
+    /// fanout in-app only.
+    email: Option<Arc<super::EmailNotifier>>,
 }
 
 impl NotificationFanout {
@@ -56,7 +59,16 @@ impl NotificationFanout {
             chats,
             tickets,
             projects,
+            email: None,
         }
+    }
+
+    /// Opt into emailing the subset of notification kinds the
+    /// [`super::EmailNotifier`] covers, alongside the in-app rows.
+    #[must_use]
+    pub fn with_email(mut self, email: Arc<super::EmailNotifier>) -> Self {
+        self.email = Some(email);
+        self
     }
 
     /// Dispatch one event. Variants that do not produce notifications are a
@@ -78,7 +90,7 @@ impl NotificationFanout {
                     announcement_id: *announcement_id,
                     channel_id: *channel_id,
                 };
-                self.fan_out(recipients, *sender, &payload).await
+                self.fan_out(recipients, Some(*sender), &payload).await
             }
             DomainEvent::MessagePosted {
                 message_id,
@@ -92,7 +104,7 @@ impl NotificationFanout {
                     channel_id: *channel_id,
                     mentioned_by: *sender,
                 };
-                self.fan_out(mentions.iter().copied(), *sender, &payload)
+                self.fan_out(mentions.iter().copied(), Some(*sender), &payload)
                     .await
             }
             DomainEvent::TicketTriaged {
@@ -108,7 +120,7 @@ impl NotificationFanout {
                 let payload = NotificationPayload::TicketUrgent {
                     ticket_id: *ticket_id,
                 };
-                self.fan_out(recipients, *actor, &payload).await
+                self.fan_out(recipients, Some(*actor), &payload).await
             }
             DomainEvent::RequestAssigned {
                 request_id,
@@ -119,7 +131,7 @@ impl NotificationFanout {
                 let payload = NotificationPayload::RequestAssigned {
                     request_id: *request_id,
                 };
-                self.fan_out([*assignee], *actor, &payload).await
+                self.fan_out([*assignee], Some(*actor), &payload).await
             }
             DomainEvent::RequestStatusChanged {
                 request_id,
@@ -142,7 +154,7 @@ impl NotificationFanout {
                     from: *from,
                     to: *to,
                 };
-                self.fan_out(recipients, *actor, &payload).await
+                self.fan_out(recipients, Some(*actor), &payload).await
             }
             DomainEvent::ProjectInviteSent {
                 invite_id,
@@ -156,7 +168,7 @@ impl NotificationFanout {
                     invite_id: *invite_id,
                     project_id: *project_id,
                 };
-                self.fan_out(recipients, *actor, &payload).await
+                self.fan_out(recipients, Some(*actor), &payload).await
             }
             DomainEvent::TicketAssigned {
                 ticket_id,
@@ -167,7 +179,7 @@ impl NotificationFanout {
                 let payload = NotificationPayload::TicketAssigned {
                     ticket_id: *ticket_id,
                 };
-                self.fan_out([*assignee], *actor, &payload).await
+                self.fan_out([*assignee], Some(*actor), &payload).await
             }
             DomainEvent::TicketStatusChanged {
                 ticket_id,
@@ -193,7 +205,23 @@ impl NotificationFanout {
                     from: *from,
                     to: *to,
                 };
-                self.fan_out(recipients, *actor, &payload).await
+                self.fan_out(recipients, Some(*actor), &payload).await
+            }
+            // Auto-close (null actor marks it system, not manual); reuses the status-change payload.
+            DomainEvent::TicketAutoClosed { ticket_id, .. } => {
+                let mut recipients = Vec::new();
+                if let Some(ticket) = self.tickets.find_by_id(*ticket_id).await? {
+                    recipients.push(ticket.requester_user_id);
+                    if let Some(assignee) = ticket.assignee_user_id {
+                        recipients.push(assignee);
+                    }
+                }
+                let payload = NotificationPayload::TicketStatusChange {
+                    ticket_id: *ticket_id,
+                    from: TicketStatus::Resolved,
+                    to: TicketStatus::Closed,
+                };
+                self.fan_out(recipients, None, &payload).await
             }
             DomainEvent::ProjectInviteResponded {
                 invite_id,
@@ -227,7 +255,7 @@ impl NotificationFanout {
                     project_id: *project_id,
                     status: *status,
                 };
-                self.fan_out(recipients, *actor, &payload).await
+                self.fan_out(recipients, Some(*actor), &payload).await
             }
             DomainEvent::TicketRaised {
                 ticket_id,
@@ -238,7 +266,50 @@ impl NotificationFanout {
                 let payload = NotificationPayload::TicketRaised {
                     ticket_id: *ticket_id,
                 };
-                self.fan_out(recipients, *requester, &payload).await
+                self.fan_out(recipients, Some(*requester), &payload).await
+            }
+            // Notify work-item participants (creator/requester + assignee); `fan_out` excludes the commenter.
+            DomainEvent::CommentAdded {
+                comment_id,
+                entity,
+                actor,
+                ..
+            } => {
+                let (recipients, payload) = match entity {
+                    CommentEntity::Request { request_id } => {
+                        let mut recipients = Vec::new();
+                        if let Some(request) = self.requests.find_by_id(*request_id).await? {
+                            recipients.push(request.creator_user_id);
+                            if let Some(assignee) = request.assignee_user_id {
+                                recipients.push(assignee);
+                            }
+                        }
+                        (
+                            recipients,
+                            NotificationPayload::RequestComment {
+                                request_id: *request_id,
+                                comment_id: *comment_id,
+                            },
+                        )
+                    }
+                    CommentEntity::Ticket { ticket_id } => {
+                        let mut recipients = Vec::new();
+                        if let Some(ticket) = self.tickets.find_by_id(*ticket_id).await? {
+                            recipients.push(ticket.requester_user_id);
+                            if let Some(assignee) = ticket.assignee_user_id {
+                                recipients.push(assignee);
+                            }
+                        }
+                        (
+                            recipients,
+                            NotificationPayload::TicketComment {
+                                ticket_id: *ticket_id,
+                                comment_id: *comment_id,
+                            },
+                        )
+                    }
+                };
+                self.fan_out(recipients, Some(*actor), &payload).await
             }
             other => {
                 tracing::debug!(
@@ -263,19 +334,18 @@ impl NotificationFanout {
         )
     }
 
-    /// Persist one notification per distinct recipient, skipping `exclude`.
-    /// Every save is attempted even if an earlier one fails; the first error is
-    /// returned afterwards so a single bad row does not drop the rest.
+    /// Persist one notification per recipient, skipping `exclude` (the actor; `None` for system events).
+    /// Every save is attempted; the first error is returned so one bad row doesn't drop the rest.
     async fn fan_out(
         &self,
         recipients: impl IntoIterator<Item = UserId>,
-        exclude: UserId,
+        exclude: Option<UserId>,
         payload: &NotificationPayload,
     ) -> Result<()> {
         let mut seen = HashSet::new();
         let targets: Vec<UserId> = recipients
             .into_iter()
-            .filter(|r| *r != exclude && seen.insert(*r))
+            .filter(|r| Some(*r) != exclude && seen.insert(*r))
             .collect();
         if targets.is_empty() {
             return Ok(());
@@ -283,10 +353,10 @@ impl NotificationFanout {
 
         let now = OffsetDateTime::now_utc();
         let mut first_err = None;
-        for recipient in targets {
+        for recipient in &targets {
             let notification = Notification {
                 id: NotificationId(Uuid::now_v7()),
-                recipient_user_id: recipient,
+                recipient_user_id: *recipient,
                 payload: payload.clone(),
                 read_at: None,
                 created_at: now,
@@ -299,7 +369,15 @@ impl NotificationFanout {
         }
         match first_err {
             Some(e) => Err(e.into()),
-            None => Ok(()),
+            None => {
+                // Email only on the all-saves-succeeded path: a partial failure
+                // makes apalis retry this job, and emailing before that retry
+                // would double-send. The notifier itself never errors.
+                if let Some(email) = &self.email {
+                    email.notify(&targets, payload).await;
+                }
+                Ok(())
+            }
         }
     }
 
@@ -346,7 +424,10 @@ impl NotificationFanout {
         let mut ids = Vec::new();
         let mut offset = 0;
         loop {
-            let page = self.users.list_active(ACTIVE_USER_PAGE, offset).await?;
+            let page = self
+                .users
+                .list_active(ACTIVE_USER_PAGE, offset, None)
+                .await?;
             let page_len = page.len();
             ids.extend(page.into_iter().map(|u| u.id));
             if page_len < ACTIVE_USER_PAGE as usize {

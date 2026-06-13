@@ -62,7 +62,7 @@ Why: keeps business rules unit-testable in isolation, lets the frontend type-che
 | Frontend dev server | `cd crates/frontend && trunk serve` |
 | Bring up dep stack | `docker compose -f infra/docker-compose.yml up -d` |
 
-`infra/` holds the Compose stack (`docker-compose.infra.yml` for the dependency services, `docker-compose.yml` for the full containerized stack), the Postgres and Scylla schema files, the OpenFGA model, and the bootstrap/backup scripts. Bring the stack up and apply schemas with `cargo make bootstrap` (idempotent). The Postgres schema is applied from `infra/postgres/10-init.sql` at bootstrap; `migrations/` is reserved for future incremental `sqlx migrate` steps.
+`infra/` holds the Compose stack (`docker-compose.infra.yml` for the dependency services, `docker-compose.yml` for the full containerized stack), the Postgres and Scylla schema files, the OpenFGA model, and the bootstrap/backup scripts. Bring the stack up and apply schemas with `cargo make bootstrap` (idempotent). The Postgres schema is database-first: `infra/postgres/10-init.sql` is the single source of truth, applied by the docker entrypoint on an empty volume. Change it in place and reinitialize (`down -v` + `cargo make bootstrap`, then `cargo make sqlx-prepare`); there is no incremental-migration workflow.
 
 ## External services
 

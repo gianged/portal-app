@@ -21,6 +21,8 @@ use shared::dto::request::{
 use shared::validation::request::{validate_request_description, validate_request_title};
 
 use crate::api::error::FrontendError;
+use crate::features::audit::components::{AuditTrailPanel, TrailKind};
+use crate::features::comments::{CommentTarget, CommentThread};
 use crate::features::groups::api as groups_api;
 use crate::features::projects::api as projects_api;
 use crate::features::requests::api;
@@ -40,6 +42,7 @@ use crate::primitives::table::{Table, TableToolbar, TableWrap};
 use crate::primitives::textarea::Textarea;
 use crate::state::toast::ToastState;
 use crate::theme::{class, color, space, typography};
+use crate::util::debounce::debounced;
 use crate::util::format::{
     relative_time, request_priority_variant, request_status_variant, tone_for,
 };
@@ -112,10 +115,16 @@ pub fn RequestsIndex() -> impl IntoView {
     let items: Loadable<Vec<RequestDto>> = RwSignal::new(None);
     let reload = RwSignal::new(0u32);
     let create_open = RwSignal::new(false);
+    let search = RwSignal::new(String::new());
+    let dq = debounced(search.into(), 300);
 
     Effect::new(move |_| {
         let _ = reload.get();
-        load(items, api::list_mine(status.get()));
+        let term = dq.get().trim().to_owned();
+        load(
+            items,
+            api::list_mine(status.get(), (!term.is_empty()).then_some(term)),
+        );
     });
 
     let on_status = Callback::new(move |v: String| status.set(status_from_wire(&v)));
@@ -124,6 +133,7 @@ pub fn RequestsIndex() -> impl IntoView {
     let open_create = Callback::new(move |_| create_open.set(true));
     let created = Callback::new(move |()| reload.update(|n| *n += 1));
     let select_wrap = class("width: 170px;");
+    let search_wrap = class("width: 220px;");
 
     view! {
         <Stack gap=Gap::Lg>
@@ -134,6 +144,9 @@ pub fn RequestsIndex() -> impl IntoView {
                         {subtle("Work requests where you're the assignee")}
                     </Stack>
                     <Cluster gap=Gap::Sm>
+                        <div class=search_wrap>
+                            <Input value=search on_input=Callback::new(move |v| search.set(v)) placeholder="Search requests…" />
+                        </div>
                         <div class=select_wrap>
                             <Select value=status_value on_change=on_status>
                                 <option value="">"All statuses"</option>
@@ -355,7 +368,7 @@ fn ProjectPicker(selected: RwSignal<Option<ProjectId>>) -> impl IntoView {
     Effect::new(move |_| {
         if let Some(g) = group.get() {
             selected.set(None);
-            load(projects, projects_api::list_for_owner_group(g));
+            load(projects, projects_api::list_for_owner_group(g, None));
         }
     });
 
@@ -550,6 +563,12 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                     }.into_any()
                 }
             }}
+            <CommentThread target=Signal::derive(move || id.get().map(CommentTarget::Request)) />
+            <AuditTrailPanel
+                id=Signal::derive(move || id.get().map(|r| r.0))
+                kind=TrailKind::Request
+                refresh=reload
+            />
             <AssignDialog open=assign_open target=assign_target on_confirm=confirm_assign />
         </Stack>
     }

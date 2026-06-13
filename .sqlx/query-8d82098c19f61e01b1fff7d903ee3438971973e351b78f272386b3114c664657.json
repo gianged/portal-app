@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 requester_user_id,\n                 assignee_user_id,\n                 title,\n                 description,\n                 status   AS \"status: SqlTicketStatus\",\n                 priority AS \"priority: SqlTicketPriority\",\n                 category AS \"category: SqlTicketCategory\",\n                 triaged_at,\n                 resolved_at,\n                 closed_at,\n                 created_at,\n                 updated_at\n               FROM ticket.tickets\n               WHERE assignee_user_id = $1\n               ORDER BY created_at DESC",
+  "query": "SELECT\n                 id,\n                 requester_user_id,\n                 assignee_user_id,\n                 title,\n                 description,\n                 status   AS \"status: SqlTicketStatus\",\n                 priority AS \"priority: SqlTicketPriority\",\n                 category AS \"category: SqlTicketCategory\",\n                 triaged_at,\n                 resolved_at,\n                 closed_at,\n                 created_at,\n                 updated_at\n               FROM ticket.tickets\n               WHERE assignee_user_id = $1\n                 AND ($2::text IS NULL OR title ILIKE $2)\n               ORDER BY created_at DESC",
   "describe": {
     "columns": [
       {
@@ -188,7 +188,8 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Text"
       ]
     },
     "nullable": [
@@ -207,5 +208,5 @@
       false
     ]
   },
-  "hash": "0e25ac6a543620a25a061a4884d17b9f9f9476404871a3dfd8000424b1797e61"
+  "hash": "8d82098c19f61e01b1fff7d903ee3438971973e351b78f272386b3114c664657"
 }

@@ -53,3 +53,11 @@ pub enum JobError {
     #[error("backend error: {0}")]
     Backend(String),
 }
+
+#[derive(Debug, Error)]
+pub enum MailError {
+    #[error("invalid message: {0}")]
+    Invalid(String),
+    #[error("backend error: {0}")]
+    Backend(String),
+}

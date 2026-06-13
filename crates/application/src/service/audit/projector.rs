@@ -57,6 +57,12 @@ impl AuditProjector {
             E::UserProfileUpdated {
                 user_id, actor, at, ..
             } => row(Some(*actor), Update, "auth", "users", user_id.0, *at),
+            E::UserPasswordChanged { user_id, at } => {
+                row(Some(*user_id), Update, "auth", "users", user_id.0, *at)
+            }
+            E::UserPasswordReset {
+                user_id, actor, at, ..
+            } => row(Some(*actor), Update, "auth", "users", user_id.0, *at),
 
             // --- groups: org.groups ---
             E::GroupCreated {
@@ -300,6 +306,32 @@ impl AuditProjector {
                 ticket_id.0,
                 *at,
             ),
+            // System action — no actor (precedent: UserActivated).
+            E::TicketAutoClosed { ticket_id, at } => {
+                row(None, StatusChange, "ticket", "tickets", ticket_id.0, *at)
+            }
+
+            // --- comments: project.request_comments / ticket.ticket_comments ---
+            E::CommentAdded {
+                comment_id,
+                entity,
+                actor,
+                at,
+                ..
+            } => comment_row(*entity, Some(*actor), Create, comment_id.0, *at),
+            E::CommentEdited {
+                comment_id,
+                entity,
+                actor,
+                at,
+                ..
+            } => comment_row(*entity, Some(*actor), Update, comment_id.0, *at),
+            E::CommentDeleted {
+                comment_id,
+                entity,
+                actor,
+                at,
+            } => comment_row(*entity, Some(*actor), Delete, comment_id.0, *at),
 
             // Chat / announcements live in Scylla, not the Postgres audit log.
             other => {
@@ -311,6 +343,21 @@ impl AuditProjector {
         self.audit.append(&entry).await?;
         Ok(())
     }
+}
+
+/// [`row`] with the schema/table derived from the comment's parent entity.
+fn comment_row(
+    entity: domain::model::CommentEntity,
+    actor: Option<UserId>,
+    action: AuditAction,
+    entity_id: Uuid,
+    occurred_at: OffsetDateTime,
+) -> AuditLog {
+    let (schema, table) = match entity {
+        domain::model::CommentEntity::Request { .. } => ("project", "request_comments"),
+        domain::model::CommentEntity::Ticket { .. } => ("ticket", "ticket_comments"),
+    };
+    row(actor, action, schema, table, entity_id, occurred_at)
 }
 
 /// Builds an immutable audit row. `payload_*` stay `None` (see the type doc).

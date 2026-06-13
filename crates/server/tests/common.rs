@@ -8,9 +8,12 @@
 
 #![allow(dead_code)]
 
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicU64, Ordering},
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use async_trait::async_trait;
@@ -22,20 +25,20 @@ use application::{
     permissions::Permissions,
     service::{
         announcement::AnnouncementService, audit::AuditService, chat::ChatService,
-        group::GroupService, notification::NotificationService, project::ProjectService,
-        request::RequestService, ticket::TicketService, user::UserService,
+        comment::CommentService, group::GroupService, notification::NotificationService,
+        project::ProjectService, request::RequestService, ticket::TicketService, user::UserService,
     },
 };
 use domain::{
     error::{AuthzError, EventError, JobError, RepositoryError},
     ids::{
-        ChannelId, GroupId, MessageId, NotificationId, ProjectCollaboratorId, ProjectId,
+        ChannelId, CommentId, GroupId, MessageId, NotificationId, ProjectCollaboratorId, ProjectId,
         ProjectInviteId, RequestId, TicketId, UserId,
     },
     model::{
-        Announcement, AuditLog, Channel, ChannelKind, ChannelMembership, Group, Membership,
-        Message, Notification, Project, ProjectCollaborator, ProjectInvite, Request,
-        RequestAttachment, RequestStatus, Ticket, User, UserStatus,
+        Announcement, AuditLog, Channel, ChannelKind, ChannelMembership, ChatAttachment, Comment,
+        CommentEntity, Group, Membership, Message, Notification, Project, ProjectCollaborator,
+        ProjectInvite, Request, RequestAttachment, RequestStatus, Ticket, User, UserStatus,
     },
     ports::{
         authz_client::{AuthzClient, RelationTuple},
@@ -43,10 +46,12 @@ use domain::{
         job_queue::JobQueue,
         presence::Presence,
         rate_limit::RateLimit,
+        token_revocation::TokenRevocation,
     },
     repository::{
-        AuditRepository, ChatRepository, GroupRepository, NotificationRepository,
-        ProjectRepository, RequestRepository, TicketRepository, UserRepository,
+        AuditRepository, ChatAttachmentRepository, ChatRepository, CommentRepository,
+        GroupRepository, NotificationRepository, ProjectRepository, RequestRepository,
+        TicketRepository, UserRepository,
     },
 };
 use infrastructure::local_storage::LocalStorage;
@@ -83,7 +88,12 @@ impl UserRepository for FakeUsers {
             .find(|u| u.email == email)
             .cloned())
     }
-    async fn list_active(&self, _limit: u32, _offset: u32) -> Result<Vec<User>, RepositoryError> {
+    async fn list_active(
+        &self,
+        _limit: u32,
+        _offset: u32,
+        _q: Option<&str>,
+    ) -> Result<Vec<User>, RepositoryError> {
         Ok(Vec::new())
     }
     async fn save(&self, _user: &User) -> Result<(), RepositoryError> {
@@ -186,7 +196,11 @@ impl ProjectRepository for FakeProjects {
     async fn find_by_id(&self, _id: ProjectId) -> Result<Option<Project>, RepositoryError> {
         Ok(None)
     }
-    async fn list_for_owner_group(&self, _g: GroupId) -> Result<Vec<Project>, RepositoryError> {
+    async fn list_for_owner_group(
+        &self,
+        _g: GroupId,
+        _q: Option<&str>,
+    ) -> Result<Vec<Project>, RepositoryError> {
         Ok(Vec::new())
     }
     async fn list_for_collaborator_group(
@@ -244,6 +258,7 @@ impl RequestRepository for FakeRequests {
         &self,
         _id: ProjectId,
         _status: Option<RequestStatus>,
+        _q: Option<&str>,
     ) -> Result<Vec<Request>, RepositoryError> {
         Ok(Vec::new())
     }
@@ -251,6 +266,7 @@ impl RequestRepository for FakeRequests {
         &self,
         _assignee: UserId,
         _status: Option<RequestStatus>,
+        _q: Option<&str>,
     ) -> Result<Vec<Request>, RepositoryError> {
         Ok(Vec::new())
     }
@@ -278,13 +294,32 @@ impl TicketRepository for FakeTickets {
     async fn find_by_id(&self, _id: TicketId) -> Result<Option<Ticket>, RepositoryError> {
         Ok(None)
     }
-    async fn list_open_for_triage(&self, _limit: u32) -> Result<Vec<Ticket>, RepositoryError> {
+    async fn list_open_for_triage(
+        &self,
+        _limit: u32,
+        _q: Option<&str>,
+    ) -> Result<Vec<Ticket>, RepositoryError> {
         Ok(Vec::new())
     }
-    async fn list_for_assignee(&self, _assignee: UserId) -> Result<Vec<Ticket>, RepositoryError> {
+    async fn list_for_assignee(
+        &self,
+        _assignee: UserId,
+        _q: Option<&str>,
+    ) -> Result<Vec<Ticket>, RepositoryError> {
         Ok(Vec::new())
     }
-    async fn list_for_requester(&self, _requester: UserId) -> Result<Vec<Ticket>, RepositoryError> {
+    async fn list_for_requester(
+        &self,
+        _requester: UserId,
+        _q: Option<&str>,
+    ) -> Result<Vec<Ticket>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn list_resolved_before(
+        &self,
+        _cutoff: OffsetDateTime,
+        _limit: u32,
+    ) -> Result<Vec<Ticket>, RepositoryError> {
         Ok(Vec::new())
     }
     async fn save(&self, _ticket: &Ticket) -> Result<(), RepositoryError> {
@@ -384,6 +419,48 @@ impl ChatRepository for FakeChats {
         _message_id: MessageId,
     ) -> Result<(), RepositoryError> {
         Ok(())
+    }
+}
+
+struct FakeComments;
+
+#[async_trait]
+impl CommentRepository for FakeComments {
+    async fn find_by_id(
+        &self,
+        _entity: CommentEntity,
+        _id: CommentId,
+    ) -> Result<Option<Comment>, RepositoryError> {
+        Ok(None)
+    }
+    async fn list_for_entity(
+        &self,
+        _entity: CommentEntity,
+        _before: Option<CommentId>,
+        _limit: u32,
+    ) -> Result<Vec<Comment>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn save(&self, _comment: &Comment) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+    async fn delete(&self, _entity: CommentEntity, _id: CommentId) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+}
+
+struct FakeChatAttachments;
+
+#[async_trait]
+impl ChatAttachmentRepository for FakeChatAttachments {
+    async fn save(&self, _attachment: &ChatAttachment) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+    async fn find_by_keys(&self, _keys: &[String]) -> Result<Vec<ChatAttachment>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn list_all_keys(&self) -> Result<Vec<String>, RepositoryError> {
+        Ok(Vec::new())
     }
 }
 
@@ -530,6 +607,40 @@ impl RateLimit for FakeRateLimit {
     }
 }
 
+/// In-memory token revocation: a jti denylist plus per-user versions, so tests
+/// can exercise logout replay and version-bump invalidation.
+#[derive(Default)]
+pub struct FakeRevocation {
+    pub revoked: Mutex<HashSet<Uuid>>,
+    pub versions: Mutex<HashMap<UserId, u64>>,
+}
+
+#[async_trait]
+impl TokenRevocation for FakeRevocation {
+    async fn revoke(&self, jti: Uuid, _ttl_secs: u64) -> Result<(), RepositoryError> {
+        self.revoked.lock().unwrap().insert(jti);
+        Ok(())
+    }
+    async fn is_revoked(&self, jti: Uuid) -> Result<bool, RepositoryError> {
+        Ok(self.revoked.lock().unwrap().contains(&jti))
+    }
+    async fn version(&self, user: UserId) -> Result<u64, RepositoryError> {
+        Ok(self
+            .versions
+            .lock()
+            .unwrap()
+            .get(&user)
+            .copied()
+            .unwrap_or(0))
+    }
+    async fn bump_version(&self, user: UserId) -> Result<u64, RepositoryError> {
+        let mut versions = self.versions.lock().unwrap();
+        let v = versions.entry(user).or_insert(0);
+        *v += 1;
+        Ok(*v)
+    }
+}
+
 // --- model builders ------------------------------------------------------------
 
 /// An `Active` user with the given id and email, no system role.
@@ -560,6 +671,7 @@ pub struct TestApp {
     pub state: AppState,
     pub users: Arc<FakeUsers>,
     pub groups: Arc<FakeGroups>,
+    pub revocation: Arc<FakeRevocation>,
 }
 
 /// Assembles a full [`AppState`] over in-memory fakes with the given rate-limit
@@ -592,6 +704,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
     let audit_service = Arc::new(AuditService::new(audit_repo, perms.clone()));
     let presence: Arc<dyn Presence> = Arc::new(FakePresence);
     let rate_limiter: Arc<dyn RateLimit> = Arc::new(FakeRateLimit::default());
+    let revocation = Arc::new(FakeRevocation::default());
 
     let state = AppState {
         user: Arc::new(UserService::new(
@@ -601,6 +714,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
             chats.clone(),
             perms.clone(),
             events.clone(),
+            revocation.clone(),
         )),
         group: Arc::new(GroupService::new(
             groups.clone(),
@@ -616,7 +730,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
             events.clone(),
         )),
         request: Arc::new(RequestService::new(
-            requests,
+            requests.clone(),
             projects,
             groups.clone(),
             storage.clone(),
@@ -631,6 +745,15 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         chat: Arc::new(ChatService::new(
             chats,
             users.clone(),
+            Arc::new(FakeChatAttachments),
+            storage.clone(),
+            perms.clone(),
+            events.clone(),
+        )),
+        comment: Arc::new(CommentService::new(
+            Arc::new(FakeComments),
+            requests.clone(),
+            Arc::new(FakeTickets),
             perms.clone(),
             events.clone(),
         )),
@@ -641,6 +764,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         )),
         notification: Arc::new(NotificationService::new(Arc::new(FakeNotifications), perms)),
         token: Arc::new(TokenService::new("test-secret", 3600, false)),
+        revocation: revocation.clone(),
         realtime,
         audit_service,
         presence,
@@ -654,6 +778,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         state,
         users,
         groups,
+        revocation,
     }
 }
 

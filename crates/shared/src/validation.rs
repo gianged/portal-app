@@ -1,6 +1,8 @@
 pub mod announcement;
 pub mod chat;
+pub mod comment;
 pub mod common;
+pub mod file;
 pub mod group;
 pub mod project;
 pub mod request;

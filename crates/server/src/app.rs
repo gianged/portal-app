@@ -6,22 +6,29 @@ use axum::{
     http::{HeaderValue, Method, header},
     routing::get,
 };
-use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::{
+    cors::{AllowOrigin, CorsLayer},
+    set_header::SetResponseHeaderLayer,
+};
 
 use application::{
     events::EventBus,
     permissions::Permissions,
     service::{
         announcement::AnnouncementService, audit::AuditService, chat::ChatService,
-        group::GroupService, notification::NotificationService, project::ProjectService,
-        request::RequestService, ticket::TicketService, user::UserService,
+        comment::CommentService, group::GroupService, notification::NotificationService,
+        project::ProjectService, request::RequestService, ticket::TicketService, user::UserService,
     },
 };
 use domain::{
-    ports::{file_storage::FileStorage, presence::Presence, rate_limit::RateLimit},
+    ports::{
+        file_storage::FileStorage, presence::Presence, rate_limit::RateLimit,
+        token_revocation::TokenRevocation,
+    },
     repository::{
-        AuditRepository, ChatRepository, GroupRepository, NotificationRepository,
-        ProjectRepository, RequestRepository, TicketRepository, UserRepository,
+        AuditRepository, ChatAttachmentRepository, ChatRepository, CommentRepository,
+        GroupRepository, NotificationRepository, ProjectRepository, RequestRepository,
+        TicketRepository, UserRepository,
     },
 };
 use infrastructure::{
@@ -29,10 +36,10 @@ use infrastructure::{
     local_storage::LocalStorage,
     openfga::{self, OpenFgaAuthzClient},
     postgres::{
-        PgAuditRepo, PgGroupRepo, PgNotificationRepo, PgProjectRepo, PgRequestRepo, PgTicketRepo,
-        PgUserRepo, build_pool,
+        PgAuditRepo, PgChatAttachmentRepo, PgCommentRepo, PgGroupRepo, PgNotificationRepo,
+        PgProjectRepo, PgRequestRepo, PgTicketRepo, PgUserRepo, build_pool,
     },
-    redis::{PresenceStore, RateLimiter, RedisEventPublisher},
+    redis::{PresenceStore, RateLimiter, RedisEventPublisher, RedisTokenRevocation},
     scylla::{ScyllaChatRepo, build_session},
     signed_url::SignedUrl,
 };
@@ -54,11 +61,14 @@ pub struct AppState {
     pub request: Arc<RequestService>,
     pub ticket: Arc<TicketService>,
     pub chat: Arc<ChatService>,
+    pub comment: Arc<CommentService>,
     pub announcement: Arc<AnnouncementService>,
     pub notification: Arc<NotificationService>,
     // Session-cookie tokens + the real-time pub/sub handle, consumed by the auth
     // middleware and the chat WebSocket respectively.
     pub token: Arc<TokenService>,
+    // Server-side token revocation (logout denylist + per-user version), checked by auth middleware.
+    pub revocation: Arc<dyn TokenRevocation>,
     pub realtime: Realtime,
     pub audit_service: Arc<AuditService>,
     pub presence: Arc<dyn Presence>,
@@ -66,7 +76,7 @@ pub struct AppState {
     pub rate_limits: RateLimits,
     pub storage: Arc<LocalStorage>,
     // Verifies the signed `?exp&sig` on `/files` downloads; the same signer
-    // (built from `jwt_secret`) backs `LocalStorage::presign_get`.
+    // (built from `STORAGE_SIGNING_SECRET`) backs `LocalStorage::presign_get`.
     pub signed_url: Arc<SignedUrl>,
 }
 
@@ -100,9 +110,14 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             .context("connecting redis (rate limit)")?
             .with_window(cfg.rate_limit_window_secs),
     );
-    // One signer backs both presign (in the adapter) and verify (in the file
-    // route); reusing `jwt_secret` avoids introducing a second deployment secret.
-    let signed_url = Arc::new(SignedUrl::new(cfg.jwt_secret.as_bytes()));
+    // Version keys outlive session TTL by 2x and refresh on touch, so they can't lapse under a live token.
+    let revocation: Arc<dyn TokenRevocation> = Arc::new(
+        RedisTokenRevocation::new(&cfg.redis_url, cfg.session_ttl_secs * 2)
+            .await
+            .context("connecting redis (token revocation)")?,
+    );
+    // One signer for presign + verify; key is dedicated (never the JWT secret) so tokens and links can't forge each other.
+    let signed_url = Arc::new(SignedUrl::new(cfg.storage_signing_secret.as_bytes()));
     let storage = Arc::new(LocalStorage::new(
         cfg.storage_root.clone(),
         &cfg.storage_public_base,
@@ -118,6 +133,9 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
     let notifications: Arc<dyn NotificationRepository> =
         Arc::new(PgNotificationRepo::new(pool.clone()));
     let audit: Arc<dyn AuditRepository> = Arc::new(PgAuditRepo::new(pool.clone()));
+    let comments: Arc<dyn CommentRepository> = Arc::new(PgCommentRepo::new(pool.clone()));
+    let chat_attachments: Arc<dyn ChatAttachmentRepository> =
+        Arc::new(PgChatAttachmentRepo::new(pool.clone()));
     let chats: Arc<dyn ChatRepository> = Arc::new(
         ScyllaChatRepo::new(session)
             .await
@@ -190,6 +208,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             chats.clone(),
             perms.clone(),
             events.clone(),
+            revocation.clone(),
         )),
         group: Arc::new(GroupService::new(
             groups.clone(),
@@ -208,7 +227,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             requests.clone(),
             projects.clone(),
             groups.clone(),
-            storage_port,
+            storage_port.clone(),
             perms.clone(),
             events.clone(),
         )),
@@ -220,6 +239,15 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
         chat: Arc::new(ChatService::new(
             chats.clone(),
             users.clone(),
+            chat_attachments,
+            storage_port,
+            perms.clone(),
+            events.clone(),
+        )),
+        comment: Arc::new(CommentService::new(
+            comments,
+            requests.clone(),
+            tickets.clone(),
             perms.clone(),
             events.clone(),
         )),
@@ -233,6 +261,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             perms.clone(),
         )),
         token,
+        revocation,
         realtime,
         audit_service,
         presence,
@@ -284,17 +313,41 @@ pub fn router(state: AppState) -> Router {
         crate::middleware::rate_limit::per_ip,
     ));
 
-    // File downloads authorize via the signed `?exp&sig` (verified in the
-    // handler), so they sit outside both the session-auth layer and the per-user
-    // limiter that the protected sub-tree carries.
-    let api = public.merge(protected).merge(routes::files::router());
+    // Files need session + signed `?exp&sig` (bound to the user); skip the per-user limiter -
+    // the signature already scopes each fetch, so image-heavy pages don't burn the API budget.
+    let files = routes::files::router().route_layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        crate::middleware::auth::require_auth,
+    ));
+    let api = public.merge(protected).merge(files);
 
     Router::new()
         .route("/healthz", get(healthz))
         .nest("/api/v1", api)
-        // Applied outermost-to-innermost: trace wraps request-id wraps the router
-        // (whose protected sub-tree adds the per-route auth + limit layers above).
+        // Applied outermost-to-innermost: trace wraps request-id wraps the
+        // security headers wrap the body limit wraps the router (whose
+        // protected sub-tree adds the per-route auth + limit layers above).
         // The caller adds CORS as the outermost layer.
+        //
+        // Global 1 MiB JSON cap; upload routes override with their own DefaultBodyLimit.
+        .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
+        // Baseline security headers (no HSTS - internal plain HTTP); `if_not_present` lets a route override.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("no-referrer"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'"),
+        ))
         .layer(axum::middleware::from_fn(
             crate::middleware::request_id::propagate,
         ))

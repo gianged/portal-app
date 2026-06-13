@@ -10,16 +10,20 @@ use crate::{
 pub trait RequestRepository: Send + Sync {
     async fn find_by_id(&self, id: RequestId) -> Result<Option<Request>, RepositoryError>;
 
+    /// `q` is a case-insensitive substring filter on the request title.
     async fn list_for_project(
         &self,
         project_id: ProjectId,
         status: Option<RequestStatus>,
+        q: Option<&str>,
     ) -> Result<Vec<Request>, RepositoryError>;
 
+    /// `q` is a case-insensitive substring filter on the request title.
     async fn list_for_assignee(
         &self,
         assignee: UserId,
         status: Option<RequestStatus>,
+        q: Option<&str>,
     ) -> Result<Vec<Request>, RepositoryError>;
 
     async fn save(&self, request: &Request) -> Result<(), RepositoryError>;

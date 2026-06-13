@@ -112,7 +112,7 @@ impl GroupService {
             .await?
             .ok_or(Error::NotFound("group"))?;
 
-        let projects = self.projects.list_for_owner_group(group_id).await?;
+        let projects = self.projects.list_for_owner_group(group_id, None).await?;
         let has_active = projects.iter().any(|p| {
             !matches!(
                 p.status,

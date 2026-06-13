@@ -19,25 +19,26 @@ use application::{
 };
 use async_trait::async_trait;
 use domain::{
-    error::{AuthzError, EventError, JobError, RepositoryError},
+    error::{AuthzError, EventError, JobError, RepositoryError, StorageError},
     ids::{
         ChannelId, GroupId, MembershipId, MessageId, ProjectCollaboratorId, ProjectId,
         ProjectInviteId, RequestId, TicketId, UserId,
     },
     model::{
-        Announcement, Channel, ChannelKind, ChannelMembership, Group, GroupKind, GroupRole,
-        Membership, Message, Project, ProjectCollaborator, ProjectInvite, Request,
+        Announcement, Channel, ChannelKind, ChannelMembership, ChatAttachment, Group, GroupKind,
+        GroupRole, Membership, Message, Project, ProjectCollaborator, ProjectInvite, Request,
         RequestAttachment, RequestStatus, SystemRole, Ticket, TicketCategory, TicketStatus, User,
         UserStatus,
     },
     ports::{
         authz_client::{AuthzClient, RelationTuple},
         event_publisher::EventPublisher,
+        file_storage::{FileStorage, StorageObject},
         job_queue::JobQueue,
     },
     repository::{
-        ChatRepository, GroupRepository, ProjectRepository, RequestRepository, TicketRepository,
-        UserRepository,
+        ChatAttachmentRepository, ChatRepository, GroupRepository, ProjectRepository,
+        RequestRepository, TicketRepository, UserRepository,
     },
 };
 use time::{Duration, OffsetDateTime};
@@ -132,7 +133,12 @@ impl UserRepository for FakeUsers {
     async fn find_by_email(&self, _email: &str) -> Result<Option<User>, RepositoryError> {
         Ok(None)
     }
-    async fn list_active(&self, _limit: u32, _offset: u32) -> Result<Vec<User>, RepositoryError> {
+    async fn list_active(
+        &self,
+        _limit: u32,
+        _offset: u32,
+        _q: Option<&str>,
+    ) -> Result<Vec<User>, RepositoryError> {
         Ok(Vec::new())
     }
     async fn save(&self, _user: &User) -> Result<(), RepositoryError> {
@@ -232,6 +238,7 @@ impl ProjectRepository for FakeProjects {
     async fn list_for_owner_group(
         &self,
         _group_id: GroupId,
+        _q: Option<&str>,
     ) -> Result<Vec<Project>, RepositoryError> {
         Ok(Vec::new())
     }
@@ -294,6 +301,7 @@ impl RequestRepository for FakeRequests {
         &self,
         _project_id: ProjectId,
         _status: Option<RequestStatus>,
+        _q: Option<&str>,
     ) -> Result<Vec<Request>, RepositoryError> {
         Ok(Vec::new())
     }
@@ -301,6 +309,7 @@ impl RequestRepository for FakeRequests {
         &self,
         _assignee: UserId,
         _status: Option<RequestStatus>,
+        _q: Option<&str>,
     ) -> Result<Vec<Request>, RepositoryError> {
         Ok(Vec::new())
     }
@@ -340,13 +349,32 @@ impl TicketRepository for FakeTickets {
             .find(|t| t.id == id)
             .cloned())
     }
-    async fn list_open_for_triage(&self, _limit: u32) -> Result<Vec<Ticket>, RepositoryError> {
+    async fn list_open_for_triage(
+        &self,
+        _limit: u32,
+        _q: Option<&str>,
+    ) -> Result<Vec<Ticket>, RepositoryError> {
         Ok(Vec::new())
     }
-    async fn list_for_assignee(&self, _assignee: UserId) -> Result<Vec<Ticket>, RepositoryError> {
+    async fn list_for_assignee(
+        &self,
+        _assignee: UserId,
+        _q: Option<&str>,
+    ) -> Result<Vec<Ticket>, RepositoryError> {
         Ok(Vec::new())
     }
-    async fn list_for_requester(&self, _requester: UserId) -> Result<Vec<Ticket>, RepositoryError> {
+    async fn list_for_requester(
+        &self,
+        _requester: UserId,
+        _q: Option<&str>,
+    ) -> Result<Vec<Ticket>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn list_resolved_before(
+        &self,
+        _cutoff: OffsetDateTime,
+        _limit: u32,
+    ) -> Result<Vec<Ticket>, RepositoryError> {
         Ok(Vec::new())
     }
     async fn save(&self, ticket: &Ticket) -> Result<(), RepositoryError> {
@@ -357,6 +385,49 @@ impl TicketRepository for FakeTickets {
             v.push(ticket.clone());
         }
         Ok(())
+    }
+}
+
+#[derive(Default)]
+struct FakeChatAttachments;
+
+#[async_trait]
+impl ChatAttachmentRepository for FakeChatAttachments {
+    async fn save(&self, _attachment: &ChatAttachment) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+    async fn find_by_keys(&self, _keys: &[String]) -> Result<Vec<ChatAttachment>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn list_all_keys(&self) -> Result<Vec<String>, RepositoryError> {
+        Ok(Vec::new())
+    }
+}
+
+#[derive(Default)]
+struct FakeStorage;
+
+#[async_trait]
+impl FileStorage for FakeStorage {
+    async fn put(&self, _key: &str, _ct: &str, _bytes: Vec<u8>) -> Result<(), StorageError> {
+        Ok(())
+    }
+    async fn get(&self, _key: &str) -> Result<Vec<u8>, StorageError> {
+        Ok(Vec::new())
+    }
+    async fn delete(&self, _key: &str) -> Result<(), StorageError> {
+        Ok(())
+    }
+    async fn presign_get(
+        &self,
+        key: &str,
+        _ttl: std::time::Duration,
+        _user: UserId,
+    ) -> Result<String, StorageError> {
+        Ok(format!("/files/{key}"))
+    }
+    async fn list(&self, _prefix: &str) -> Result<Vec<StorageObject>, StorageError> {
+        Ok(Vec::new())
     }
 }
 
@@ -879,7 +950,14 @@ async fn invariant_direct_messages_write_no_authz_tuples() {
         Arc::new(FakeGroups::default()),
         authz.clone(),
     ));
-    let svc = ChatService::new(Arc::new(FakeChats), users, perms, events());
+    let svc = ChatService::new(
+        Arc::new(FakeChats),
+        users,
+        Arc::new(FakeChatAttachments),
+        Arc::new(FakeStorage),
+        perms,
+        events(),
+    );
 
     svc.open_direct_channel(actor.id, other.id)
         .await
@@ -908,7 +986,14 @@ async fn direct_message_validation() {
         Arc::new(FakeGroups::default()),
         authz,
     ));
-    let svc = ChatService::new(Arc::new(FakeChats), users, perms, events());
+    let svc = ChatService::new(
+        Arc::new(FakeChats),
+        users,
+        Arc::new(FakeChatAttachments),
+        Arc::new(FakeStorage),
+        perms,
+        events(),
+    );
 
     let self_err = svc
         .open_direct_channel(actor.id, actor.id)

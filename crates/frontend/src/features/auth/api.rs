@@ -1,4 +1,4 @@
-use shared::dto::user::{LoginRequest, LoginResponse, UserDto};
+use shared::dto::user::{ChangePasswordRequest, LoginRequest, LoginResponse, UserDto};
 
 use crate::api::client;
 use crate::api::error::FrontendError;
@@ -14,4 +14,10 @@ pub async fn logout() -> Result<(), FrontendError> {
 
 pub async fn me() -> Result<UserDto, FrontendError> {
     client::get_json("/me").await
+}
+
+/// Self-service password change (`POST /me/password`). Success revokes every
+/// session, including the current one — the caller must re-login.
+pub async fn change_password(req: &ChangePasswordRequest) -> Result<(), FrontendError> {
+    client::post_json_no_content("/me/password", req).await
 }

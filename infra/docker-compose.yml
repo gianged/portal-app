@@ -49,14 +49,18 @@ services:
       start_period: 60s
 
   # ------------------------------------------------------------------- Redis
+  # AUTH is mandatory: sessions, rate limiting, and the job queues all live
+  # here, so an open Redis is an auth/rate-limit bypass.
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required — set it in .env}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep PONG"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -68,12 +72,18 @@ services:
     command: run
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
-      OPENFGA_DATASTORE_URI: postgres://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@postgres:5432/openfga?sslmode=disable
+      # sslmode is parameterized: dev keeps `disable` (in-network Docker DNS,
+      # no certs); production should set OPENFGA_DATASTORE_SSLMODE=require.
+      OPENFGA_DATASTORE_URI: postgres://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@postgres:5432/openfga?sslmode=${OPENFGA_DATASTORE_SSLMODE:-disable}
       OPENFGA_LOG_LEVEL: info
       OPENFGA_LOG_FORMAT: json
       OPENFGA_HTTP_ADDR: 0.0.0.0:8080
       OPENFGA_GRPC_ADDR: 0.0.0.0:8081
       OPENFGA_PLAYGROUND_ENABLED: "false"
+      # The API guards the whole authorization graph — require the same token
+      # the server presents.
+      OPENFGA_AUTHN_METHOD: preshared
+      OPENFGA_AUTHN_PRESHARED_KEYS: ${OPENFGA_BEARER_TOKEN:?OPENFGA_BEARER_TOKEN is required — set it in .env}
     # Not exposed externally — only the in-network server/workers reach it (the
     # dev overlay adds host ports). Datastore must be migrated first via
     # `cargo make bootstrap`; until then OpenFGA crash-loops and restart recovers it.
@@ -92,16 +102,18 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@postgres:5432/${POSTGRES_DB:-portal}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required — set it in .env}@redis:6379
       SCYLLA_HOSTS: scylla:9042
       SCYLLA_KEYSPACE: ${SCYLLA_KEYSPACE:-portal_chat}
       OPENFGA_API_URL: http://openfga:8080
       OPENFGA_MODEL_PATH: /openfga/authorization-model.json
+      OPENFGA_BEARER_TOKEN: ${OPENFGA_BEARER_TOKEN:?OPENFGA_BEARER_TOKEN is required — set it in .env}
       STORAGE_ROOT: /app/storage
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
       RUST_LOG: ${RUST_LOG:-info,portal=debug}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — set it in .env}
+      STORAGE_SIGNING_SECRET: ${STORAGE_SIGNING_SECRET:?STORAGE_SIGNING_SECRET is required — set it in .env}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
     ports:
       - "${SERVER_HOST_PORT:-8080}:8080"
@@ -135,11 +147,12 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@postgres:5432/${POSTGRES_DB:-portal}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required — set it in .env}@redis:6379
       SCYLLA_HOSTS: scylla:9042
       SCYLLA_KEYSPACE: ${SCYLLA_KEYSPACE:-portal_chat}
       OPENFGA_API_URL: http://openfga:8080
       OPENFGA_MODEL_PATH: /openfga/authorization-model.json
+      OPENFGA_BEARER_TOKEN: ${OPENFGA_BEARER_TOKEN:?OPENFGA_BEARER_TOKEN is required — set it in .env}
       STORAGE_ROOT: /app/storage
       RUST_LOG: ${RUST_LOG:-info,portal=debug}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — set it in .env}

@@ -16,6 +16,8 @@ use shared::dto::ticket::{
 use shared::validation::ticket::{validate_ticket_description, validate_ticket_title};
 
 use crate::api::error::FrontendError;
+use crate::features::audit::components::{AuditTrailPanel, TrailKind};
+use crate::features::comments::{CommentTarget, CommentThread};
 use crate::features::tickets::api::{self, Scope};
 use crate::features::ui::{back_link, page_title, subtle};
 use crate::features::users::components::UserPicker;
@@ -35,6 +37,7 @@ use crate::primitives::table::{Table, TableToolbar, TableWrap};
 use crate::primitives::textarea::Textarea;
 use crate::state::toast::ToastState;
 use crate::theme::{class, color, space, typography};
+use crate::util::debounce::debounced;
 use crate::util::format::{
     relative_time, ticket_priority_variant, ticket_status_variant, tone_for,
 };
@@ -89,14 +92,21 @@ pub fn TicketsIndex() -> impl IntoView {
     let items: Loadable<Vec<TicketDto>> = RwSignal::new(None);
     let reload = RwSignal::new(0u32);
     let raise_open = RwSignal::new(false);
+    let search = RwSignal::new(String::new());
+    let dq = debounced(search.into(), 300);
 
     Effect::new(move |_| {
         let _ = reload.get();
-        load(items, api::list(scope.get()));
+        let term = dq.get().trim().to_owned();
+        load(
+            items,
+            api::list(scope.get(), (!term.is_empty()).then_some(term)),
+        );
     });
 
     let raised = Callback::new(move |()| reload.update(|n| *n += 1));
     let open_raise = Callback::new(move |_| raise_open.set(true));
+    let search_wrap = class("width: 220px;");
 
     let seg = move |label: &'static str, s: Scope| {
         let active = Signal::derive(move || scope.get() == s);
@@ -113,9 +123,14 @@ pub fn TicketsIndex() -> impl IntoView {
                         {seg("Assigned to me", Scope::Assigned)}
                         {seg("Triage queue", Scope::Triage)}
                     </Segmented>
-                    <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_raise>
-                        <Icon name=IconName::Plus size=14 /> " Raise ticket"
-                    </Button>
+                    <Cluster gap=Gap::Sm>
+                        <div class=search_wrap>
+                            <Input value=search on_input=Callback::new(move |v| search.set(v)) placeholder="Search tickets…" />
+                        </div>
+                        <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_raise>
+                            <Icon name=IconName::Plus size=14 /> " Raise ticket"
+                        </Button>
+                    </Cluster>
                 </TableToolbar>
                 {move || match items.get() {
                     None => note("Loading tickets…"),
@@ -426,6 +441,12 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
                     }.into_any()
                 }
             }}
+            <CommentThread target=Signal::derive(move || id.get().map(CommentTarget::Ticket)) />
+            <AuditTrailPanel
+                id=Signal::derive(move || id.get().map(|t| t.0))
+                kind=TrailKind::Ticket
+                refresh=reload
+            />
             <TriageDialog open=triage_open priority=triage_priority on_confirm=confirm_triage />
             <AssignDialog open=assign_open target=assign_target on_confirm=confirm_assign />
         </Stack>

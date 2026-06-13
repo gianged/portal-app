@@ -3,6 +3,11 @@
 -- Schema for: Internal Portal (single-company, 100-1000 users)
 -- Apply:   psql -h localhost -U portal -d portal -f infra/postgres/init.sql
 --
+-- Single source of truth for the relational schema. Change it here directly,
+-- then reinitialize the dev database (Postgres only runs this on an empty
+-- volume): `docker compose --env-file .env -f infra/docker-compose.infra.yml
+-- down -v` followed by `cargo make bootstrap`, then `cargo make sqlx-prepare`.
+--
 -- Postgres holds the relational system-of-record: identity, org structure,
 -- projects, requests, tickets, notifications, audit. The following live
 -- elsewhere by design:
@@ -30,6 +35,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;     -- gen_random_uuid()
 -- -----------------------------------------------------------------------------
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE SCHEMA IF NOT EXISTS audit;
+CREATE SCHEMA IF NOT EXISTS chat;
 CREATE SCHEMA IF NOT EXISTS notification;
 CREATE SCHEMA IF NOT EXISTS org;
 CREATE SCHEMA IF NOT EXISTS project;
@@ -76,7 +82,9 @@ CREATE TYPE notification.notification_kind AS ENUM (
     'ticket_status_change',
     'project_invite_response',
     'ticket_raised',
-    'system'
+    'system',
+    'request_comment',
+    'ticket_comment'
 );
 
 -- org
@@ -243,6 +251,28 @@ CREATE TABLE audit.audit_log (
     CONSTRAINT pk_audit_log PRIMARY KEY (id)
 );
 
+-- chat.message_attachments ---------------------------------------------------
+-- Trusted metadata for files attached to Scylla chat messages. The Scylla
+-- message row keeps only the storage keys; the filename / content-type / size
+-- live here, keyed by storage_key, so downloads and the orphan-upload sweep
+-- never trust client input or scan Scylla. Write-once; no updated_at. id is an
+-- app-supplied UUIDv7 (no DB default).
+CREATE TABLE chat.message_attachments (
+    id                   UUID        NOT NULL,
+    -- Scylla channel id; cross-store reference, intentionally no FK.
+    channel_id           UUID        NOT NULL,
+    uploaded_by_user_id  UUID        NOT NULL,
+    filename             TEXT        NOT NULL,
+    content_type         TEXT        NOT NULL,
+    size_bytes           BIGINT      NOT NULL,
+    storage_key          TEXT        NOT NULL,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_message_attachments PRIMARY KEY (id),
+    CONSTRAINT uq_message_attachments_storage_key UNIQUE (storage_key),
+    CONSTRAINT chk_message_attachments_size_positive CHECK (size_bytes > 0)
+);
+
 -- notification.notifications -------------------------------------------------
 -- Write-once for display; only read_at mutates after creation, which is
 -- intentionally not driven by updated_at trigger.
@@ -370,6 +400,23 @@ CREATE TABLE project.request_attachments (
     CONSTRAINT chk_request_attachments_size_positive CHECK (size_bytes > 0)
 );
 
+-- project.request_comments ---------------------------------------------------
+-- Discussion comments on a request. Sibling of ticket.ticket_comments (real
+-- FKs, nothing polymorphic) behind one domain model. id is an app-supplied
+-- UUIDv7 (time-ordered), so (request_id, id DESC) doubles as the pagination
+-- index. edited_at is set by the app on edit; no updated_at trigger.
+CREATE TABLE project.request_comments (
+    id              UUID        NOT NULL,
+    request_id      UUID        NOT NULL,
+    author_user_id  UUID        NOT NULL,
+    body            TEXT        NOT NULL,
+    edited_at       TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_request_comments PRIMARY KEY (id),
+    CONSTRAINT chk_request_comments_body_not_empty CHECK (length(btrim(body)) > 0)
+);
+
 -- ticket.tickets -------------------------------------------------------------
 CREATE TABLE ticket.tickets (
     id                 UUID        NOT NULL DEFAULT gen_random_uuid(),
@@ -395,6 +442,22 @@ CREATE TABLE ticket.tickets (
         CHECK (status = 'open' OR triaged_at IS NOT NULL),
     CONSTRAINT chk_tickets_closed_at_consistency
         CHECK ((status = 'closed') = (closed_at IS NOT NULL))
+);
+
+-- ticket.ticket_comments -----------------------------------------------------
+-- Discussion comments on a ticket. Sibling of project.request_comments. id is
+-- an app-supplied UUIDv7, so (ticket_id, id DESC) doubles as the pagination
+-- index. edited_at is set by the app on edit; no updated_at trigger.
+CREATE TABLE ticket.ticket_comments (
+    id              UUID        NOT NULL,
+    ticket_id       UUID        NOT NULL,
+    author_user_id  UUID        NOT NULL,
+    body            TEXT        NOT NULL,
+    edited_at       TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_ticket_comments PRIMARY KEY (id),
+    CONSTRAINT chk_ticket_comments_body_not_empty CHECK (length(btrim(body)) > 0)
 );
 
 
@@ -502,6 +565,34 @@ ALTER TABLE notification.notifications
     ADD CONSTRAINT fk_notifications_recipient_user_id
     FOREIGN KEY (recipient_user_id) REFERENCES auth.users (id)
     ON DELETE CASCADE;
+
+-- chat.message_attachments
+ALTER TABLE chat.message_attachments
+    ADD CONSTRAINT fk_message_attachments_uploaded_by_user_id
+    FOREIGN KEY (uploaded_by_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+-- project.request_comments
+ALTER TABLE project.request_comments
+    ADD CONSTRAINT fk_request_comments_request_id
+    FOREIGN KEY (request_id) REFERENCES project.requests (id)
+    ON DELETE CASCADE;
+
+ALTER TABLE project.request_comments
+    ADD CONSTRAINT fk_request_comments_author_user_id
+    FOREIGN KEY (author_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+-- ticket.ticket_comments
+ALTER TABLE ticket.ticket_comments
+    ADD CONSTRAINT fk_ticket_comments_ticket_id
+    FOREIGN KEY (ticket_id) REFERENCES ticket.tickets (id)
+    ON DELETE CASCADE;
+
+ALTER TABLE ticket.ticket_comments
+    ADD CONSTRAINT fk_ticket_comments_author_user_id
+    FOREIGN KEY (author_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
 
 
 -- -----------------------------------------------------------------------------
@@ -614,6 +705,28 @@ CREATE INDEX idx_audit_log_actor_user_id_occurred
 CREATE INDEX idx_audit_log_occurred
     ON audit.audit_log (occurred_at DESC);
 
+-- chat.message_attachments
+CREATE INDEX idx_message_attachments_channel_id
+    ON chat.message_attachments (channel_id);
+
+CREATE INDEX idx_message_attachments_uploaded_by_user_id
+    ON chat.message_attachments (uploaded_by_user_id);
+
+-- project.request_comments
+-- (request_id, id DESC) doubles as the (request_id, created_at DESC) page index.
+CREATE INDEX idx_request_comments_request_id_id
+    ON project.request_comments (request_id, id DESC);
+
+CREATE INDEX idx_request_comments_author_user_id
+    ON project.request_comments (author_user_id);
+
+-- ticket.ticket_comments
+CREATE INDEX idx_ticket_comments_ticket_id_id
+    ON ticket.ticket_comments (ticket_id, id DESC);
+
+CREATE INDEX idx_ticket_comments_author_user_id
+    ON ticket.ticket_comments (author_user_id);
+
 
 -- -----------------------------------------------------------------------------
 -- 8. Triggers
@@ -667,6 +780,7 @@ CREATE TRIGGER trg_project_collaborators_no_self_collab
 
 COMMENT ON SCHEMA auth         IS 'User identity, profile, lifecycle.';
 COMMENT ON SCHEMA audit        IS 'Append-only audit log. Immutable by convention (invariant 5).';
+COMMENT ON SCHEMA chat         IS 'Relational sidecar for chat: trusted attachment metadata. Messages/channels live in Scylla.';
 COMMENT ON SCHEMA notification IS 'Persisted user-facing notifications. Read fanout is denormalized via the payload JSONB.';
 COMMENT ON SCHEMA org          IS 'Organizational structure: groups and memberships.';
 COMMENT ON SCHEMA project      IS 'Projects, group collaborations, work requests, attachments.';
@@ -711,6 +825,15 @@ COMMENT ON TABLE project.requests IS
 
 COMMENT ON TABLE project.request_attachments IS
     'Metadata for files attached to a request. Payload lives in MinIO under storage_key.';
+
+COMMENT ON TABLE project.request_comments IS
+    'Discussion comments on a request. Sibling of ticket.ticket_comments. edited_at set on edit; rows are not otherwise mutated.';
+
+COMMENT ON TABLE ticket.ticket_comments IS
+    'Discussion comments on a ticket. Sibling of project.request_comments.';
+
+COMMENT ON TABLE chat.message_attachments IS
+    'Trusted metadata for chat message attachments. Payload lives in MinIO under storage_key; the Scylla message row holds only the keys. No FK to the channel (cross-store).';
 
 COMMENT ON TABLE ticket.tickets IS
     'IT support ticket raised by any active user. Distinct from project.requests: tickets live outside the project hierarchy.';

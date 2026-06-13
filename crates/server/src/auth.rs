@@ -26,6 +26,25 @@ struct Claims {
     iat: i64,
     /// Expiry, seconds since the Unix epoch. Validated by `jsonwebtoken`.
     exp: i64,
+    /// Token id, so logout can denylist this one token server-side.
+    jti: Uuid,
+    /// User's token version at mint time; a version bump (deactivation,
+    /// password change) invalidates every token carrying an older value.
+    ver: u64,
+}
+
+/// Decoded, signature-checked token contents handed to the auth middleware,
+/// which still has to consult [`TokenRevocation`] before trusting them.
+///
+/// [`TokenRevocation`]: domain::ports::token_revocation::TokenRevocation
+#[derive(Debug, Clone, Copy)]
+pub struct VerifiedToken {
+    pub user_id: UserId,
+    pub jti: Uuid,
+    pub version: u64,
+    /// Expiry, seconds since the Unix epoch — lets logout size the denylist
+    /// entry to the token's remaining lifetime.
+    pub exp: i64,
 }
 
 /// Mints and verifies session tokens and builds the cookie they travel in.
@@ -55,19 +74,22 @@ impl TokenService {
         }
     }
 
-    /// Mints a signed token for `user_id`, valid for the configured TTL.
+    /// Mints a signed token for `user_id` at token-version `ver`, valid for
+    /// the configured TTL.
     #[must_use]
-    pub fn issue(&self, user_id: UserId) -> String {
-        self.issue_at(user_id, OffsetDateTime::now_utc())
+    pub fn issue(&self, user_id: UserId, ver: u64) -> String {
+        self.issue_at(user_id, ver, OffsetDateTime::now_utc())
     }
 
     /// [`issue`](Self::issue) with the clock injected, so token expiry is
     /// exercisable in tests.
-    fn issue_at(&self, user_id: UserId, now: OffsetDateTime) -> String {
+    fn issue_at(&self, user_id: UserId, ver: u64, now: OffsetDateTime) -> String {
         let claims = Claims {
             sub: user_id.0,
             iat: now.unix_timestamp(),
             exp: (now + self.ttl).unix_timestamp(),
+            jti: Uuid::now_v7(),
+            ver,
         };
         // HS256 signing of an in-memory struct with a valid key is infallible; an
         // error here would be a configuration bug at startup, not a runtime path.
@@ -75,11 +97,18 @@ impl TokenService {
             .expect("HS256 encoding of session claims is infallible")
     }
 
-    /// Verifies signature + expiry and returns the token's subject.
-    pub fn verify(&self, token: &str) -> Result<UserId, AuthError> {
+    /// Verifies signature + expiry and returns the decoded contents. Tokens
+    /// minted before the jti/ver claims existed fail decode and read as
+    /// invalid — a deliberate hard cut.
+    pub fn verify(&self, token: &str) -> Result<VerifiedToken, AuthError> {
         let data = decode::<Claims>(token, &self.decoding, &self.validation)
             .map_err(|_| AuthError::Invalid)?;
-        Ok(UserId(data.claims.sub))
+        Ok(VerifiedToken {
+            user_id: UserId(data.claims.sub),
+            jti: data.claims.jti,
+            version: data.claims.ver,
+            exp: data.claims.exp,
+        })
     }
 
     /// `Set-Cookie` for a fresh session.
@@ -120,10 +149,20 @@ mod tests {
     }
 
     #[test]
-    fn issue_then_verify_round_trips_to_same_subject() {
+    fn issue_then_verify_round_trips_subject_and_version() {
         let svc = service("session-secret");
-        let token = svc.issue(user());
-        assert_eq!(svc.verify(&token).expect("valid token"), user());
+        let token = svc.issue(user(), 7);
+        let verified = svc.verify(&token).expect("valid token");
+        assert_eq!(verified.user_id, user());
+        assert_eq!(verified.version, 7);
+    }
+
+    #[test]
+    fn each_issued_token_gets_a_distinct_jti() {
+        let svc = service("session-secret");
+        let a = svc.verify(&svc.issue(user(), 0)).expect("valid token");
+        let b = svc.verify(&svc.issue(user(), 0)).expect("valid token");
+        assert_ne!(a.jti, b.jti);
     }
 
     #[test]
@@ -136,7 +175,7 @@ mod tests {
 
     #[test]
     fn verify_rejects_a_token_signed_with_another_secret() {
-        let token = service("secret-a").issue(user());
+        let token = service("secret-a").issue(user(), 0);
         assert!(matches!(
             service("secret-b").verify(&token),
             Err(AuthError::Invalid)
@@ -149,7 +188,7 @@ mod tests {
         // Minted two hours ago with a one-hour TTL: long past expiry, and leeway
         // is zero, so there is no grace window to rescue it.
         let issued = OffsetDateTime::now_utc() - Duration::hours(2);
-        let token = svc.issue_at(user(), issued);
+        let token = svc.issue_at(user(), 0, issued);
         assert!(matches!(svc.verify(&token), Err(AuthError::Invalid)));
     }
 

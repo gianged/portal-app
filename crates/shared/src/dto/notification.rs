@@ -3,8 +3,8 @@ use time::OffsetDateTime;
 
 use crate::dto::{
     ids::{
-        ChannelId, MessageId, NotificationId, ProjectId, ProjectInviteId, RequestId, TicketId,
-        UserId,
+        ChannelId, CommentId, MessageId, NotificationId, ProjectId, ProjectInviteId, RequestId,
+        TicketId, UserId,
     },
     project::ProjectInviteStatus,
     request::RequestStatus,
@@ -25,6 +25,8 @@ pub enum NotificationKind {
     TicketStatusChange,
     ProjectInviteResponse,
     TicketRaised,
+    RequestComment,
+    TicketComment,
     System,
 }
 
@@ -42,6 +44,8 @@ impl NotificationKind {
             Self::TicketStatusChange => "Ticket Update",
             Self::ProjectInviteResponse => "Invite Response",
             Self::TicketRaised => "New Ticket",
+            Self::RequestComment => "Request Comment",
+            Self::TicketComment => "Ticket Comment",
             Self::System => "System",
         }
     }
@@ -92,6 +96,14 @@ pub enum NotificationPayloadDto {
     },
     TicketRaised {
         ticket_id: TicketId,
+    },
+    RequestComment {
+        request_id: RequestId,
+        comment_id: CommentId,
+    },
+    TicketComment {
+        ticket_id: TicketId,
+        comment_id: CommentId,
     },
     System {
         message: String,
@@ -151,6 +163,30 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn comment_payloads_round_trip() {
+        let payload = NotificationPayloadDto::RequestComment {
+            request_id: RequestId(Uuid::nil()),
+            comment_id: CommentId(Uuid::nil()),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("\"kind\":\"request_comment\""), "got {json}");
+        let back: NotificationPayloadDto = serde_json::from_str(&json).unwrap();
+        assert!(matches!(
+            back,
+            NotificationPayloadDto::RequestComment { .. }
+        ));
+
+        let payload = NotificationPayloadDto::TicketComment {
+            ticket_id: TicketId(Uuid::nil()),
+            comment_id: CommentId(Uuid::nil()),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("\"kind\":\"ticket_comment\""), "got {json}");
+        let back: NotificationPayloadDto = serde_json::from_str(&json).unwrap();
+        assert!(matches!(back, NotificationPayloadDto::TicketComment { .. }));
     }
 
     #[test]

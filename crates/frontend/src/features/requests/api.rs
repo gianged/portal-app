@@ -25,13 +25,22 @@ fn status_param(status: RequestStatus) -> &'static str {
     }
 }
 
-/// Requests assigned to the caller (`GET /requests?mine=true`).
-pub async fn list_mine(status: Option<RequestStatus>) -> Result<Vec<RequestDto>, FrontendError> {
-    let q = match status {
-        Some(s) => client::query(&[("mine", "true"), ("status", status_param(s))]),
-        None => client::query(&[("mine", "true")]),
-    };
-    client::get_json(&format!("/requests{q}")).await
+/// Requests assigned to the caller (`GET /requests?mine=true`); `q` filters by
+/// title substring. Owned `q` so the future is `'static` for the `load` helper.
+pub async fn list_mine(
+    status: Option<RequestStatus>,
+    q: Option<String>,
+) -> Result<Vec<RequestDto>, FrontendError> {
+    let mut pairs: Vec<(&str, &str)> = vec![("mine", "true")];
+    if let Some(s) = status {
+        pairs.push(("status", status_param(s)));
+    }
+    let encoded = q.map(|term| String::from(web_sys::js_sys::encode_uri_component(&term)));
+    if let Some(encoded) = &encoded {
+        pairs.push(("q", encoded));
+    }
+    let query = client::query(&pairs);
+    client::get_json(&format!("/requests{query}")).await
 }
 
 /// Requests within a project (`GET /requests?project=…`).

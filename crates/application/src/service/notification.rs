@@ -1,5 +1,7 @@
+mod email;
 mod fanout;
 
+pub use email::EmailNotifier;
 pub use fanout::NotificationFanout;
 
 use std::sync::Arc;

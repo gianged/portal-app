@@ -18,7 +18,13 @@
                 "request_assigned",
                 "request_status_change",
                 "project_invite",
-                "system"
+                "ticket_assigned",
+                "ticket_status_change",
+                "project_invite_response",
+                "ticket_raised",
+                "system",
+                "request_comment",
+                "ticket_comment"
               ]
             }
           }

@@ -10,11 +10,20 @@ use shared::dto::project::{
 use crate::api::client;
 use crate::api::error::FrontendError;
 
-/// Projects owned by a group (`GET /projects?owner_group=…`).
-pub async fn list_for_owner_group(group: GroupId) -> Result<Vec<ProjectDto>, FrontendError> {
+/// Projects owned by a group (`GET /projects?owner_group=…`); `q` filters by
+/// name substring. Owned `q` so the future is `'static` for the `load` helper.
+pub async fn list_for_owner_group(
+    group: GroupId,
+    q: Option<String>,
+) -> Result<Vec<ProjectDto>, FrontendError> {
     let gid = group.0.to_string();
-    let q = client::query(&[("owner_group", &gid)]);
-    client::get_json(&format!("/projects{q}")).await
+    let mut pairs: Vec<(&str, &str)> = vec![("owner_group", &gid)];
+    let encoded = q.map(|term| String::from(web_sys::js_sys::encode_uri_component(&term)));
+    if let Some(encoded) = &encoded {
+        pairs.push(("q", encoded));
+    }
+    let query = client::query(&pairs);
+    client::get_json(&format!("/projects{query}")).await
 }
 
 /// Project header + collaborators + pending invites (`GET /projects/{id}`).

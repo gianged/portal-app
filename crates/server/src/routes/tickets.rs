@@ -4,18 +4,21 @@
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    routing::{get, post},
+    http::StatusCode,
+    routing::{get, patch, post},
 };
 use serde::Deserialize;
 use uuid::Uuid;
 
 use domain::{
-    ids::{TicketId, UserId},
-    model::Ticket,
+    ids::{CommentId, TicketId, UserId},
+    model::{CommentEntity, Ticket},
 };
+use shared::dto::comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest};
 use shared::dto::ticket::{
     AssignTicketRequest, RaiseTicketRequest, TicketDto, TriageTicketRequest,
 };
+use shared::validation::comment::validate_comment_body;
 use shared::validation::ticket::{validate_ticket_description, validate_ticket_title};
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
@@ -31,6 +34,120 @@ pub fn router() -> Router<AppState> {
         .route("/tickets/{id}/reject", post(reject))
         .route("/tickets/{id}/close", post(close))
         .route("/tickets/{id}/reopen", post(reopen))
+        .route(
+            "/tickets/{id}/comments",
+            get(list_comments).post(add_comment),
+        )
+        .route(
+            "/tickets/{id}/comments/{comment_id}",
+            patch(edit_comment).delete(delete_comment),
+        )
+}
+
+#[derive(Deserialize)]
+struct CommentsQuery {
+    /// Exclusive newest-first cursor (a comment id).
+    before: Option<Uuid>,
+    limit: Option<u32>,
+}
+
+async fn list_comments(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Query(q): Query<CommentsQuery>,
+) -> Result<Json<Vec<CommentDto>>, AppError> {
+    let entity = CommentEntity::Ticket {
+        ticket_id: TicketId(id),
+    };
+    let before = q.before.map(CommentId);
+    let limit = q.limit.unwrap_or(50).clamp(1, 200);
+    let comments = state
+        .comment
+        .list(auth.user_id, entity, before, limit)
+        .await?;
+    comments_to_dtos(&state, auth.user_id, comments).await
+}
+
+async fn add_comment(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<CreateCommentRequest>,
+) -> Result<Json<CommentDto>, AppError> {
+    validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
+    let entity = CommentEntity::Ticket {
+        ticket_id: TicketId(id),
+    };
+    let comment = state.comment.add(auth.user_id, entity, body.body).await?;
+    comment_to_dto(&state, auth.user_id, &comment).await
+}
+
+async fn edit_comment(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path((id, comment_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<UpdateCommentRequest>,
+) -> Result<Json<CommentDto>, AppError> {
+    validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
+    let entity = CommentEntity::Ticket {
+        ticket_id: TicketId(id),
+    };
+    let comment = state
+        .comment
+        .edit(auth.user_id, entity, CommentId(comment_id), body.body)
+        .await?;
+    comment_to_dto(&state, auth.user_id, &comment).await
+}
+
+async fn delete_comment(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path((id, comment_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, AppError> {
+    let entity = CommentEntity::Ticket {
+        ticket_id: TicketId(id),
+    };
+    state
+        .comment
+        .remove(auth.user_id, entity, CommentId(comment_id))
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Resolves one comment's author summary.
+async fn comment_to_dto(
+    state: &AppState,
+    viewer: UserId,
+    comment: &domain::model::Comment,
+) -> Result<Json<CommentDto>, AppError> {
+    let author = resolve::user_summary(&state.user, &state.group, comment.author_user_id).await?;
+    let now = time::OffsetDateTime::now_utc();
+    Ok(Json(dto::comment_dto(comment, author, viewer, now)))
+}
+
+/// Resolves a page of comments with one deduped author lookup.
+async fn comments_to_dtos(
+    state: &AppState,
+    viewer: UserId,
+    comments: Vec<domain::model::Comment>,
+) -> Result<Json<Vec<CommentDto>>, AppError> {
+    let authors = resolve::user_map(
+        &state.user,
+        &state.group,
+        comments.iter().map(|c| c.author_user_id),
+    )
+    .await?;
+    let now = time::OffsetDateTime::now_utc();
+    Ok(Json(
+        comments
+            .iter()
+            .map(|c| {
+                let author = resolve::summary_from(&authors, c.author_user_id);
+                dto::comment_dto(c, author, viewer, now)
+            })
+            .collect(),
+    ))
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -48,6 +165,8 @@ enum Scope {
 struct ListQuery {
     scope: Option<Scope>,
     limit: Option<u32>,
+    /// Substring search on the ticket title.
+    q: Option<String>,
 }
 
 async fn raise(
@@ -70,16 +189,23 @@ async fn list(
     auth: AuthUser,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<TicketDto>>, AppError> {
+    let search = crate::routes::norm_q(q.q);
+    let search = search.as_deref();
     let tickets = match q.scope.unwrap_or(Scope::Mine) {
         Scope::Triage => {
             let limit = q.limit.unwrap_or(50).clamp(1, 200);
             state
                 .ticket
-                .list_open_for_triage(auth.user_id, limit)
+                .list_open_for_triage(auth.user_id, limit, search)
                 .await?
         }
-        Scope::Assigned => state.ticket.list_for_assignee(auth.user_id).await?,
-        Scope::Mine => state.ticket.list_for_requester(auth.user_id).await?,
+        Scope::Assigned => state.ticket.list_for_assignee(auth.user_id, search).await?,
+        Scope::Mine => {
+            state
+                .ticket
+                .list_for_requester(auth.user_id, search)
+                .await?
+        }
     };
     Ok(Json(many(&state, tickets).await?))
 }

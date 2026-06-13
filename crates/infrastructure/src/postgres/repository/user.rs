@@ -12,7 +12,7 @@ use domain::{
 
 use crate::postgres::{
     enums::{SqlSystemRole, SqlUserStatus},
-    mappers::map_pg_error,
+    mappers::{like_pattern, map_pg_error},
 };
 
 pub struct PgUserRepo {
@@ -118,8 +118,14 @@ impl UserRepository for PgUserRepo {
         .map(|opt| opt.map(Into::into))
     }
 
-    async fn list_active(&self, limit: u32, offset: u32) -> Result<Vec<User>, RepositoryError> {
+    async fn list_active(
+        &self,
+        limit: u32,
+        offset: u32,
+        q: Option<&str>,
+    ) -> Result<Vec<User>, RepositoryError> {
         let active = SqlUserStatus::from(UserStatus::Active);
+        let pattern: Option<String> = q.map(like_pattern);
         let rows = sqlx::query_as!(
             UserRow,
             r#"SELECT
@@ -138,12 +144,14 @@ impl UserRepository for PgUserRepo {
                  updated_at
                FROM auth.users
                WHERE status = $1
+                 AND ($4::text IS NULL OR full_name ILIKE $4 OR email ILIKE $4)
                ORDER BY created_at
                LIMIT $2
                OFFSET $3"#,
             active as SqlUserStatus,
             i64::from(limit),
             i64::from(offset),
+            pattern,
         )
         .fetch_all(&self.pool)
         .await

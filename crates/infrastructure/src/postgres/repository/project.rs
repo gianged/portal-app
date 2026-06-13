@@ -12,7 +12,7 @@ use domain::{
 
 use crate::postgres::{
     enums::{SqlInviteStatus, SqlProjectStatus},
-    mappers::map_pg_error,
+    mappers::{like_pattern, map_pg_error},
 };
 
 pub struct PgProjectRepo {
@@ -127,8 +127,10 @@ impl ProjectRepository for PgProjectRepo {
     async fn list_for_owner_group(
         &self,
         group_id: GroupId,
+        q: Option<&str>,
     ) -> Result<Vec<Project>, RepositoryError> {
         // Matches idx_projects_owner_group_id_status.
+        let pattern: Option<String> = q.map(like_pattern);
         let rows = sqlx::query_as!(
             ProjectRow,
             r#"SELECT
@@ -142,8 +144,10 @@ impl ProjectRepository for PgProjectRepo {
                  updated_at
                FROM project.projects
                WHERE owner_group_id = $1
+                 AND ($2::text IS NULL OR name ILIKE $2)
                ORDER BY created_at DESC"#,
             group_id.0,
+            pattern,
         )
         .fetch_all(&self.pool)
         .await

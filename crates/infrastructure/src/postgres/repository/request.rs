@@ -12,7 +12,7 @@ use domain::{
 
 use crate::postgres::{
     enums::{SqlRequestPriority, SqlRequestStatus},
-    mappers::map_pg_error,
+    mappers::{like_pattern, map_pg_error},
 };
 
 pub struct PgRequestRepo {
@@ -119,9 +119,11 @@ impl RequestRepository for PgRequestRepo {
         &self,
         project_id: ProjectId,
         status: Option<RequestStatus>,
+        q: Option<&str>,
     ) -> Result<Vec<Request>, RepositoryError> {
         // Matches idx_requests_project_id_status when status filter is provided.
         let status_filter: Option<SqlRequestStatus> = status.map(Into::into);
+        let pattern: Option<String> = q.map(like_pattern);
         let rows = sqlx::query_as!(
             RequestRow,
             r#"SELECT
@@ -139,9 +141,11 @@ impl RequestRepository for PgRequestRepo {
                FROM project.requests
                WHERE project_id = $1
                  AND ($2::project.request_status IS NULL OR status = $2)
+                 AND ($3::text IS NULL OR title ILIKE $3)
                ORDER BY created_at DESC"#,
             project_id.0,
             status_filter as Option<SqlRequestStatus>,
+            pattern,
         )
         .fetch_all(&self.pool)
         .await
@@ -153,9 +157,11 @@ impl RequestRepository for PgRequestRepo {
         &self,
         assignee: UserId,
         status: Option<RequestStatus>,
+        q: Option<&str>,
     ) -> Result<Vec<Request>, RepositoryError> {
         // Matches idx_requests_assignee_user_id_status (partial: assignee NOT NULL).
         let status_filter: Option<SqlRequestStatus> = status.map(Into::into);
+        let pattern: Option<String> = q.map(like_pattern);
         let rows = sqlx::query_as!(
             RequestRow,
             r#"SELECT
@@ -173,9 +179,11 @@ impl RequestRepository for PgRequestRepo {
                FROM project.requests
                WHERE assignee_user_id = $1
                  AND ($2::project.request_status IS NULL OR status = $2)
+                 AND ($3::text IS NULL OR title ILIKE $3)
                ORDER BY created_at DESC"#,
             assignee.0,
             status_filter as Option<SqlRequestStatus>,
+            pattern,
         )
         .fetch_all(&self.pool)
         .await

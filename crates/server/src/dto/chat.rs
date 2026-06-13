@@ -5,14 +5,14 @@ use domain::{ids, model};
 use shared::dto::{
     announcement::{AnnouncementDto, PostAnnouncementRequest},
     chat::{
-        ChannelDto, ChannelKind as WireChannelKind, ChannelSummaryDto, MessageDto,
-        SendMessageRequest,
+        ChannelDto, ChannelKind as WireChannelKind, ChannelSummaryDto, ChatAttachmentDto,
+        MessageDto, SendMessageRequest,
     },
     common::UserSummaryDto,
 };
 use time::OffsetDateTime;
 
-use super::{channel_id, group_id, message_id, unknown_user_summary};
+use super::{channel_id, chat_attachment_id, group_id, message_id, unknown_user_summary};
 
 // --- channels ---
 
@@ -76,11 +76,27 @@ pub fn message_created_at(id: ids::MessageId) -> OffsetDateTime {
         .expect("a UUIDv7 timestamp is within OffsetDateTime's range")
 }
 
+/// `download_url` is the per-viewer presigned link the caller minted.
+#[must_use]
+pub fn chat_attachment_dto(a: &model::ChatAttachment, download_url: String) -> ChatAttachmentDto {
+    ChatAttachmentDto {
+        id: chat_attachment_id(a.id),
+        storage_key: a.storage_key.clone(),
+        filename: a.filename.clone(),
+        content_type: a.content_type.clone(),
+        size_bytes: a.size_bytes,
+        download_url,
+    }
+}
+
+/// `attachments` are the resolved + presigned DTOs for the message's keys
+/// (empty for deleted messages — the caller decides).
 #[must_use]
 pub fn message_dto(
     message: &model::Message,
     sender: UserSummaryDto,
     mentions: Vec<UserSummaryDto>,
+    attachments: Vec<ChatAttachmentDto>,
 ) -> MessageDto {
     MessageDto {
         id: message_id(message.id),
@@ -88,7 +104,7 @@ pub fn message_dto(
         sender,
         body: message.body.clone(),
         mentions,
-        attachment_keys: message.attachment_keys.clone(),
+        attachments,
         is_announcement: message.is_announcement,
         edited_at: message.edited_at,
         deleted_at: message.deleted_at,

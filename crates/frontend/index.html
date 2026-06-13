@@ -3,6 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- CSP is delivered as a header, not a <meta> tag: Trunk's inline WASM
+         bootstrap is nonce-allowed, and a meta CSP can't carry a per-request
+         nonce. Dev: Trunk.toml [serve] csp. Prod: infra/nginx/nginx.conf. -->
     <title>Portal</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

@@ -106,3 +106,48 @@ impl JobQueue for ApalisAuditQueue {
         Ok(())
     }
 }
+
+/// Distinct type -> own apalis/Redis namespace, so SMTP retries never re-run the
+/// non-idempotent notification fanout. Carries a serialised `EmailMessage`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailEnvelope {
+    pub message: Vec<u8>,
+}
+
+/// Builds the Redis-backed email job storage. Producer (`ApalisEmailQueue`) and
+/// consumer (`workers`) both call this to agree on wire type + namespace.
+pub async fn email_storage(redis_url: &str) -> Result<RedisStorage<EmailEnvelope>, JobError> {
+    let conn = apalis_redis::connect(redis_url)
+        .await
+        .map_err(|e| JobError::Backend(e.to_string()))?;
+    Ok(RedisStorage::new(conn))
+}
+
+/// [`JobQueue`] adapter feeding the durable `emails` queue. Mirrors
+/// [`ApalisNotificationQueue`].
+#[derive(Clone)]
+pub struct ApalisEmailQueue {
+    storage: RedisStorage<EmailEnvelope>,
+}
+
+impl ApalisEmailQueue {
+    #[must_use]
+    pub fn new(storage: RedisStorage<EmailEnvelope>) -> Self {
+        Self { storage }
+    }
+}
+
+#[async_trait]
+impl JobQueue for ApalisEmailQueue {
+    /// `queue` ignored - this adapter is bound to one storage at construction.
+    async fn enqueue(&self, _queue: &str, payload: &[u8]) -> Result<(), JobError> {
+        let mut storage = self.storage.clone();
+        storage
+            .push(EmailEnvelope {
+                message: payload.to_vec(),
+            })
+            .await
+            .map_err(|e| JobError::Backend(e.to_string()))?;
+        Ok(())
+    }
+}

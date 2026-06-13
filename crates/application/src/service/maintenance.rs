@@ -4,10 +4,16 @@ use time::{Duration, OffsetDateTime};
 
 use domain::{
     ports::file_storage::FileStorage,
-    repository::{NotificationRepository, RequestRepository, UserRepository},
+    repository::{
+        ChatAttachmentRepository, NotificationRepository, RequestRepository, TicketRepository,
+        UserRepository,
+    },
 };
 
-use crate::error::Result;
+use crate::{
+    error::Result,
+    events::{DomainEvent, EventBus},
+};
 
 /// System-level maintenance routines invoked by the background workers. Holds no
 /// `Permissions` — these run as the system, not on behalf of a user (mirroring
@@ -15,8 +21,11 @@ use crate::error::Result;
 pub struct MaintenanceService {
     notifications: Arc<dyn NotificationRepository>,
     requests: Arc<dyn RequestRepository>,
+    tickets: Arc<dyn TicketRepository>,
+    chat_attachments: Arc<dyn ChatAttachmentRepository>,
     users: Arc<dyn UserRepository>,
     storage: Arc<dyn FileStorage>,
+    events: Arc<EventBus>,
 }
 
 impl MaintenanceService {
@@ -24,14 +33,20 @@ impl MaintenanceService {
     pub fn new(
         notifications: Arc<dyn NotificationRepository>,
         requests: Arc<dyn RequestRepository>,
+        tickets: Arc<dyn TicketRepository>,
+        chat_attachments: Arc<dyn ChatAttachmentRepository>,
         users: Arc<dyn UserRepository>,
         storage: Arc<dyn FileStorage>,
+        events: Arc<EventBus>,
     ) -> Self {
         Self {
             notifications,
             requests,
+            tickets,
+            chat_attachments,
             users,
             storage,
+            events,
         }
     }
 
@@ -49,6 +64,49 @@ impl MaintenanceService {
         Ok(self.notifications.delete_read_before(cutoff).await?)
     }
 
+    /// Closes resolved tickets whose reopen window (`window`) has lapsed,
+    /// applying the normal domain transition so a raced manual close/reopen is
+    /// skipped rather than clobbered. Emits [`DomainEvent::TicketAutoClosed`]
+    /// per ticket (audit row + requester/assignee notification). Returns the
+    /// number closed.
+    ///
+    /// # Errors
+    /// Returns a repository error if the datastore is unavailable, or an event
+    /// error if the event bus fails.
+    pub async fn auto_close_resolved_tickets(
+        &self,
+        window: Duration,
+        now: OffsetDateTime,
+    ) -> Result<u64> {
+        const BATCH: u32 = 100;
+        let cutoff = now - window;
+        let mut closed = 0_u64;
+        loop {
+            let batch = self.tickets.list_resolved_before(cutoff, BATCH).await?;
+            let batch_len = batch.len();
+            for mut ticket in batch {
+                // A concurrent reopen/close between list and here makes the
+                // transition invalid; skip that ticket, don't abort the sweep.
+                if let Err(e) = ticket.close(now) {
+                    tracing::debug!(ticket = %ticket.id.0, error = %e, "auto-close skipped");
+                    continue;
+                }
+                self.tickets.save(&ticket).await?;
+                self.events
+                    .emit(DomainEvent::TicketAutoClosed {
+                        ticket_id: ticket.id,
+                        at: now,
+                    })
+                    .await?;
+                closed += 1;
+            }
+            if batch_len < BATCH as usize {
+                break;
+            }
+        }
+        Ok(closed)
+    }
+
     /// Sweeps stored upload objects that no attachment or avatar references,
     /// skipping anything modified within `grace` of `now` so an in-flight upload
     /// whose DB row has not committed yet is never deleted. Returns the count
@@ -61,6 +119,8 @@ impl MaintenanceService {
         let mut referenced: HashSet<String> = HashSet::new();
         referenced.extend(self.requests.list_all_attachment_keys().await?);
         referenced.extend(self.users.list_avatar_keys().await?);
+        // Load-bearing: blocks deletion of in-use chat attachments.
+        referenced.extend(self.chat_attachments.list_all_keys().await?);
 
         let cutoff = now - grace;
         let mut removed = 0_u64;

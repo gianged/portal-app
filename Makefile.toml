@@ -16,6 +16,10 @@
 #   docker compose --env-file .env -f infra/docker-compose.infra.yml down -v
 #   cargo make bootstrap
 
+# sqlx-prepare needs DATABASE_URL to reach the dev DB; same values dotenvy loads
+# at runtime, and cargo-make never overrides env vars that are already set.
+env_files = [".env"]
+
 [config]
 default_to_workspace = false
 skip_core_tasks = true
@@ -23,9 +27,11 @@ skip_core_tasks = true
 # ---------------------------------------------------------------- Bootstrap
 # `cargo make bootstrap` runs infra/scripts/init.sh — one idempotent entry point:
 #   - First run: brings the stores up, runs the OpenFGA datastore migration,
-#     applies the Cassandra schema, starts OpenFGA, and creates the store.
-#   - Re-runs: no-op (Postgres init fires only on an empty volume; migrate +
-#     schema are IF NOT EXISTS; the store step skips when the id already exists).
+#     applies the Postgres schema (10-init.sql, via initdb) and the Cassandra
+#     schema, and starts OpenFGA.
+#   - Re-runs: no-op (Postgres init fires only on an empty volume; OpenFGA
+#     migrate + Scylla schema are IF NOT EXISTS; the store step skips when the
+#     id already exists).
 # `cargo make backup` dumps Postgres + ScyllaDB on demand to ./backups (host script).
 
 [tasks.bootstrap]
@@ -60,6 +66,20 @@ args = ["infra/seed/seed.sh"]
 [tasks.seed.windows]
 command = "C:\\Program Files\\Git\\usr\\bin\\sh.exe"
 args = ["infra/seed/seed.sh"]
+
+# ---------------------------------------------------------------- Schema / sqlx
+# infra/postgres/10-init.sql is the single source of truth for the relational
+# schema. Change it in place, then reinitialize the dev DB (Postgres only runs
+# the init script on an empty volume): `cargo make down -v`-equivalent then
+# bootstrap:
+#   docker compose --env-file .env -f infra/docker-compose.infra.yml down -v
+#   cargo make bootstrap
+#   cargo make sqlx-prepare      # regenerate .sqlx, commit it with the schema
+
+[tasks.sqlx-prepare]
+description = "Regenerate the committed .sqlx offline query cache (needs an initialized dev DB)."
+command = "cargo"
+args = ["sqlx", "prepare", "--workspace", "--", "--workspace", "--exclude", "frontend"]
 
 # ------------------------------------------------------------- Stack lifecycle
 # Day-to-day up/down of the infra stack. Both pass --env-file so Compose honors

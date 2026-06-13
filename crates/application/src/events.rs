@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use domain::{
     ids::{
-        ChannelId, GroupId, MembershipId, MessageId, ProjectId, ProjectInviteId, RequestId,
-        TicketId, UserId,
+        ChannelId, CommentId, GroupId, MembershipId, MessageId, ProjectId, ProjectInviteId,
+        RequestId, TicketId, UserId,
     },
     model::{
-        Announcement, Group, GroupRole, Message, Project, ProjectInviteStatus, ProjectStatus,
-        Request, RequestStatus, Ticket, TicketPriority, TicketStatus, User,
+        Announcement, Comment, CommentEntity, Group, GroupRole, Message, Project,
+        ProjectInviteStatus, ProjectStatus, Request, RequestStatus, Ticket, TicketPriority,
+        TicketStatus, User,
     },
     ports::{event_publisher::EventPublisher, job_queue::JobQueue},
 };
@@ -57,6 +58,16 @@ pub enum DomainEvent {
         at: OffsetDateTime,
         before: User,
         after: User,
+    },
+    // No `User` payload — serializing it would put the password hash on the event bus.
+    UserPasswordChanged {
+        user_id: UserId,
+        at: OffsetDateTime,
+    },
+    UserPasswordReset {
+        user_id: UserId,
+        actor: UserId,
+        at: OffsetDateTime,
     },
 
     GroupCreated {
@@ -209,6 +220,32 @@ pub enum DomainEvent {
         actor: UserId,
         at: OffsetDateTime,
     },
+    /// System close of a resolved ticket whose reopen window lapsed; no actor.
+    TicketAutoClosed {
+        ticket_id: TicketId,
+        at: OffsetDateTime,
+    },
+
+    CommentAdded {
+        comment_id: CommentId,
+        entity: CommentEntity,
+        actor: UserId,
+        at: OffsetDateTime,
+        after: Comment,
+    },
+    CommentEdited {
+        comment_id: CommentId,
+        entity: CommentEntity,
+        actor: UserId,
+        at: OffsetDateTime,
+        after: Comment,
+    },
+    CommentDeleted {
+        comment_id: CommentId,
+        entity: CommentEntity,
+        actor: UserId,
+        at: OffsetDateTime,
+    },
 
     MessagePosted {
         message_id: MessageId,
@@ -262,7 +299,9 @@ impl DomainEvent {
             | Self::UserActivated { .. }
             | Self::UserDeactivated { .. }
             | Self::UserReactivated { .. }
-            | Self::UserProfileUpdated { .. } => "portal.user",
+            | Self::UserProfileUpdated { .. }
+            | Self::UserPasswordChanged { .. }
+            | Self::UserPasswordReset { .. } => "portal.user",
             Self::GroupCreated { .. }
             | Self::GroupDeleted { .. }
             | Self::GroupMetadataUpdated { .. }
@@ -283,7 +322,15 @@ impl DomainEvent {
             Self::TicketRaised { .. }
             | Self::TicketTriaged { .. }
             | Self::TicketAssigned { .. }
-            | Self::TicketStatusChanged { .. } => "portal.ticket",
+            | Self::TicketStatusChanged { .. }
+            | Self::TicketAutoClosed { .. } => "portal.ticket",
+            // Comments route by parent, reusing its already-notified/audited topic.
+            Self::CommentAdded { entity, .. }
+            | Self::CommentEdited { entity, .. }
+            | Self::CommentDeleted { entity, .. } => match entity {
+                CommentEntity::Request { .. } => "portal.request",
+                CommentEntity::Ticket { .. } => "portal.ticket",
+            },
             Self::MessagePosted { .. }
             | Self::MessageEdited { .. }
             | Self::MessageDeleted { .. } => "portal.chat",

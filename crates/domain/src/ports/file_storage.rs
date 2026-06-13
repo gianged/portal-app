@@ -3,7 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use time::OffsetDateTime;
 
-use crate::error::StorageError;
+use crate::{error::StorageError, ids::UserId};
 
 /// Metadata for one stored object, returned by [`FileStorage::list`].
 #[derive(Debug, Clone)]
@@ -23,7 +23,14 @@ pub trait FileStorage: Send + Sync {
 
     async fn delete(&self, key: &str) -> Result<(), StorageError>;
 
-    async fn presign_get(&self, key: &str, ttl: Duration) -> Result<String, StorageError>;
+    /// Time-limited download URL bound to `user`: downloads verify signature + session,
+    /// so links aren't shareable bearer tokens.
+    async fn presign_get(
+        &self,
+        key: &str,
+        ttl: Duration,
+        user: UserId,
+    ) -> Result<String, StorageError>;
 
     /// Lists stored objects under the `prefix` (empty = the whole store) with
     /// their last-modified time and size. Used by the upload orphan-sweep job.

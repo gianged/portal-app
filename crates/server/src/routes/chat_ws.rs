@@ -1,14 +1,22 @@
-//! Chat WebSocket: one task per connection, fed by two Redis pub/sub planes.
+//! Chat WebSocket: one task per connection, fed by Redis pub/sub planes.
 //!
 //! - `portal.chat` carries durable `DomainEvent`s (message posted/deleted) the
 //!   services emit; the task projects them to `ServerFrame`s for subscribed
 //!   channels.
 //! - `portal.ws` carries ephemeral `WsSignal`s (typing / presence / read-marker)
 //!   the WS layer publishes itself.
+//! - `portal.user` / `portal.group` carry revocation-relevant events: the task
+//!   closes on the user's own deactivation and re-validates its subscriptions
+//!   when a membership is revoked, so access ends without waiting for a
+//!   reconnect.
 //!
 //! Inbound `SendMessage` goes through `ChatService::post_message`; the resulting
 //! event returns to every subscribed connection (including the sender) through
 //! the `portal.chat` plane, so there is no echo special case.
+//!
+//! Authorization is checked per `Subscribe` through `ChatService::ensure_can_view`
+//! (never cached at connect), so newly created channels work immediately and
+//! revoked ones stop working immediately.
 
 use std::collections::HashSet;
 use std::pin::Pin;
@@ -33,10 +41,14 @@ use domain::{
     error::EventError,
     ids::{ChannelId, MessageId, UserId},
     model::Message as ChatMessage,
+    ports::file_storage::FileStorage,
 };
-use shared::dto::{
-    chat::MessageDto,
-    ws::{ClientFrame, ServerFrame},
+use shared::{
+    dto::{
+        chat::MessageDto,
+        ws::{ClientFrame, ServerFrame},
+    },
+    validation::chat::{validate_message_body, validate_message_extras},
 };
 
 use crate::{
@@ -52,6 +64,8 @@ use crate::{
 /// its presence lapse between refreshes.
 const PRESENCE_TTL_SECS: u64 = 60;
 const HEARTBEAT: Duration = Duration::from_secs(30);
+/// Lifetime of presigned attachment URLs embedded in live message frames.
+const DOWNLOAD_URL_TTL: Duration = Duration::from_hours(1);
 
 type ByteStream = Pin<Box<dyn Stream<Item = Vec<u8>> + Send>>;
 
@@ -78,15 +92,6 @@ async fn connection(socket: WebSocket, state: AppState, uid: UserId) {
         })
         .await;
 
-    // Channels the user may subscribe to (membership == view rights). New
-    // channels created after connect need a reconnect to appear here.
-    let allowed: HashSet<ChannelId> = match state.chat.list_channels(uid).await {
-        Ok(memberships) => memberships.into_iter().map(|m| m.channel_id).collect(),
-        Err(e) => {
-            tracing::warn!(error = %e, "ws: failed to load channel memberships");
-            HashSet::new()
-        }
-    };
     let mut subscribed: HashSet<ChannelId> = HashSet::new();
 
     let mut events = match open_streams(&state).await {
@@ -103,7 +108,7 @@ async fn connection(socket: WebSocket, state: AppState, uid: UserId) {
         tokio::select! {
             incoming = stream.next() => match incoming {
                 Some(Ok(Message::Text(text))) => {
-                    if !on_client_frame(&state, uid, text.as_str(), &allowed, &mut subscribed, &mut sink)
+                    if !on_client_frame(&state, uid, text.as_str(), &mut subscribed, &mut sink)
                         .await
                     {
                         break;
@@ -113,7 +118,7 @@ async fn connection(socket: WebSocket, state: AppState, uid: UserId) {
                 Some(Ok(_)) => {} // ignore binary / ping / pong control frames
             },
             Some(bytes) = events.next() => {
-                if !on_event(&state, uid, &bytes, &subscribed, &mut sink).await {
+                if !on_event(&state, uid, &bytes, &mut subscribed, &mut sink).await {
                     break;
                 }
             }
@@ -135,7 +140,10 @@ async fn connection(socket: WebSocket, state: AppState, uid: UserId) {
 async fn open_streams(state: &AppState) -> Result<SelectAll<ByteStream>, EventError> {
     let chat = state.realtime.subscribe("portal.chat").await?;
     let ephemeral = state.realtime.subscribe(WS_TOPIC).await?;
-    Ok(select_all(vec![chat, ephemeral]))
+    // Revocation planes: deactivation closes the socket, membership changes re-validate subscriptions (see `on_domain_event`).
+    let user = state.realtime.subscribe("portal.user").await?;
+    let group = state.realtime.subscribe("portal.group").await?;
+    Ok(select_all(vec![chat, ephemeral, user, group]))
 }
 
 /// Handles one client frame. Returns `false` when the connection should close.
@@ -143,7 +151,6 @@ async fn on_client_frame(
     state: &AppState,
     uid: UserId,
     text: &str,
-    allowed: &HashSet<ChannelId>,
     subscribed: &mut HashSet<ChannelId>,
     sink: &mut SplitSink<WebSocket, Message>,
 ) -> bool {
@@ -164,18 +171,34 @@ async fn on_client_frame(
     match frame {
         ClientFrame::Subscribe { channel_id } => {
             let cid = ChannelId(channel_id.0);
-            if allowed.contains(&cid) {
-                subscribed.insert(cid);
-                send(sink, &ServerFrame::Subscribed { channel_id }).await
-            } else {
-                send(
-                    sink,
-                    &ServerFrame::Error {
-                        code: "forbidden".to_owned(),
-                        message: "not a member of that channel".to_owned(),
-                    },
-                )
-                .await
+            // Authoritative check on every subscribe; fail-closed on backend
+            // errors (the client may simply retry).
+            match state.chat.ensure_can_view(uid, cid).await {
+                Ok(()) => {
+                    subscribed.insert(cid);
+                    send(sink, &ServerFrame::Subscribed { channel_id }).await
+                }
+                Err(application::Error::Forbidden | application::Error::NotFound(_)) => {
+                    send(
+                        sink,
+                        &ServerFrame::Error {
+                            code: "forbidden".to_owned(),
+                            message: "not a member of that channel".to_owned(),
+                        },
+                    )
+                    .await
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "ws: subscribe check failed");
+                    send(
+                        sink,
+                        &ServerFrame::Error {
+                            code: "subscribe_failed".to_owned(),
+                            message: "could not verify channel access".to_owned(),
+                        },
+                    )
+                    .await
+                }
             }
         }
         ClientFrame::Unsubscribe { channel_id } => {
@@ -188,6 +211,19 @@ async fn on_client_frame(
             mentions,
             attachment_keys,
         } => {
+            // Same validation as the REST path — the WS plane is not a bypass.
+            if let Err(e) = validate_message_body(&body)
+                .and_then(|()| validate_message_extras(mentions.len(), &attachment_keys))
+            {
+                return send(
+                    sink,
+                    &ServerFrame::Error {
+                        code: "bad_frame".to_owned(),
+                        message: e.to_string(),
+                    },
+                )
+                .await;
+            }
             let cmd = PostMessageCommand {
                 channel_id: ChannelId(channel_id.0),
                 body,
@@ -242,11 +278,11 @@ async fn on_event(
     state: &AppState,
     uid: UserId,
     bytes: &[u8],
-    subscribed: &HashSet<ChannelId>,
+    subscribed: &mut HashSet<ChannelId>,
     sink: &mut SplitSink<WebSocket, Message>,
 ) -> bool {
     if let Ok(event) = serde_json::from_slice::<DomainEvent>(bytes) {
-        return on_domain_event(state, &event, subscribed, sink).await;
+        return on_domain_event(state, uid, &event, subscribed, sink).await;
     }
     if let Ok(signal) = serde_json::from_slice::<WsSignal>(bytes) {
         return on_signal(uid, &signal, subscribed, sink).await;
@@ -254,20 +290,48 @@ async fn on_event(
     true // unknown payload (another topic's shape); ignore
 }
 
+/// Re-checks every current subscription, dropping the ones the user can no
+/// longer view. Errors drop the subscription too (fail-closed) — the client
+/// can re-subscribe once the backend recovers.
+async fn revalidate_subscriptions(
+    state: &AppState,
+    uid: UserId,
+    subscribed: &mut HashSet<ChannelId>,
+) {
+    let current: Vec<ChannelId> = subscribed.iter().copied().collect();
+    for cid in current {
+        if state.chat.ensure_can_view(uid, cid).await.is_err() {
+            subscribed.remove(&cid);
+        }
+    }
+}
+
 async fn on_domain_event(
     state: &AppState,
+    uid: UserId,
     event: &DomainEvent,
-    subscribed: &HashSet<ChannelId>,
+    subscribed: &mut HashSet<ChannelId>,
     sink: &mut SplitSink<WebSocket, Message>,
 ) -> bool {
     match event {
+        // Own deactivation closes the socket (with the token-version bump, cuts the user off immediately).
+        DomainEvent::UserDeactivated { user_id, .. } if *user_id == uid => false,
+        // Lost membership / deleted group: drop subscriptions that no longer pass the view check.
+        DomainEvent::MembershipDeactivated { user_id, .. } if *user_id == uid => {
+            revalidate_subscriptions(state, uid, subscribed).await;
+            true
+        }
+        DomainEvent::GroupDeleted { .. } => {
+            revalidate_subscriptions(state, uid, subscribed).await;
+            true
+        }
         DomainEvent::MessagePosted {
             channel_id, after, ..
         } => {
             if !subscribed.contains(channel_id) {
                 return true;
             }
-            match build_message_dto(state, after).await {
+            match build_message_dto(state, uid, after).await {
                 Ok(message) => send(sink, &ServerFrame::MessageCreated { message }).await,
                 Err(e) => {
                     tracing::warn!(error = %e, "ws: failed to project posted message");
@@ -281,7 +345,7 @@ async fn on_domain_event(
             if !subscribed.contains(channel_id) {
                 return true;
             }
-            match build_message_dto(state, after).await {
+            match build_message_dto(state, uid, after).await {
                 Ok(message) => send(sink, &ServerFrame::MessageEdited { message }).await,
                 Err(e) => {
                     tracing::warn!(error = %e, "ws: failed to project edited message");
@@ -371,6 +435,7 @@ async fn on_signal(
 
 async fn build_message_dto(
     state: &AppState,
+    viewer: UserId,
     message: &ChatMessage,
 ) -> Result<MessageDto, AppError> {
     let sender = resolve::user_summary(&state.user, &state.group, message.sender_user_id).await?;
@@ -378,7 +443,26 @@ async fn build_message_dto(
     for mention in &message.mentions {
         mentions.push(resolve::user_summary(&state.user, &state.group, *mention).await?);
     }
-    Ok(dto::message_dto(message, sender, mentions))
+    // Live frames carry presigned attachment DTOs (per recipient); deleted messages render none.
+    let attachments = if message.is_deleted() || message.attachment_keys.is_empty() {
+        Vec::new()
+    } else {
+        let metadata = state
+            .chat
+            .attachments_by_keys(&message.attachment_keys)
+            .await?;
+        let mut out = Vec::with_capacity(metadata.len());
+        for a in &metadata {
+            let download_url = state
+                .storage
+                .presign_get(&a.storage_key, DOWNLOAD_URL_TTL, viewer)
+                .await
+                .map_err(|e| AppError::Domain(application::Error::Storage(e)))?;
+            out.push(dto::chat_attachment_dto(a, download_url));
+        }
+        out
+    };
+    Ok(dto::message_dto(message, sender, mentions, attachments))
 }
 
 /// Serializes and sends a frame. Returns `false` if the socket is gone.

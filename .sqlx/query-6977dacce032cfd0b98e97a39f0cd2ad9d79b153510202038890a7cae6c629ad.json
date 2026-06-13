@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 email,\n                 password_hash,\n                 full_name,\n                 avatar_storage_key,\n                 phone,\n                 timezone,\n                 status            AS \"status: SqlUserStatus\",\n                 system_role       AS \"system_role: SqlSystemRole\",\n                 first_logged_in_at,\n                 deactivated_at,\n                 created_at,\n                 updated_at\n               FROM auth.users\n               WHERE status = $1\n               ORDER BY created_at\n               LIMIT $2\n               OFFSET $3",
+  "query": "SELECT\n                 id,\n                 email,\n                 password_hash,\n                 full_name,\n                 avatar_storage_key,\n                 phone,\n                 timezone,\n                 status            AS \"status: SqlUserStatus\",\n                 system_role       AS \"system_role: SqlSystemRole\",\n                 first_logged_in_at,\n                 deactivated_at,\n                 created_at,\n                 updated_at\n               FROM auth.users\n               WHERE status = $1\n                 AND ($4::text IS NULL OR full_name ILIKE $4 OR email ILIKE $4)\n               ORDER BY created_at\n               LIMIT $2\n               OFFSET $3",
   "describe": {
     "columns": [
       {
@@ -183,7 +183,8 @@
           }
         },
         "Int8",
-        "Int8"
+        "Int8",
+        "Text"
       ]
     },
     "nullable": [
@@ -202,5 +203,5 @@
       false
     ]
   },
-  "hash": "f2242d077ab7b930b86ca8712c210c310e83cc2792b24755d27cc79e0873b02d"
+  "hash": "6977dacce032cfd0b98e97a39f0cd2ad9d79b153510202038890a7cae6c629ad"
 }

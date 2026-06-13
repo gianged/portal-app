@@ -264,11 +264,15 @@ impl RequestService {
         actor: UserId,
         project_id: ProjectId,
         status: Option<RequestStatus>,
+        q: Option<&str>,
     ) -> Result<Vec<Request>> {
         self.perms
             .require_can_view_project(actor, project_id)
             .await?;
-        Ok(self.requests.list_for_project(project_id, status).await?)
+        Ok(self
+            .requests
+            .list_for_project(project_id, status, q)
+            .await?)
     }
 
     /// Lists requests assigned to the actor, optionally filtered by status.
@@ -279,9 +283,10 @@ impl RequestService {
         &self,
         actor: UserId,
         status: Option<RequestStatus>,
+        q: Option<&str>,
     ) -> Result<Vec<Request>> {
         self.perms.require_active(actor).await?;
-        Ok(self.requests.list_for_assignee(actor, status).await?)
+        Ok(self.requests.list_for_assignee(actor, status, q).await?)
     }
 
     /// Single request, gated by project-view access (same gate as listing).

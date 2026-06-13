@@ -5,7 +5,7 @@ use domain::model;
 use shared::dto::notification::{NotificationDto, NotificationPayloadDto};
 
 use super::{
-    channel_id_wire, message_id, notification_id, project_id, project_invite_id,
+    channel_id_wire, comment_id, message_id, notification_id, project_id, project_invite_id,
     project_invite_status_dto, request_id, request_status_dto, ticket_id, ticket_status_dto,
     user_id,
 };
@@ -83,6 +83,20 @@ pub fn notification_payload_dto(payload: &model::NotificationPayload) -> Notific
                 ticket_id: ticket_id(*tid),
             }
         }
+        model::NotificationPayload::RequestComment {
+            request_id: rid,
+            comment_id: cid,
+        } => NotificationPayloadDto::RequestComment {
+            request_id: request_id(*rid),
+            comment_id: comment_id(*cid),
+        },
+        model::NotificationPayload::TicketComment {
+            ticket_id: tid,
+            comment_id: cid,
+        } => NotificationPayloadDto::TicketComment {
+            ticket_id: ticket_id(*tid),
+            comment_id: comment_id(*cid),
+        },
         model::NotificationPayload::System { message } => NotificationPayloadDto::System {
             message: message.clone(),
         },

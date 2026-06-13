@@ -1,6 +1,7 @@
 pub mod announcement;
 pub mod audit;
 pub mod chat;
+pub mod comment;
 pub mod common;
 pub mod group;
 pub mod ids;

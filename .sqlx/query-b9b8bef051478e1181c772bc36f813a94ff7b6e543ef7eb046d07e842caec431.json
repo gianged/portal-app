@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 project_id,\n                 creator_user_id,\n                 assignee_user_id,\n                 title,\n                 description,\n                 status   AS \"status: SqlRequestStatus\",\n                 priority AS \"priority: SqlRequestPriority\",\n                 due_at,\n                 created_at,\n                 updated_at\n               FROM project.requests\n               WHERE project_id = $1\n                 AND ($2::project.request_status IS NULL OR status = $2)\n               ORDER BY created_at DESC",
+  "query": "SELECT\n                 id,\n                 project_id,\n                 creator_user_id,\n                 assignee_user_id,\n                 title,\n                 description,\n                 status   AS \"status: SqlRequestStatus\",\n                 priority AS \"priority: SqlRequestPriority\",\n                 due_at,\n                 created_at,\n                 updated_at\n               FROM project.requests\n               WHERE project_id = $1\n                 AND ($2::project.request_status IS NULL OR status = $2)\n                 AND ($3::text IS NULL OR title ILIKE $3)\n               ORDER BY created_at DESC",
   "describe": {
     "columns": [
       {
@@ -170,7 +170,8 @@
               ]
             }
           }
-        }
+        },
+        "Text"
       ]
     },
     "nullable": [
@@ -187,5 +188,5 @@
       false
     ]
   },
-  "hash": "1a639d3edead3e1db0b88cccb39a545729a80c98adbaa8a6e35e04283ccba6a1"
+  "hash": "b9b8bef051478e1181c772bc36f813a94ff7b6e543ef7eb046d07e842caec431"
 }

@@ -103,7 +103,7 @@ async fn login_with_unknown_email_is_401_invalid_credentials() {
 #[tokio::test]
 async fn me_with_valid_cookie_but_missing_user_is_404() {
     let app = default_test_app();
-    let token = app.state.token.issue(UserId(Uuid::now_v7()));
+    let token = app.state.token.issue(UserId(Uuid::now_v7()), 0);
     let response = router(app.state)
         .oneshot(authed_get("/api/v1/me", &token))
         .await
@@ -122,7 +122,7 @@ async fn me_with_valid_cookie_and_seeded_user_is_200() {
         .lock()
         .unwrap()
         .push(active_user(uid, "me@example.com"));
-    let token = app.state.token.issue(uid);
+    let token = app.state.token.issue(uid, 0);
     let response = router(app.state)
         .oneshot(authed_get("/api/v1/me", &token))
         .await
@@ -133,10 +133,64 @@ async fn me_with_valid_cookie_and_seeded_user_is_200() {
 }
 
 #[tokio::test]
+async fn replaying_a_token_after_logout_is_401() {
+    let app = default_test_app();
+    let uid = UserId(Uuid::now_v7());
+    app.users
+        .users
+        .lock()
+        .unwrap()
+        .push(active_user(uid, "replay@example.com"));
+    let token = app.state.token.issue(uid, 0);
+    let service = router(app.state);
+
+    // Logout with the cookie attached denylists its jti server-side.
+    let logout = Request::builder()
+        .method("POST")
+        .uri("/api/v1/logout")
+        .header(header::COOKIE, format!("portal_session={token}"))
+        .body(Body::empty())
+        .unwrap();
+    let response = service.clone().oneshot(logout).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let response = service
+        .oneshot(authed_get("/api/v1/me", &token))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body: ApiError = decode(response).await;
+    assert_eq!(body.code, ErrorCode::Unauthenticated);
+}
+
+#[tokio::test]
+async fn token_minted_before_a_version_bump_is_401() {
+    let app = default_test_app();
+    let uid = UserId(Uuid::now_v7());
+    app.users
+        .users
+        .lock()
+        .unwrap()
+        .push(active_user(uid, "bumped@example.com"));
+    let token = app.state.token.issue(uid, 0);
+
+    // A bump (deactivation, password change) outdates every version-0 token.
+    app.revocation.versions.lock().unwrap().insert(uid, 1);
+
+    let response = router(app.state)
+        .oneshot(authed_get("/api/v1/me", &token))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body: ApiError = decode(response).await;
+    assert_eq!(body.code, ErrorCode::Unauthenticated);
+}
+
+#[tokio::test]
 async fn per_user_rate_limit_returns_429() {
     // api ceiling 0: the per-user limiter trips on the first authenticated call.
     let app = test_app(RateLimits { auth: 1000, api: 0 });
-    let token = app.state.token.issue(UserId(Uuid::now_v7()));
+    let token = app.state.token.issue(UserId(Uuid::now_v7()), 0);
     let response = router(app.state)
         .oneshot(authed_get("/api/v1/me", &token))
         .await

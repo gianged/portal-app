@@ -26,9 +26,15 @@ impl Scope {
     }
 }
 
-pub async fn list(scope: Scope) -> Result<Vec<TicketDto>, FrontendError> {
-    let q = client::query(&[("scope", scope.wire())]);
-    client::get_json(&format!("/tickets{q}")).await
+/// Owned `q` so the future is `'static` for the `load` helper.
+pub async fn list(scope: Scope, q: Option<String>) -> Result<Vec<TicketDto>, FrontendError> {
+    let mut pairs: Vec<(&str, &str)> = vec![("scope", scope.wire())];
+    let encoded = q.map(|term| String::from(web_sys::js_sys::encode_uri_component(&term)));
+    if let Some(encoded) = &encoded {
+        pairs.push(("q", encoded));
+    }
+    let query = client::query(&pairs);
+    client::get_json(&format!("/tickets{query}")).await
 }
 
 pub async fn get(id: TicketId) -> Result<TicketDto, FrontendError> {

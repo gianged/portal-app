@@ -43,6 +43,8 @@ pub fn router() -> Router<AppState> {
 #[derive(Deserialize)]
 struct ListQuery {
     owner_group: Option<Uuid>,
+    /// Substring search on the project name.
+    q: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -75,9 +77,10 @@ async fn list(
             "owner_group query parameter is required".into(),
         ));
     };
+    let search = crate::routes::norm_q(q.q);
     let projects = state
         .project
-        .list_for_owner_group(auth.user_id, GroupId(group))
+        .list_for_owner_group(auth.user_id, GroupId(group), search.as_deref())
         .await?;
     Ok(Json(project_many(&state, projects).await?))
 }

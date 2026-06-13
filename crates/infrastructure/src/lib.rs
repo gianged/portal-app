@@ -4,6 +4,7 @@
 
 pub mod jobs;
 pub mod local_storage;
+pub mod mailer;
 pub mod openfga;
 pub mod postgres;
 pub mod redis;

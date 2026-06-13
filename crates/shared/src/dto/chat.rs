@@ -3,7 +3,7 @@ use time::OffsetDateTime;
 
 use crate::dto::{
     common::UserSummaryDto,
-    ids::{ChannelId, GroupId, MessageId, UserId},
+    ids::{ChannelId, ChatAttachmentId, GroupId, MessageId, UserId},
 };
 
 /// Mirrors `domain::model::ChannelKind`.
@@ -58,6 +58,19 @@ pub struct ChannelSummaryDto {
     pub last_message_at: Option<OffsetDateTime>,
 }
 
+/// One chat upload, resolved for rendering. `storage_key` feeds
+/// [`SendMessageRequest::attachment_keys`] when composing; `download_url` is a
+/// presigned link minted for the viewer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatAttachmentDto {
+    pub id: ChatAttachmentId,
+    pub storage_key: String,
+    pub filename: String,
+    pub content_type: String,
+    pub size_bytes: u64,
+    pub download_url: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageDto {
     pub id: MessageId,
@@ -66,7 +79,9 @@ pub struct MessageDto {
     pub body: String,
     /// Resolved for rendering `@name`.
     pub mentions: Vec<UserSummaryDto>,
-    pub attachment_keys: Vec<String>,
+    /// Resolved metadata + per-viewer download links (inputs still carry bare
+    /// `attachment_keys`).
+    pub attachments: Vec<ChatAttachmentDto>,
     pub is_announcement: bool,
     #[serde(with = "time::serde::rfc3339::option")]
     pub edited_at: Option<OffsetDateTime>,

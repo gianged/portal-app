@@ -11,6 +11,7 @@ use domain::{
     error::RepositoryError,
     ids::UserId,
     model::{ChannelKind, GroupRole, RequestStatus, User, UserStatus},
+    ports::token_revocation::TokenRevocation,
     repository::{ChatRepository, GroupRepository, RequestRepository, UserRepository},
 };
 use time::OffsetDateTime;
@@ -37,6 +38,7 @@ pub struct UserService {
     chats: Arc<dyn ChatRepository>,
     perms: Arc<Permissions>,
     events: Arc<EventBus>,
+    revocation: Arc<dyn TokenRevocation>,
 }
 
 impl UserService {
@@ -48,6 +50,7 @@ impl UserService {
         chats: Arc<dyn ChatRepository>,
         perms: Arc<Permissions>,
         events: Arc<EventBus>,
+        revocation: Arc<dyn TokenRevocation>,
     ) -> Self {
         Self {
             users,
@@ -56,6 +59,7 @@ impl UserService {
             chats,
             perms,
             events,
+            revocation,
         }
     }
 
@@ -211,7 +215,7 @@ impl UserService {
         for status in OPEN_REQUEST_STATUSES {
             let open = self
                 .requests
-                .list_for_assignee(target, Some(*status))
+                .list_for_assignee(target, Some(*status), None)
                 .await?;
             if !open.is_empty() {
                 return Err(Error::Conflict("reassign_open_requests".into()));
@@ -220,6 +224,9 @@ impl UserService {
 
         user.deactivate(now)?;
         self.users.save(&user).await?;
+        // Invalidate every session token the user still holds; status checks
+        // alone leave read endpoints open until token expiry.
+        self.revocation.bump_version(target).await?;
         for mut membership in memberships {
             membership.deactivate(now);
             self.groups.save_membership(&membership).await?;
@@ -331,6 +338,78 @@ impl UserService {
         Ok(user)
     }
 
+    /// Changes the actor's own password after re-verifying the current one,
+    /// then revokes every session token they hold.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active, `Validation` if the
+    /// current password is wrong, `NotFound` if the actor row is missing, or a
+    /// repository/event error from the backends.
+    pub async fn change_password(
+        &self,
+        actor: UserId,
+        current_password: &str,
+        new_password: String,
+    ) -> Result<()> {
+        self.perms.require_active(actor).await?;
+        let now = OffsetDateTime::now_utc();
+
+        let mut user = self
+            .users
+            .find_by_id(actor)
+            .await?
+            .ok_or(Error::NotFound("user"))?;
+        if !verify_password(user.password_hash.clone(), current_password).await? {
+            return Err(Error::Validation("current password is incorrect".into()));
+        }
+
+        user.password_hash = hash_password(new_password).await?;
+        user.updated_at = now;
+        self.users.save(&user).await?;
+        self.revocation.bump_version(actor).await?;
+        self.events
+            .emit(DomainEvent::UserPasswordChanged {
+                user_id: actor,
+                at: now,
+            })
+            .await?;
+        Ok(())
+    }
+
+    /// HR sets a temporary password for another user (e.g. a forgotten
+    /// password), revoking all of the target's sessions.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not HR, `NotFound` if the target
+    /// does not exist, or a repository/event error from the backends.
+    pub async fn admin_reset_password(
+        &self,
+        actor: UserId,
+        target: UserId,
+        new_password: String,
+    ) -> Result<()> {
+        self.perms.require_hr(actor).await?;
+        let now = OffsetDateTime::now_utc();
+
+        let mut user = self
+            .users
+            .find_by_id(target)
+            .await?
+            .ok_or(Error::NotFound("user"))?;
+        user.password_hash = hash_password(new_password).await?;
+        user.updated_at = now;
+        self.users.save(&user).await?;
+        self.revocation.bump_version(target).await?;
+        self.events
+            .emit(DomainEvent::UserPasswordReset {
+                user_id: target,
+                actor,
+                at: now,
+            })
+            .await?;
+        Ok(())
+    }
+
     /// Looks up a user by id, returning `None` if it does not exist.
     ///
     /// # Errors
@@ -347,12 +426,12 @@ impl UserService {
         Ok(self.users.find_by_email(email).await?)
     }
 
-    /// Lists active users with pagination.
+    /// Lists active users with pagination; `q` filters by name/email substring.
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
-    pub async fn list_active(&self, limit: u32, offset: u32) -> Result<Vec<User>> {
-        Ok(self.users.list_active(limit, offset).await?)
+    pub async fn list_active(&self, limit: u32, offset: u32, q: Option<&str>) -> Result<Vec<User>> {
+        Ok(self.users.list_active(limit, offset, q).await?)
     }
 }
 

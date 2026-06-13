@@ -23,6 +23,23 @@ pub struct Config {
     pub upload_grace: Duration,
     /// How often the orphan-upload sweep runs.
     pub upload_sweep_interval: StdDuration,
+    /// Resolved tickets older than this are auto-closed (the reopen window).
+    pub ticket_autoclose_window: Duration,
+    /// How often the ticket auto-close sweep runs.
+    pub ticket_autoclose_interval: StdDuration,
+    /// When false (the dev default) emails are logged, not sent, and no SMTP
+    /// settings are needed.
+    pub email_enabled: bool,
+    pub smtp_host: Option<String>,
+    pub smtp_port: u16,
+    pub smtp_username: Option<String>,
+    pub smtp_password: Option<String>,
+    /// From address; required when email is enabled.
+    pub smtp_from: Option<String>,
+    /// `starttls` (default) or `none` for plain in-network relays.
+    pub smtp_tls: String,
+    /// Public frontend origin used for the links inside emails.
+    pub portal_base_url: String,
 }
 
 pub fn from_env() -> anyhow::Result<Config> {
@@ -44,6 +61,29 @@ pub fn from_env() -> anyhow::Result<Config> {
     let upload_sweep_interval_hours: u64 = optional("UPLOAD_SWEEP_INTERVAL_HOURS", "6")
         .parse()
         .context("invalid UPLOAD_SWEEP_INTERVAL_HOURS")?;
+    // Default mirrors the domain's 7-day reopen window (Ticket::reopen).
+    let ticket_autoclose_days: i64 = optional("TICKET_AUTOCLOSE_DAYS", "7")
+        .parse()
+        .context("invalid TICKET_AUTOCLOSE_DAYS")?;
+    let ticket_autoclose_interval_hours: u64 = optional("TICKET_AUTOCLOSE_INTERVAL_HOURS", "1")
+        .parse()
+        .context("invalid TICKET_AUTOCLOSE_INTERVAL_HOURS")?;
+
+    let email_enabled: bool = optional("EMAIL_ENABLED", "false")
+        .parse()
+        .context("invalid EMAIL_ENABLED (expected true/false)")?;
+    let smtp_host = std::env::var("SMTP_HOST").ok().filter(|s| !s.is_empty());
+    let smtp_from = std::env::var("SMTP_FROM").ok().filter(|s| !s.is_empty());
+    let smtp_tls = optional("SMTP_TLS", "starttls");
+    if !matches!(smtp_tls.as_str(), "starttls" | "none") {
+        anyhow::bail!("invalid SMTP_TLS (expected starttls or none)");
+    }
+    if email_enabled && smtp_host.is_none() {
+        anyhow::bail!("EMAIL_ENABLED=true requires SMTP_HOST");
+    }
+    if email_enabled && smtp_from.is_none() {
+        anyhow::bail!("EMAIL_ENABLED=true requires SMTP_FROM");
+    }
 
     Ok(Config {
         database_url: required("DATABASE_URL")?,
@@ -59,6 +99,22 @@ pub fn from_env() -> anyhow::Result<Config> {
         cleanup_interval: StdDuration::from_secs(cleanup_interval_hours * 3600),
         upload_grace: Duration::hours(upload_grace_hours),
         upload_sweep_interval: StdDuration::from_secs(upload_sweep_interval_hours * 3600),
+        ticket_autoclose_window: Duration::days(ticket_autoclose_days),
+        ticket_autoclose_interval: StdDuration::from_secs(ticket_autoclose_interval_hours * 3600),
+        email_enabled,
+        smtp_host,
+        smtp_port: optional("SMTP_PORT", "587")
+            .parse()
+            .context("invalid SMTP_PORT")?,
+        smtp_username: std::env::var("SMTP_USERNAME")
+            .ok()
+            .filter(|s| !s.is_empty()),
+        smtp_password: std::env::var("SMTP_PASSWORD")
+            .ok()
+            .filter(|s| !s.is_empty()),
+        smtp_from,
+        smtp_tls,
+        portal_base_url: optional("PORTAL_BASE_URL", "http://localhost:8081"),
     })
 }
 

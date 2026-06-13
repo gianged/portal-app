@@ -19,6 +19,9 @@ pub struct Config {
     pub storage_public_base: String,
     pub server_addr: SocketAddr,
     pub jwt_secret: String,
+    /// HMAC key for presigned file-download URLs — deliberately distinct from
+    /// `jwt_secret` so the two credentials can rotate independently.
+    pub storage_signing_secret: String,
     pub session_ttl_secs: u64,
     /// `Secure` attribute on the session cookie. Defaults to `true`; set
     /// `COOKIE_SECURE=false` for plain-HTTP local development.
@@ -40,6 +43,22 @@ pub fn from_env() -> anyhow::Result<Config> {
     let server_addr: SocketAddr = format!("{host}:{port}")
         .parse()
         .with_context(|| format!("invalid SERVER_HOST/SERVER_PORT: {host}:{port}"))?;
+
+    // Without a bearer token the OpenFGA API accepts unauthenticated writes to
+    // the entire authorization graph, so its absence must be an explicit,
+    // dev-only opt-in rather than a silent default.
+    let openfga_bearer_token = std::env::var("OPENFGA_BEARER_TOKEN")
+        .ok()
+        .filter(|s| !s.is_empty());
+    let openfga_allow_no_auth: bool = optional("OPENFGA_ALLOW_NO_AUTH", "false")
+        .parse()
+        .context("invalid OPENFGA_ALLOW_NO_AUTH (expected true/false)")?;
+    if openfga_bearer_token.is_none() && !openfga_allow_no_auth {
+        anyhow::bail!(
+            "OPENFGA_BEARER_TOKEN is required (or set OPENFGA_ALLOW_NO_AUTH=true for local dev \
+             where OpenFGA runs without authn)"
+        );
+    }
 
     let scylla_hosts = optional("SCYLLA_HOSTS", "127.0.0.1:9042")
         .split(',')
@@ -71,13 +90,12 @@ pub fn from_env() -> anyhow::Result<Config> {
             "infra/openfga/authorization-model.json",
         )
         .into(),
-        openfga_bearer_token: std::env::var("OPENFGA_BEARER_TOKEN")
-            .ok()
-            .filter(|s| !s.is_empty()),
+        openfga_bearer_token,
         storage_root: optional("STORAGE_ROOT", "./storage/uploads").into(),
         storage_public_base: optional("STORAGE_PUBLIC_BASE", "http://localhost:8080/api/v1"),
         server_addr,
-        jwt_secret: required("JWT_SECRET")?,
+        jwt_secret: required_secret("JWT_SECRET")?,
+        storage_signing_secret: required_secret("STORAGE_SIGNING_SECRET")?,
         session_ttl_secs: session_ttl_hours * 3600,
         cookie_secure: optional("COOKIE_SECURE", "true")
             .parse()
@@ -97,6 +115,20 @@ pub fn from_env() -> anyhow::Result<Config> {
 
 fn required(key: &str) -> anyhow::Result<String> {
     std::env::var(key).with_context(|| format!("missing required env var {key}"))
+}
+
+/// [`required`] for secrets: rejects values short enough to brute-force and the
+/// `.env.example` placeholders, so a copied example file fails fast instead of
+/// shipping a publicly-known signing key.
+fn required_secret(key: &str) -> anyhow::Result<String> {
+    let value = required(key)?;
+    if value.len() < 32 || value.starts_with("change-me") {
+        anyhow::bail!(
+            "{key} must be a random secret of at least 32 bytes — generate one with \
+             `openssl rand -hex 32`"
+        );
+    }
+    Ok(value)
 }
 
 fn optional(key: &str, default: &str) -> String {

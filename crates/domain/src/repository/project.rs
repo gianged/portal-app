@@ -10,9 +10,11 @@ use crate::{
 pub trait ProjectRepository: Send + Sync {
     async fn find_by_id(&self, id: ProjectId) -> Result<Option<Project>, RepositoryError>;
 
+    /// `q` is a case-insensitive substring filter on the project name.
     async fn list_for_owner_group(
         &self,
         group_id: GroupId,
+        q: Option<&str>,
     ) -> Result<Vec<Project>, RepositoryError>;
 
     async fn list_for_collaborator_group(

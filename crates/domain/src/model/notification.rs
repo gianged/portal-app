@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::ids::{
-    ChannelId, MessageId, NotificationId, ProjectId, ProjectInviteId, RequestId, TicketId, UserId,
+    ChannelId, CommentId, MessageId, NotificationId, ProjectId, ProjectInviteId, RequestId,
+    TicketId, UserId,
 };
 
 use super::{project::ProjectInviteStatus, request::RequestStatus, ticket::TicketStatus};
@@ -59,6 +60,14 @@ pub enum NotificationPayload {
     TicketRaised {
         ticket_id: TicketId,
     },
+    RequestComment {
+        request_id: RequestId,
+        comment_id: CommentId,
+    },
+    TicketComment {
+        ticket_id: TicketId,
+        comment_id: CommentId,
+    },
     System {
         message: String,
     },
@@ -79,29 +88,36 @@ pub enum NotificationKind {
     TicketStatusChange,
     ProjectInviteResponse,
     TicketRaised,
+    RequestComment,
+    TicketComment,
     System,
+}
+
+impl NotificationPayload {
+    #[must_use]
+    pub const fn kind(&self) -> NotificationKind {
+        match self {
+            Self::Announcement { .. } => NotificationKind::Announcement,
+            Self::Mention { .. } => NotificationKind::Mention,
+            Self::TicketUrgent { .. } => NotificationKind::TicketUrgent,
+            Self::RequestAssigned { .. } => NotificationKind::RequestAssigned,
+            Self::RequestStatusChange { .. } => NotificationKind::RequestStatusChange,
+            Self::ProjectInvite { .. } => NotificationKind::ProjectInvite,
+            Self::TicketAssigned { .. } => NotificationKind::TicketAssigned,
+            Self::TicketStatusChange { .. } => NotificationKind::TicketStatusChange,
+            Self::ProjectInviteResponse { .. } => NotificationKind::ProjectInviteResponse,
+            Self::TicketRaised { .. } => NotificationKind::TicketRaised,
+            Self::RequestComment { .. } => NotificationKind::RequestComment,
+            Self::TicketComment { .. } => NotificationKind::TicketComment,
+            Self::System { .. } => NotificationKind::System,
+        }
+    }
 }
 
 impl Notification {
     #[must_use]
     pub const fn kind(&self) -> NotificationKind {
-        match self.payload {
-            NotificationPayload::Announcement { .. } => NotificationKind::Announcement,
-            NotificationPayload::Mention { .. } => NotificationKind::Mention,
-            NotificationPayload::TicketUrgent { .. } => NotificationKind::TicketUrgent,
-            NotificationPayload::RequestAssigned { .. } => NotificationKind::RequestAssigned,
-            NotificationPayload::RequestStatusChange { .. } => {
-                NotificationKind::RequestStatusChange
-            }
-            NotificationPayload::ProjectInvite { .. } => NotificationKind::ProjectInvite,
-            NotificationPayload::TicketAssigned { .. } => NotificationKind::TicketAssigned,
-            NotificationPayload::TicketStatusChange { .. } => NotificationKind::TicketStatusChange,
-            NotificationPayload::ProjectInviteResponse { .. } => {
-                NotificationKind::ProjectInviteResponse
-            }
-            NotificationPayload::TicketRaised { .. } => NotificationKind::TicketRaised,
-            NotificationPayload::System { .. } => NotificationKind::System,
-        }
+        self.payload.kind()
     }
 
     #[must_use]

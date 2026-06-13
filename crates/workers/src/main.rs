@@ -5,8 +5,10 @@ mod audit;
 mod bootstrap;
 mod cleanup;
 mod config;
+mod emails;
 mod notifications;
 mod telemetry;
+mod ticket_autoclose;
 mod uploads;
 
 use std::time::Duration;
@@ -44,6 +46,8 @@ async fn run() -> anyhow::Result<()> {
         audit_projector,
         audit_storage,
         maintenance,
+        mailer,
+        email_storage,
     } = bootstrap::build(&cfg).await?;
 
     // Periodic maintenance loops run alongside the queue consumer. Each loop handles and
@@ -56,9 +60,14 @@ async fn run() -> anyhow::Result<()> {
         cfg.cleanup_interval,
     ));
     tokio::spawn(uploads::run(
-        maintenance,
+        maintenance.clone(),
         cfg.upload_grace,
         cfg.upload_sweep_interval,
+    ));
+    tokio::spawn(ticket_autoclose::run(
+        maintenance,
+        cfg.ticket_autoclose_window,
+        cfg.ticket_autoclose_interval,
     ));
 
     // One worker per durable queue the server enqueues. Separate queues keep the
@@ -72,13 +81,20 @@ async fn run() -> anyhow::Result<()> {
         .data(audit_projector)
         .backend(audit_storage)
         .build_fn(audit::handle);
+    let email_worker = WorkerBuilder::new("emails")
+        .data(mailer)
+        .backend(email_storage)
+        .build_fn(emails::handle);
 
-    tracing::info!("workers ready: notification + audit consumers + maintenance loops");
+    tracing::info!(
+        "workers ready: notification + audit + email consumers + maintenance loops (cleanup, uploads, ticket auto-close)"
+    );
     // Guarantees Ctrl-C exits even if the Monitor's graceful shutdown stalls.
     tokio::spawn(force_exit_watchdog());
     Monitor::new()
         .register(notify_worker)
         .register(audit_worker)
+        .register(email_worker)
         .run_with_signal(tokio::signal::ctrl_c())
         .await?;
 

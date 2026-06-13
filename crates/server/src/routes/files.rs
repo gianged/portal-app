@@ -1,11 +1,16 @@
 //! Signed file download, backing attachment + avatar `storage_key`s and the URLs
 //! [`FileStorage::presign_get`] emits.
 //!
-//! Access control is the signed `?exp&sig` query: the handler verifies the HMAC
-//! and expiry, so a valid presigned link works without a session (e.g. an
-//! `<img src>`). The route is mounted under `/api/v1`, so `STORAGE_PUBLIC_BASE`
-//! must include that prefix for presign URLs to resolve. Per-resource checks
-//! (map key -> resource -> viewer) are a future refinement.
+//! Access control is two-factor: the signed `?exp&sig` query (HMAC over
+//! key + expiry + viewer) AND a valid session for the viewer the link was
+//! minted for — the router mounts this behind `require_auth`. The frontend is
+//! same-origin, so the session cookie rides along on `<img src>` and `<a href>`
+//! requests; `STORAGE_PUBLIC_BASE` must therefore share the app origin and
+//! include the `/api/v1` prefix.
+//!
+//! Responses are served defensively: only raster images and PDFs render
+//! inline, everything else (including SVG, which can carry scripts) downloads
+//! as an attachment with a generic content type.
 
 use axum::{
     Router,
@@ -24,6 +29,7 @@ use domain::ports::file_storage::FileStorage;
 use crate::{
     app::AppState,
     error::{AppError, AuthError},
+    extractors::auth_user::AuthUser,
 };
 
 pub fn router() -> Router<AppState> {
@@ -35,19 +41,24 @@ pub fn router() -> Router<AppState> {
 struct SignedParams {
     /// Unix-seconds expiry embedded at sign time.
     exp: i64,
-    /// Lowercase-hex HMAC-SHA256 over `key|exp`.
+    /// Lowercase-hex HMAC-SHA256 over `key|exp|user`.
     sig: String,
 }
 
 async fn download(
     State(state): State<AppState>,
+    auth: AuthUser,
     Path(key): Path<String>,
     Query(params): Query<SignedParams>,
 ) -> Result<Response, AppError> {
-    if !state
-        .signed_url
-        .verify(&key, params.exp, &params.sig, OffsetDateTime::now_utc())
-    {
+    // Signature must be minted for the authenticated caller - a forwarded link fails here before expiry.
+    if !state.signed_url.verify_for(
+        &key,
+        auth.user_id,
+        params.exp,
+        &params.sig,
+        OffsetDateTime::now_utc(),
+    ) {
         return Err(AppError::Auth(AuthError::Invalid));
     }
 
@@ -56,9 +67,25 @@ async fn download(
         other @ StorageError::Backend(_) => AppError::Domain(application::Error::Storage(other)),
     })?;
 
+    let (mime, inline) = guess_mime(&key);
+    let disposition = if inline {
+        HeaderValue::from_static("inline")
+    } else {
+        attachment_disposition(&key)
+    };
     Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, guess_mime(&key))
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::CONTENT_DISPOSITION, disposition)
+        .header(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        )
+        // Sandbox strips script execution + same-origin even if a doc type slips through; overrides the API-wide CSP.
+        .header(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static("sandbox"),
+        )
         .header(
             header::CACHE_CONTROL,
             HeaderValue::from_static("private, max-age=300"),
@@ -67,24 +94,44 @@ async fn download(
         .map_err(|e| AppError::Validation(format!("failed to build file response: {e}")))
 }
 
-/// Storage drops the content type on write, so infer a sensible one from the
-/// key's extension for inline rendering (images/PDFs); default to a download.
-fn guess_mime(key: &str) -> HeaderValue {
+/// Storage drops the content type on write, so infer one from the key's
+/// extension. Returns `(mime, inline)`: only types that cannot execute script
+/// render inline; SVG and anything unknown are served as opaque downloads.
+fn guess_mime(key: &str) -> (HeaderValue, bool) {
     let ext = key
         .rsplit('.')
         .next()
         .unwrap_or_default()
         .to_ascii_lowercase();
-    let mime = match ext.as_str() {
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "svg" => "image/svg+xml",
-        "pdf" => "application/pdf",
-        "txt" => "text/plain; charset=utf-8",
-        "json" => "application/json",
-        _ => "application/octet-stream",
+    let (mime, inline) = match ext.as_str() {
+        "png" => ("image/png", true),
+        "jpg" | "jpeg" => ("image/jpeg", true),
+        "gif" => ("image/gif", true),
+        "webp" => ("image/webp", true),
+        "pdf" => ("application/pdf", true),
+        "txt" => ("text/plain; charset=utf-8", false),
+        "json" => ("application/json", false),
+        // SVG deliberately not image/svg+xml: inline SVG executes scripts.
+        _ => ("application/octet-stream", false),
     };
-    HeaderValue::from_static(mime)
+    (HeaderValue::from_static(mime), inline)
+}
+
+/// `attachment; filename="…"` from the key's last segment, with characters
+/// that could break the header quoting stripped.
+fn attachment_disposition(key: &str) -> HeaderValue {
+    let name: String = key
+        .rsplit('/')
+        .next()
+        .unwrap_or("download")
+        .chars()
+        .filter(|c| !c.is_control() && *c != '"' && *c != '\\')
+        .collect();
+    let name = if name.is_empty() {
+        "download".to_owned()
+    } else {
+        name
+    };
+    HeaderValue::from_str(&format!("attachment; filename=\"{name}\""))
+        .unwrap_or_else(|_| HeaderValue::from_static("attachment"))
 }

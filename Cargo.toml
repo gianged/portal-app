@@ -28,9 +28,13 @@ hmac = "0.13"
 sha2 = "0.11"
 axum = { version = "0.8", features = ["ws", "macros", "multipart"] }
 axum-extra = { version = "0.12", features = ["cookie"] }
+# The rust_crypto backend is all-or-nothing (the provider module is gated on
+# the meta-feature), so the unused rsa/ecdsa/eddsa algorithms ride along with
+# the HS256 we actually use. The rsa advisory RUSTSEC-2023-0071 is unexploitable
+# here because we only sign/verify HS256, never RSA.
 jsonwebtoken = { version = "10", default-features = false, features = ["hmac", "rust_crypto"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "cors", "limit"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "limit", "set-header"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
 redis = { version = "1", features = ["tokio-comp", "connection-manager"] }
 scylla = { version = "1", features = ["time-03", "rustls-023"] }
@@ -41,6 +45,8 @@ dotenvy = "0.15"
 # workers
 apalis = "0.7"
 apalis-redis = "0.7"
+# tokio1-rustls-tls selects the rustls backend; never native-tls/openssl.
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "hostname", "pool", "tokio1", "tokio1-rustls-tls"] }
 
 # frontend
 leptos = { version = "0.8", features = ["csr"] }

@@ -1,5 +1,7 @@
 pub mod audit;
 pub mod chat;
+pub mod chat_attachment;
+pub mod comment;
 pub mod group;
 pub mod notification;
 pub mod project;
@@ -9,6 +11,8 @@ pub mod user;
 
 pub use audit::AuditRepository;
 pub use chat::ChatRepository;
+pub use chat_attachment::ChatAttachmentRepository;
+pub use comment::CommentRepository;
 pub use group::GroupRepository;
 pub use notification::NotificationRepository;
 pub use project::ProjectRepository;

@@ -1,5 +1,7 @@
 use crate::{
-    dto::user::{CreateUserRequest, UpdateProfileRequest},
+    dto::user::{
+        ChangePasswordRequest, CreateUserRequest, ResetPasswordRequest, UpdateProfileRequest,
+    },
     errors::SharedError,
     validation::common::{
         NAME_MAX, NAME_MIN, PASSWORD_MAX, PASSWORD_MIN, PHONE_MAX, TIMEZONE_MAX, len_range,
@@ -109,6 +111,27 @@ pub fn validate_create_user(req: &CreateUserRequest) -> Result<(), SharedError> 
     }
     validate_timezone(&req.timezone)?;
     Ok(())
+}
+
+/// Composite check for the change-password form.
+///
+/// # Errors
+///
+/// Returns [`SharedError::Validation`] when the current password is empty or
+/// the new password fails [`validate_password`].
+pub fn validate_change_password(req: &ChangePasswordRequest) -> Result<(), SharedError> {
+    non_empty("Current password", &req.current_password)?;
+    validate_password(&req.new_password)
+}
+
+/// Check for the HR reset-password form.
+///
+/// # Errors
+///
+/// Returns [`SharedError::Validation`] when the new password fails
+/// [`validate_password`].
+pub fn validate_reset_password(req: &ResetPasswordRequest) -> Result<(), SharedError> {
+    validate_password(&req.new_password)
 }
 
 /// Composite check for the edit-profile form; validates only present fields.

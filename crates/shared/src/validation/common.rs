@@ -12,6 +12,15 @@ pub const PHONE_MAX: usize = 32;
 pub const TIMEZONE_MAX: usize = 64;
 pub const PASSWORD_MIN: usize = 8;
 pub const PASSWORD_MAX: usize = 128;
+// Collection caps for client-supplied lists — otherwise a sub-limit JSON body
+// can still carry tens of thousands of entries.
+pub const MENTIONS_MAX: usize = 20;
+// Mirrored (deliberately, not shared — `application` cannot depend on this
+// crate) by `ChatService::MAX_MESSAGE_ATTACHMENTS`.
+pub const ATTACHMENT_KEYS_MAX: usize = 10;
+pub const STORAGE_KEY_MAX: usize = 512;
+pub const NOTIFICATION_BATCH_MAX: usize = 100;
+pub const COMMENT_BODY_MAX: usize = 4_000;
 
 /// Rejects a value that is empty after trimming.
 ///
@@ -34,6 +43,20 @@ pub fn max_len(field: &str, value: &str, max: usize) -> Result<(), SharedError> 
     if value.chars().count() > max {
         return Err(SharedError::Validation(format!(
             "{field} must be at most {max} characters"
+        )));
+    }
+    Ok(())
+}
+
+/// Rejects a collection holding more than `max` items.
+///
+/// # Errors
+///
+/// Returns [`SharedError::Validation`] when `len` exceeds `max`.
+pub fn max_items(field: &str, len: usize, max: usize) -> Result<(), SharedError> {
+    if len > max {
+        return Err(SharedError::Validation(format!(
+            "{field} must have at most {max} items"
         )));
     }
     Ok(())

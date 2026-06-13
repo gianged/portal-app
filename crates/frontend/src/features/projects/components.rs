@@ -16,6 +16,7 @@ use shared::dto::project::{
 use shared::dto::request::RequestDto;
 use shared::validation::project::{validate_project_description, validate_project_name};
 
+use crate::features::audit::components::{AuditTrailPanel, TrailKind};
 use crate::features::groups::api as groups_api;
 use crate::features::projects::api;
 use crate::features::requests::api as requests_api;
@@ -34,6 +35,7 @@ use crate::primitives::textarea::Textarea;
 use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
 use crate::theme::{class, color, space, typography};
+use crate::util::debounce::debounced;
 use crate::util::format::project_status_variant;
 use crate::util::load::{Loadable, load, load_error, note};
 
@@ -49,6 +51,8 @@ pub fn ProjectsIndex() -> impl IntoView {
     let invites: Loadable<Vec<ProjectInviteDto>> = RwSignal::new(None);
     let reload = RwSignal::new(0u32);
     let create_open = RwSignal::new(false);
+    let search = RwSignal::new(String::new());
+    let dq = debounced(search.into(), 300);
 
     // Auto-select the caller's own group once the directory loads.
     Effect::new(move |_| {
@@ -69,8 +73,12 @@ pub fn ProjectsIndex() -> impl IntoView {
 
     Effect::new(move |_| {
         let _ = reload.get();
+        let term = dq.get().trim().to_owned();
         if let Some(g) = group.get() {
-            load(projects, api::list_for_owner_group(g));
+            load(
+                projects,
+                api::list_for_owner_group(g, (!term.is_empty()).then_some(term)),
+            );
             load(invites, api::list_invites_for_group(g));
         }
     });
@@ -82,6 +90,7 @@ pub fn ProjectsIndex() -> impl IntoView {
     let created = Callback::new(move |()| reload.update(|n| *n += 1));
     let responded = Callback::new(move |()| reload.update(|n| *n += 1));
     let select_wrap = class("width: 260px;");
+    let search_wrap = class("width: 220px;");
 
     view! {
         <Stack gap=Gap::Lg>
@@ -97,9 +106,14 @@ pub fn ProjectsIndex() -> impl IntoView {
                         })}
                     </Select>
                 </div>
-                <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_create>
-                    <Icon name=IconName::Plus size=14 /> " New project"
-                </Button>
+                <Cluster gap=Gap::Sm>
+                    <div class=search_wrap>
+                        <Input value=search on_input=Callback::new(move |v| search.set(v)) placeholder="Search projects…" />
+                    </div>
+                    <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_create>
+                        <Icon name=IconName::Plus size=14 /> " New project"
+                    </Button>
+                </Cluster>
             </Cluster>
 
             <InvitesInbox invites=invites on_responded=responded />
@@ -436,6 +450,11 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                     }.into_any()
                 }
             }}
+            <AuditTrailPanel
+                id=Signal::derive(move || id.get().map(|p| p.0))
+                kind=TrailKind::Project
+                refresh=reload
+            />
             <InviteGroupDialog open=invite_open id=id on_invited=invited />
         </Stack>
     }

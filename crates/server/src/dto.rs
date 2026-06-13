@@ -12,6 +12,7 @@
 
 mod audit;
 mod chat;
+mod comment;
 mod group;
 mod notification;
 mod project;
@@ -22,9 +23,10 @@ mod user;
 pub use self::{
     audit::{audit_action_dto, audit_log_dto},
     chat::{
-        announcement_dto, channel_dto, channel_kind_dto, channel_summary_dto, message_created_at,
-        message_dto, post_announcement_command, post_message_command,
+        announcement_dto, channel_dto, channel_kind_dto, channel_summary_dto, chat_attachment_dto,
+        message_created_at, message_dto, post_announcement_command, post_message_command,
     },
+    comment::comment_dto,
     group::{
         add_membership_command, create_group_command, group_dto, group_kind_domain, group_kind_dto,
         group_role_domain, group_role_dto, group_summary_dto, membership_dto,
@@ -79,6 +81,8 @@ id_map!(request_attachment_id, RequestAttachmentId);
 id_map!(ticket_id, TicketId);
 id_map!(channel_id, ChannelId);
 id_map!(message_id, MessageId);
+id_map!(chat_attachment_id, ChatAttachmentId);
+id_map!(comment_id, CommentId);
 id_map!(notification_id, NotificationId);
 id_map!(audit_log_id, AuditLogId);
 

@@ -11,9 +11,12 @@ use uuid::Uuid;
 
 use domain::ids::UserId;
 use shared::dto::user::{
-    CreateUserRequest, UpdateProfileRequest, UserDto, UserProfileDto, UserRole,
+    CreateUserRequest, ResetPasswordRequest, UpdateProfileRequest, UserDto, UserProfileDto,
+    UserRole,
 };
-use shared::validation::user::{validate_create_user, validate_update_profile};
+use shared::validation::user::{
+    validate_create_user, validate_reset_password, validate_update_profile,
+};
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
 
@@ -23,12 +26,15 @@ pub fn router() -> Router<AppState> {
         .route("/users/{id}", get(get_one).patch(update))
         .route("/users/{id}/deactivate", post(deactivate))
         .route("/users/{id}/reactivate", post(reactivate))
+        .route("/users/{id}/reset-password", post(reset_password))
 }
 
 #[derive(Deserialize)]
 struct ListQuery {
     limit: Option<u32>,
     offset: Option<u32>,
+    /// Substring search on name/email.
+    q: Option<String>,
 }
 
 async fn create(
@@ -51,7 +57,11 @@ async fn list(
 ) -> Result<Json<Vec<UserDto>>, AppError> {
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
     let offset = q.offset.unwrap_or(0);
-    let users = state.user.list_active(limit, offset).await?;
+    let search = crate::routes::norm_q(q.q);
+    let users = state
+        .user
+        .list_active(limit, offset, search.as_deref())
+        .await?;
     let roles = resolve::role_map(&state.group, &users).await?;
     let out = users
         .iter()
@@ -103,4 +113,19 @@ async fn reactivate(
 ) -> Result<Json<UserProfileDto>, AppError> {
     let user = state.user.reactivate_user(auth.user_id, UserId(id)).await?;
     Ok(Json(dto::user_profile_dto(&user)))
+}
+
+/// HR sets a temporary password for the target user; their sessions die.
+async fn reset_password(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<ResetPasswordRequest>,
+) -> Result<StatusCode, AppError> {
+    validate_reset_password(&body).map_err(|e| AppError::Validation(e.to_string()))?;
+    state
+        .user
+        .admin_reset_password(auth.user_id, UserId(id), body.new_password)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }

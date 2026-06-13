@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO project.request_comments\n                 (id, request_id, author_user_id, body, edited_at, created_at)\n               VALUES ($1, $2, $3, $4, $5, $6)\n               ON CONFLICT (id) DO UPDATE SET\n                 body      = EXCLUDED.body,\n                 edited_at = EXCLUDED.edited_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "89472df6e3d59c00649fe59d142d37c5cec9c68aa35c775489dfc773e23cf909"
+}

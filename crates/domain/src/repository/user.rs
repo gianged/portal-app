@@ -8,7 +8,14 @@ pub trait UserRepository: Send + Sync {
 
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, RepositoryError>;
 
-    async fn list_active(&self, limit: u32, offset: u32) -> Result<Vec<User>, RepositoryError>;
+    /// `q` is a case-insensitive substring filter on name/email; `None` lists
+    /// everyone.
+    async fn list_active(
+        &self,
+        limit: u32,
+        offset: u32,
+        q: Option<&str>,
+    ) -> Result<Vec<User>, RepositoryError>;
 
     async fn save(&self, user: &User) -> Result<(), RepositoryError>;
 

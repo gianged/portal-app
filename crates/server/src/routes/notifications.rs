@@ -10,7 +10,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use domain::ids::NotificationId;
-use shared::dto::notification::{MarkReadRequest, NotificationDto};
+use shared::{
+    dto::notification::{MarkReadRequest, NotificationDto},
+    validation::common::{NOTIFICATION_BATCH_MAX, max_items},
+};
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser};
 
@@ -59,6 +62,12 @@ async fn mark_read(
     auth: AuthUser,
     Json(body): Json<MarkReadRequest>,
 ) -> Result<StatusCode, AppError> {
+    max_items(
+        "Notification ids",
+        body.notification_ids.len(),
+        NOTIFICATION_BATCH_MAX,
+    )
+    .map_err(|e| AppError::Validation(e.to_string()))?;
     let ids: Vec<NotificationId> = if body.notification_ids.is_empty() {
         state
             .notification

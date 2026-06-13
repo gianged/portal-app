@@ -32,6 +32,8 @@ $INFRA exec -T scylla cqlsh < infra/scylla/schema.cql
 
 # 4. OpenFGA daemon. The server resolves (get-or-creates) the "portal" store and
 #    uploads the authorization model on first boot, so there is no store-init step.
+#    The Postgres schema is the full infra/postgres/10-init.sql, applied by initdb
+#    in step 1 on the empty volume -- there is no separate migration step.
 $INFRA up -d openfga
 
 echo "[init] done. Stores up, OpenFGA migrated and running; the server initialises the OpenFGA store on first boot."

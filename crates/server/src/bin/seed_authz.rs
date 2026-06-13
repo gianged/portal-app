@@ -1,16 +1,16 @@
-//! Materialises OpenFGA relationship tuples from the seeded Postgres org graph.
+//! Materialises `OpenFGA` relationship tuples from the seeded Postgres org graph.
 //!
 //! `infra/seed/demo-seed.sql` writes rows straight into Postgres, bypassing the
 //! application services that would normally emit the matching authorization
 //! tuples. This one-shot tool reads that org graph back and re-issues the same
 //! grants through [`application::permissions::Permissions`], so resource reads
-//! (projects, tickets, the Director "see-everything" view) resolve in OpenFGA.
+//! (projects, tickets, the Director "see-everything" view) resolve in `OpenFGA`.
 //!
-//! Only Postgres + OpenFGA are touched — no Scylla/Redis — so it runs even when
+//! Only Postgres + `OpenFGA` are touched — no Scylla/Redis — so it runs even when
 //! a full server boot is unavailable. Run via `cargo make seed` (after the SQL)
 //! or directly: `cargo run --bin seed_authz`.
 //!
-//! OpenFGA rejects re-writing a tuple that already exists, so a re-run against a
+//! `OpenFGA` rejects re-writing a tuple that already exists, so a re-run against a
 //! populated store logs per-tuple warnings and is otherwise a no-op; for a
 //! guaranteed-clean run reset the store first (`down -v` + `cargo make bootstrap`).
 
@@ -125,7 +125,7 @@ async fn main() -> Result<()> {
         // 4. Projects owned by this group -> project#owner_group + project#company,
         //    plus each collaborator group -> project#collaborator_group.
         let owned = projects
-            .list_for_owner_group(group.id)
+            .list_for_owner_group(group.id, None)
             .await
             .with_context(|| format!("listing projects for {}", group.name))?;
         for project in &owned {
@@ -155,7 +155,7 @@ async fn main() -> Result<()> {
     let mut seen: HashSet<TicketId> = HashSet::new();
     for user in &active_users {
         let raised = tickets
-            .list_for_requester(user.id)
+            .list_for_requester(user.id, None)
             .await
             .with_context(|| format!("listing tickets for {}", user.email))?;
         for ticket in raised {
@@ -192,10 +192,10 @@ async fn load_active_users(users: &dyn UserRepository) -> Result<Vec<domain::mod
     let mut offset = 0u32;
     loop {
         let page = users
-            .list_active(PAGE, offset)
+            .list_active(PAGE, offset, None)
             .await
             .context("listing active users")?;
-        let len = page.len() as u32;
+        let len = u32::try_from(page.len()).unwrap_or(u32::MAX);
         all.extend(page);
         if len < PAGE {
             break;

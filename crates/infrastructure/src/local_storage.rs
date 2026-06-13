@@ -9,6 +9,7 @@ use time::OffsetDateTime;
 
 use domain::{
     error::StorageError,
+    ids::UserId,
     ports::file_storage::{FileStorage, StorageObject},
 };
 
@@ -109,13 +110,18 @@ impl FileStorage for LocalStorage {
         }
     }
 
-    async fn presign_get(&self, key: &str, ttl: Duration) -> Result<String, StorageError> {
-        // Validate the key (same no-escape contract as the other methods), then
-        // emit a signed, time-limited URL through the file-serving endpoint. The
-        // signature binds the key to its expiry; the server verifies it before
-        // serving, so following the link needs no session.
+    async fn presign_get(
+        &self,
+        key: &str,
+        ttl: Duration,
+        user: UserId,
+    ) -> Result<String, StorageError> {
+        // Validate the key, then emit a signed, time-limited URL. The signature binds
+        // key, expiry, and viewer; the server verifies all three plus the session, so a leaked link is useless to others.
         self.resolve(key)?;
-        let (exp, sig) = self.signer.sign(key, ttl, OffsetDateTime::now_utc());
+        let (exp, sig) = self
+            .signer
+            .sign_for(key, user, ttl, OffsetDateTime::now_utc());
         Ok(format!(
             "{}/files/{key}?exp={exp}&sig={sig}",
             self.public_base

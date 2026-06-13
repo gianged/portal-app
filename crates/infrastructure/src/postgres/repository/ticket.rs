@@ -12,7 +12,7 @@ use domain::{
 
 use crate::postgres::{
     enums::{SqlTicketCategory, SqlTicketPriority, SqlTicketStatus},
-    mappers::map_pg_error,
+    mappers::{like_pattern, map_pg_error},
 };
 
 pub struct PgTicketRepo {
@@ -91,10 +91,15 @@ impl TicketRepository for PgTicketRepo {
         .map(|opt| opt.map(Into::into))
     }
 
-    async fn list_open_for_triage(&self, limit: u32) -> Result<Vec<Ticket>, RepositoryError> {
+    async fn list_open_for_triage(
+        &self,
+        limit: u32,
+        q: Option<&str>,
+    ) -> Result<Vec<Ticket>, RepositoryError> {
         // Status set matches idx_tickets_status_priority_open. Priority NULLS LAST
         // pushes un-triaged tickets to the end so triaged-urgent surfaces first;
         // created_at breaks ties for stable ordering.
+        let pattern: Option<String> = q.map(like_pattern);
         let rows = sqlx::query_as!(
             TicketRow,
             r#"SELECT
@@ -113,9 +118,11 @@ impl TicketRepository for PgTicketRepo {
                  updated_at
                FROM ticket.tickets
                WHERE status IN ('open', 'triaged', 'assigned', 'in_progress', 'reopened')
+                 AND ($2::text IS NULL OR title ILIKE $2)
                ORDER BY priority NULLS LAST, created_at
                LIMIT $1"#,
             i64::from(limit),
+            pattern,
         )
         .fetch_all(&self.pool)
         .await
@@ -123,8 +130,13 @@ impl TicketRepository for PgTicketRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
-    async fn list_for_assignee(&self, assignee: UserId) -> Result<Vec<Ticket>, RepositoryError> {
+    async fn list_for_assignee(
+        &self,
+        assignee: UserId,
+        q: Option<&str>,
+    ) -> Result<Vec<Ticket>, RepositoryError> {
         // Matches idx_tickets_assignee_user_id (partial: assignee_user_id IS NOT NULL).
+        let pattern: Option<String> = q.map(like_pattern);
         let rows = sqlx::query_as!(
             TicketRow,
             r#"SELECT
@@ -143,8 +155,10 @@ impl TicketRepository for PgTicketRepo {
                  updated_at
                FROM ticket.tickets
                WHERE assignee_user_id = $1
+                 AND ($2::text IS NULL OR title ILIKE $2)
                ORDER BY created_at DESC"#,
             assignee.0,
+            pattern,
         )
         .fetch_all(&self.pool)
         .await
@@ -152,7 +166,12 @@ impl TicketRepository for PgTicketRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
-    async fn list_for_requester(&self, requester: UserId) -> Result<Vec<Ticket>, RepositoryError> {
+    async fn list_for_requester(
+        &self,
+        requester: UserId,
+        q: Option<&str>,
+    ) -> Result<Vec<Ticket>, RepositoryError> {
+        let pattern: Option<String> = q.map(like_pattern);
         let rows = sqlx::query_as!(
             TicketRow,
             r#"SELECT
@@ -171,8 +190,46 @@ impl TicketRepository for PgTicketRepo {
                  updated_at
                FROM ticket.tickets
                WHERE requester_user_id = $1
+                 AND ($2::text IS NULL OR title ILIKE $2)
                ORDER BY created_at DESC"#,
             requester.0,
+            pattern,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_pg_error)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    async fn list_resolved_before(
+        &self,
+        cutoff: OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<Ticket>, RepositoryError> {
+        // Auto-close work list: resolved tickets whose reopen window has lapsed.
+        let rows = sqlx::query_as!(
+            TicketRow,
+            r#"SELECT
+                 id,
+                 requester_user_id,
+                 assignee_user_id,
+                 title,
+                 description,
+                 status   AS "status: SqlTicketStatus",
+                 priority AS "priority: SqlTicketPriority",
+                 category AS "category: SqlTicketCategory",
+                 triaged_at,
+                 resolved_at,
+                 closed_at,
+                 created_at,
+                 updated_at
+               FROM ticket.tickets
+               WHERE status = 'resolved'
+                 AND resolved_at <= $1
+               ORDER BY resolved_at
+               LIMIT $2"#,
+            cutoff,
+            i64::from(limit),
         )
         .fetch_all(&self.pool)
         .await

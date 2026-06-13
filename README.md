@@ -42,8 +42,7 @@ portal-app/
 │   ├── workers/         Apalis background-job binary.
 │   ├── shared/          DTOs + validation shared by backend and frontend (native + WASM).
 │   └── frontend/        Leptos SPA, built with Trunk to WebAssembly.
-├── infra/               Docker Compose stack, schema files, OpenFGA model.
-├── migrations/          Reserved for incremental SQLx migrations (schema in infra/postgres/).
+├── infra/               Docker Compose stack, schema files (infra/postgres/10-init.sql), OpenFGA model.
 ├── storage/uploads/     Local file uploads (gitignored).
 ├── scripts/             Dev helpers.
 └── e2e/                 Full-stack end-to-end browser tests.
@@ -89,6 +88,26 @@ Background workers run as a separate binary:
 ```bash
 cargo run --bin workers
 ```
+
+### Database schema
+
+`infra/postgres/10-init.sql` is the single source of truth for the relational schema —
+database-first, not ORM-managed. Postgres applies it via the docker entrypoint, but only
+on an **empty** data volume, so schema changes are made in that file and then the dev
+database is reinitialized:
+
+```bash
+# 1. Edit infra/postgres/10-init.sql
+# 2. Wipe the dev volumes and re-apply the schema (also re-bootstraps OpenFGA + Scylla)
+docker compose --env-file .env -f infra/docker-compose.infra.yml down -v
+cargo make bootstrap
+# 3. Regenerate the committed offline query cache against the fresh schema
+cargo make sqlx-prepare
+```
+
+The infrastructure crate uses sqlx compile-time query macros; CI builds with `SQLX_OFFLINE`
+against the committed `.sqlx/` cache, so commit the `.sqlx/` diff together with the schema
+change.
 
 ## Testing
 

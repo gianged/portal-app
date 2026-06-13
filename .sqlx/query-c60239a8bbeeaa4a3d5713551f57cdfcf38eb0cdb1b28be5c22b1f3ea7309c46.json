@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ticket.ticket_comments\n                 (id, ticket_id, author_user_id, body, edited_at, created_at)\n               VALUES ($1, $2, $3, $4, $5, $6)\n               ON CONFLICT (id) DO UPDATE SET\n                 body      = EXCLUDED.body,\n                 edited_at = EXCLUDED.edited_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c60239a8bbeeaa4a3d5713551f57cdfcf38eb0cdb1b28be5c22b1f3ea7309c46"
+}

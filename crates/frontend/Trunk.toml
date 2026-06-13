@@ -1,11 +1,32 @@
 [build]
 target = "index.html"
 release = false
+# Stamp nonce="{{__TRUNK NONCE__}}" onto every inline script Trunk injects
+# (the WASM bootstrap + the dev autoreload). `trunk serve` swaps the placeholder
+# for a fresh per-response nonce; in `trunk build` output the literal placeholder
+# remains and nginx rewrites it (see infra/nginx/nginx.conf).
+create_nonce = true
 
 [serve]
 addresses = ["127.0.0.1"]
 port = 8081
 open = false
+
+# CSP served as a header in dev. `{{NONCE}}` is replaced per response with the
+# same value stamped onto the inline scripts, so the bootstrap can run without
+# 'unsafe-inline'. Mirror this policy in infra/nginx/nginx.conf for prod.
+# style-src keeps 'unsafe-inline' for stylist's runtime <style> injection.
+csp = [
+    "default-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval' 'nonce-{{NONCE}}'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob:",
+    "connect-src 'self' ws: wss:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+]
 
 # Proxy API calls to the backend during dev. The server mounts the API under
 # `/api/v1`; the frontend calls `/api/...`, so the rewrite bridges the version

@@ -1,15 +1,18 @@
 use std::sync::Arc;
 
 use domain::{
-    ids::{ChannelId, MessageId, UserId},
-    model::{Channel, ChannelKind, ChannelMembership, DirectChannel, Message, UserStatus},
-    repository::{ChatRepository, UserRepository},
+    ids::{ChannelId, ChatAttachmentId, MessageId, UserId},
+    model::{
+        Channel, ChannelKind, ChannelMembership, ChatAttachment, DirectChannel, Message, UserStatus,
+    },
+    ports::file_storage::FileStorage,
+    repository::{ChatAttachmentRepository, ChatRepository, UserRepository},
 };
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::{
-    commands::chat::PostMessageCommand,
+    commands::chat::{AddChatAttachmentCommand, PostMessageCommand},
     error::{Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
@@ -18,6 +21,9 @@ use crate::{
 /// Members can delete only their own messages within this window after posting.
 /// Group-channel leaders bypass this grace and can delete anytime.
 const MESSAGE_DELETE_GRACE: Duration = Duration::minutes(15);
+
+/// Max attachments per message; mirrors `shared::validation::common::ATTACHMENT_KEYS_MAX` (cannot import it).
+const MAX_MESSAGE_ATTACHMENTS: usize = 10;
 
 /// A channel-list row enriched with its latest-activity timestamp and an unread
 /// flag (latest message newer than the member's `last_read_at`).
@@ -31,6 +37,8 @@ pub struct ChannelOverview {
 pub struct ChatService {
     chats: Arc<dyn ChatRepository>,
     users: Arc<dyn UserRepository>,
+    attachments: Arc<dyn ChatAttachmentRepository>,
+    storage: Arc<dyn FileStorage>,
     perms: Arc<Permissions>,
     events: Arc<EventBus>,
 }
@@ -40,12 +48,16 @@ impl ChatService {
     pub fn new(
         chats: Arc<dyn ChatRepository>,
         users: Arc<dyn UserRepository>,
+        attachments: Arc<dyn ChatAttachmentRepository>,
+        storage: Arc<dyn FileStorage>,
         perms: Arc<Permissions>,
         events: Arc<EventBus>,
     ) -> Self {
         Self {
             chats,
             users,
+            attachments,
+            storage,
             perms,
             events,
         }
@@ -185,6 +197,23 @@ impl ChatService {
         self.perms
             .require_can_post_in_channel(actor, &channel)
             .await?;
+        // Keys trusted only if the actor uploaded them to this channel.
+        if !cmd.attachment_keys.is_empty() {
+            if cmd.attachment_keys.len() > MAX_MESSAGE_ATTACHMENTS {
+                return Err(Error::Validation("too_many_attachments".into()));
+            }
+            let known = self.attachments.find_by_keys(&cmd.attachment_keys).await?;
+            for key in &cmd.attachment_keys {
+                let valid = known.iter().any(|a| {
+                    a.storage_key == *key
+                        && a.channel_id == cmd.channel_id
+                        && a.uploaded_by_user_id == actor
+                });
+                if !valid {
+                    return Err(Error::Validation("unknown_attachment".into()));
+                }
+            }
+        }
 
         let now = OffsetDateTime::now_utc();
         let message = Message {
@@ -210,6 +239,65 @@ impl ChatService {
             })
             .await?;
         Ok(message)
+    }
+
+    /// Stores a chat upload and its metadata for a channel the actor may post
+    /// in; the returned attachment's `storage_key` goes into a later
+    /// `post_message`'s `attachment_keys`.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or cannot post in the
+    /// channel, `NotFound` if the channel does not exist, `Validation` for an
+    /// oversized payload, or a repository/storage error.
+    pub async fn add_attachment(
+        &self,
+        actor: UserId,
+        channel_id: ChannelId,
+        cmd: AddChatAttachmentCommand,
+    ) -> Result<ChatAttachment> {
+        self.perms.require_active(actor).await?;
+        let channel = self
+            .chats
+            .find_channel(channel_id)
+            .await?
+            .ok_or(Error::NotFound("channel"))?;
+        self.perms
+            .require_can_post_in_channel(actor, &channel)
+            .await?;
+
+        let now = OffsetDateTime::now_utc();
+        let id = ChatAttachmentId(Uuid::now_v7());
+        let storage_key = format!(
+            "chat-attachments/{}/{}/{}",
+            channel_id.0, id.0, cmd.filename
+        );
+        let size_bytes = u64::try_from(cmd.bytes.len())
+            .map_err(|_| Error::Validation("attachment_too_large".into()))?;
+        self.storage
+            .put(&storage_key, &cmd.content_type, cmd.bytes)
+            .await?;
+        let attachment = ChatAttachment {
+            id,
+            channel_id,
+            uploaded_by_user_id: actor,
+            filename: cmd.filename,
+            content_type: cmd.content_type,
+            size_bytes,
+            storage_key,
+            created_at: now,
+        };
+        self.attachments.save(&attachment).await?;
+        Ok(attachment)
+    }
+
+    /// Metadata for a set of attachment keys, for message rendering. No extra
+    /// authz: callers already passed the channel view gate to obtain the
+    /// messages carrying these keys.
+    ///
+    /// # Errors
+    /// Returns a repository error if the datastore is unavailable.
+    pub async fn attachments_by_keys(&self, keys: &[String]) -> Result<Vec<ChatAttachment>> {
+        Ok(self.attachments.find_by_keys(keys).await?)
     }
 
     /// Deletes a message. The sender may delete within the grace window;
@@ -314,6 +402,26 @@ impl ChatService {
             })
             .await?;
         Ok(message)
+    }
+
+    /// Authoritative view check for a channel — identity for direct channels,
+    /// `OpenFGA` for group channels, active-status for the general channel. The
+    /// WebSocket layer calls this to validate and re-validate subscriptions
+    /// instead of caching memberships at connect time.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or cannot view the channel,
+    /// `NotFound` if the channel does not exist, or a repository error if the
+    /// datastore is unavailable.
+    pub async fn ensure_can_view(&self, actor: UserId, channel_id: ChannelId) -> Result<()> {
+        self.perms.require_active(actor).await?;
+        let channel = self
+            .chats
+            .find_channel(channel_id)
+            .await?
+            .ok_or(Error::NotFound("channel"))?;
+        self.perms.require_can_view_channel(actor, &channel).await?;
+        Ok(())
     }
 
     /// Marks the channel read for the actor up to the current time.

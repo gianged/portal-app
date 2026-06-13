@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::ids::{ChannelId, GroupId, MessageId, UserId};
+use crate::ids::{ChannelId, ChatAttachmentId, GroupId, MessageId, UserId};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -83,6 +83,20 @@ impl Channel {
             Self::Direct(c) => c.created_at,
         }
     }
+}
+
+/// Postgres metadata for a chat upload (the Scylla row keeps only `attachment_keys`);
+/// mirrors [`super::request::RequestAttachment`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatAttachment {
+    pub id: ChatAttachmentId,
+    pub channel_id: ChannelId,
+    pub uploaded_by_user_id: UserId,
+    pub filename: String,
+    pub content_type: String,
+    pub size_bytes: u64,
+    pub storage_key: String,
+    pub created_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
