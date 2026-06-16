@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 project_id,\n                 creator_user_id,\n                 assignee_user_id,\n                 title,\n                 description,\n                 status   AS \"status: SqlRequestStatus\",\n                 priority AS \"priority: SqlRequestPriority\",\n                 due_at,\n                 created_at,\n                 updated_at\n               FROM project.requests\n               WHERE project_id = $1\n                 AND ($2::project.request_status IS NULL OR status = $2)\n                 AND ($3::text IS NULL OR title ILIKE $3)\n               ORDER BY created_at DESC",
+  "query": "SELECT\n                 id,\n                 project_id,\n                 creator_user_id,\n                 assignee_user_id,\n                 title,\n                 description,\n                 status   AS \"status: SqlRequestStatus\",\n                 priority AS \"priority: SqlRequestPriority\",\n                 due_at,\n                 completed_at,\n                 created_at,\n                 updated_at\n               FROM project.requests\n               WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -131,6 +131,17 @@
       },
       {
         "ordinal": 9,
+        "name": "completed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "project.requests",
+            "name": "completed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -141,7 +152,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -154,24 +165,7 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        {
-          "Custom": {
-            "name": "project.request_status",
-            "kind": {
-              "Enum": [
-                "draft",
-                "submitted",
-                "assigned",
-                "in_progress",
-                "review",
-                "completed",
-                "cancelled"
-              ]
-            }
-          }
-        },
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -184,9 +178,10 @@
       false,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "b9b8bef051478e1181c772bc36f813a94ff7b6e543ef7eb046d07e842caec431"
+  "hash": "b93d74099ae96deee293a95429afe6005c7358cefa85b29f63b15830994b800f"
 }

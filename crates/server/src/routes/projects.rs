@@ -19,9 +19,11 @@ use domain::{
 use shared::dto::project::{
     ChangeProjectStatusRequest, CreateProjectRequest, InviteGroupRequest, ProjectDetailDto,
     ProjectDto, ProjectInviteDto, ProjectStatus as WireProjectStatus, RespondInviteRequest,
-    UpdateProjectMetadataRequest,
+    SetProjectProgressRequest, UpdateProjectMetadataRequest,
 };
-use shared::validation::project::{validate_project_description, validate_project_name};
+use shared::validation::project::{
+    validate_project_description, validate_project_name, validate_project_progress,
+};
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
 
@@ -30,6 +32,7 @@ pub fn router() -> Router<AppState> {
         .route("/projects", post(create).get(list))
         .route("/projects/{id}", get(detail).patch(update))
         .route("/projects/{id}/status", post(change_status))
+        .route("/projects/{id}/progress", post(set_progress))
         .route("/projects/{id}/invites", post(invite))
         .route(
             "/projects/{id}/collaborators/{group_id}",
@@ -168,6 +171,20 @@ async fn change_status(
             ));
         }
     };
+    Ok(Json(project_dto(&state, &project).await?))
+}
+
+async fn set_progress(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<SetProjectProgressRequest>,
+) -> Result<Json<ProjectDto>, AppError> {
+    validate_project_progress(body.progress).map_err(|e| AppError::Validation(e.to_string()))?;
+    let project = state
+        .project
+        .set_progress(auth.user_id, ProjectId(id), body.progress)
+        .await?;
     Ok(Json(project_dto(&state, &project).await?))
 }
 

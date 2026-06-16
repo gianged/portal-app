@@ -5,8 +5,8 @@ use time::{Duration, OffsetDateTime};
 use domain::{
     ports::file_storage::FileStorage,
     repository::{
-        ChatAttachmentRepository, NotificationRepository, RequestRepository, TicketRepository,
-        UserRepository,
+        ChatAttachmentRepository, NotificationRepository, ReportArchiveRepository,
+        RequestRepository, TicketRepository, UserRepository,
     },
 };
 
@@ -24,11 +24,14 @@ pub struct MaintenanceService {
     tickets: Arc<dyn TicketRepository>,
     chat_attachments: Arc<dyn ChatAttachmentRepository>,
     users: Arc<dyn UserRepository>,
+    reports: Arc<dyn ReportArchiveRepository>,
     storage: Arc<dyn FileStorage>,
     events: Arc<EventBus>,
 }
 
 impl MaintenanceService {
+    // Pure dependency-injection constructor; one Arc per collaborator.
+    #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         notifications: Arc<dyn NotificationRepository>,
@@ -36,6 +39,7 @@ impl MaintenanceService {
         tickets: Arc<dyn TicketRepository>,
         chat_attachments: Arc<dyn ChatAttachmentRepository>,
         users: Arc<dyn UserRepository>,
+        reports: Arc<dyn ReportArchiveRepository>,
         storage: Arc<dyn FileStorage>,
         events: Arc<EventBus>,
     ) -> Self {
@@ -45,6 +49,7 @@ impl MaintenanceService {
             tickets,
             chat_attachments,
             users,
+            reports,
             storage,
             events,
         }
@@ -121,6 +126,8 @@ impl MaintenanceService {
         referenced.extend(self.users.list_avatar_keys().await?);
         // Load-bearing: blocks deletion of in-use chat attachments.
         referenced.extend(self.chat_attachments.list_all_keys().await?);
+        // Generated report PDFs live under STORAGE_ROOT too; keep them.
+        referenced.extend(self.reports.list_all_storage_keys().await?);
 
         let cutoff = now - grace;
         let mut removed = 0_u64;

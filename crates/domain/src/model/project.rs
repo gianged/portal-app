@@ -14,6 +14,11 @@ pub struct Project {
     pub name: String,
     pub description: String,
     pub status: ProjectStatus,
+    /// Completion percentage (0-100), set manually by group leaders. Validated
+    /// at the `shared`/DB boundary; the domain trusts the value it receives.
+    pub progress: u8,
+    /// Set when the project transitions into `Completed`; `None` otherwise.
+    pub completed_at: Option<OffsetDateTime>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -106,6 +111,7 @@ impl Project {
 
     pub fn complete(&mut self, now: OffsetDateTime) -> Result<(), TransitionError> {
         self.status = self.status.try_complete()?;
+        self.completed_at = Some(now);
         self.updated_at = now;
         Ok(())
     }
@@ -114,6 +120,13 @@ impl Project {
         self.status = self.status.try_cancel()?;
         self.updated_at = now;
         Ok(())
+    }
+
+    /// Set the manual completion percentage. Range is enforced at the
+    /// `shared`/DB boundary; here we only record the value and bump `updated_at`.
+    pub fn set_progress(&mut self, progress: u8, now: OffsetDateTime) {
+        self.progress = progress;
+        self.updated_at = now;
     }
 }
 
@@ -284,12 +297,35 @@ mod tests {
             name: "Helios".to_owned(),
             description: String::new(),
             status: ProjectStatus::Planning,
+            progress: 0,
+            completed_at: None,
             created_at: t0,
             updated_at: t0,
         };
         p.activate(t1).unwrap();
         assert_eq!(p.status, ProjectStatus::Active);
         assert_eq!(p.updated_at, t1);
+    }
+
+    #[test]
+    fn complete_sets_completed_at() {
+        let t0 = OffsetDateTime::UNIX_EPOCH;
+        let t1 = t0 + Duration::hours(5);
+        let mut p = Project {
+            id: ProjectId(uuid::Uuid::nil()),
+            owner_group_id: GroupId(uuid::Uuid::nil()),
+            created_by_user_id: UserId(uuid::Uuid::nil()),
+            name: "Helios".to_owned(),
+            description: String::new(),
+            status: ProjectStatus::Active,
+            progress: 80,
+            completed_at: None,
+            created_at: t0,
+            updated_at: t0,
+        };
+        p.complete(t1).unwrap();
+        assert_eq!(p.status, ProjectStatus::Completed);
+        assert_eq!(p.completed_at, Some(t1));
     }
 
     #[test]

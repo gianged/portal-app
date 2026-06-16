@@ -1,0 +1,119 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 g.id   AS \"group_id!\",\n                 g.name AS \"group_name!\",\n                 g.kind AS \"group_kind!: SqlGroupKind\",\n                 COUNT(p.id)                                    AS \"total!\",\n                 COUNT(*) FILTER (WHERE p.status = 'planning')  AS \"planning!\",\n                 COUNT(*) FILTER (WHERE p.status = 'active')    AS \"active!\",\n                 COUNT(*) FILTER (WHERE p.status = 'on_hold')   AS \"on_hold!\",\n                 COUNT(*) FILTER (WHERE p.status = 'completed') AS \"completed!\",\n                 COUNT(*) FILTER (WHERE p.status = 'cancelled') AS \"cancelled!\",\n                 COALESCE(\n                   AVG(p.progress) FILTER (WHERE p.status NOT IN ('completed','cancelled')),\n                   0\n                 )::float8                                      AS \"avg_progress!\",\n                 COUNT(*) FILTER (\n                   WHERE p.status = 'on_hold'\n                      OR (p.status = 'active'\n                          AND p.updated_at < $1::timestamptz - make_interval(days => $2::int))\n                 )                                              AS \"stuck!\"\n               FROM org.groups g\n               LEFT JOIN project.projects p\n                      ON p.owner_group_id = g.id\n                     AND p.created_at < $1::timestamptz\n               GROUP BY g.id\n               ORDER BY g.name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "group_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "org.groups",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "group_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "org.groups",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "group_kind!: SqlGroupKind",
+        "type_info": {
+          "Custom": {
+            "name": "org.group_kind",
+            "kind": {
+              "Enum": [
+                "standard",
+                "it"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "org.groups",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "planning!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "active!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "on_hold!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "completed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "cancelled!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "avg_progress!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "stuck!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "766f0d44fcfcb6688f2a8d535d3c9e5faa1f6dca2c3ab52a169e081f47bbc462"
+}

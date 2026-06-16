@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 owner_group_id,\n                 created_by_user_id,\n                 name,\n                 description,\n                 status AS \"status: SqlProjectStatus\",\n                 created_at,\n                 updated_at\n               FROM project.projects\n               WHERE id = $1",
+  "query": "SELECT\n                 id,\n                 owner_group_id,\n                 created_by_user_id,\n                 name,\n                 description,\n                 status AS \"status: SqlProjectStatus\",\n                 progress,\n                 completed_at,\n                 created_at,\n                 updated_at\n               FROM project.projects\n               WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -84,6 +84,28 @@
       },
       {
         "ordinal": 6,
+        "name": "progress",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "project.projects",
+            "name": "progress"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "completed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "project.projects",
+            "name": "completed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -94,7 +116,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -118,8 +140,10 @@
       false,
       false,
       false,
+      true,
+      false,
       false
     ]
   },
-  "hash": "d1cbbbc4470c7b08cc5ad093038fb55d3c80f1cf5b906f5b9f9352ee85470866"
+  "hash": "bff317aca8dd394ccd316736ee40bff10b4c903ce3f8c12929e43a17a3045989"
 }

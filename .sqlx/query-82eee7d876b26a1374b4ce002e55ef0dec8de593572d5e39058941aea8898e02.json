@@ -1,0 +1,115 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 COUNT(*) FILTER (WHERE t.created_at >= $2 AND t.created_at < $1) AS \"created_in_period!\",\n                 COUNT(*) FILTER (WHERE t.status = 'open')        AS \"open!\",\n                 COUNT(*) FILTER (WHERE t.status = 'triaged')     AS \"triaged!\",\n                 COUNT(*) FILTER (WHERE t.status = 'assigned')    AS \"assigned!\",\n                 COUNT(*) FILTER (WHERE t.status = 'in_progress') AS \"in_progress!\",\n                 COUNT(*) FILTER (WHERE t.status = 'resolved')    AS \"resolved!\",\n                 COUNT(*) FILTER (WHERE t.status = 'closed')      AS \"closed!\",\n                 COUNT(*) FILTER (WHERE t.status = 'reopened')    AS \"reopened!\",\n                 COUNT(*) FILTER (WHERE t.category = 'hardware' AND t.created_at >= $2 AND t.created_at < $1) AS \"cat_hardware!\",\n                 COUNT(*) FILTER (WHERE t.category = 'software' AND t.created_at >= $2 AND t.created_at < $1) AS \"cat_software!\",\n                 COUNT(*) FILTER (WHERE t.category = 'access'   AND t.created_at >= $2 AND t.created_at < $1) AS \"cat_access!\",\n                 COUNT(*) FILTER (WHERE t.category = 'other'    AND t.created_at >= $2 AND t.created_at < $1) AS \"cat_other!\",\n                 COUNT(*) FILTER (WHERE t.resolved_at >= $2 AND t.resolved_at < $1) AS \"resolved_in_period!\",\n                 (AVG(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at)))\n                    FILTER (WHERE t.resolved_at >= $2 AND t.resolved_at < $1))::float8 AS \"avg_resolve_secs?\"\n               FROM ticket.tickets t\n               WHERE t.created_at < $1::timestamptz",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "created_in_period!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "open!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "triaged!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "assigned!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "in_progress!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "resolved!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "closed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "reopened!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "cat_hardware!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "cat_software!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "cat_access!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "cat_other!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "resolved_in_period!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "avg_resolve_secs?",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "82eee7d876b26a1374b4ce002e55ef0dec8de593572d5e39058941aea8898e02"
+}

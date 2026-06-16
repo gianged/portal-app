@@ -147,6 +147,9 @@ impl UserRepository for FakeUsers {
     async fn list_avatar_keys(&self) -> Result<Vec<String>, RepositoryError> {
         Ok(Vec::new())
     }
+    async fn list_with_system_role(&self) -> Result<Vec<User>, RepositoryError> {
+        Ok(Vec::new())
+    }
 }
 
 #[derive(Default)]

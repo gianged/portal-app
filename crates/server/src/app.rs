@@ -17,18 +17,19 @@ use application::{
     service::{
         announcement::AnnouncementService, audit::AuditService, chat::ChatService,
         comment::CommentService, group::GroupService, notification::NotificationService,
-        project::ProjectService, request::RequestService, ticket::TicketService, user::UserService,
+        project::ProjectService, report::ReportService, request::RequestService,
+        ticket::TicketService, user::UserService,
     },
 };
 use domain::{
     ports::{
         file_storage::FileStorage, presence::Presence, rate_limit::RateLimit,
-        token_revocation::TokenRevocation,
+        report_renderer::ReportRenderer, token_revocation::TokenRevocation,
     },
     repository::{
         AuditRepository, ChatAttachmentRepository, ChatRepository, CommentRepository,
-        GroupRepository, NotificationRepository, ProjectRepository, RequestRepository,
-        TicketRepository, UserRepository,
+        GroupRepository, NotificationRepository, ProjectRepository, ReportArchiveRepository,
+        ReportStatsRepository, RequestRepository, TicketRepository, UserRepository,
     },
 };
 use infrastructure::{
@@ -37,9 +38,10 @@ use infrastructure::{
     openfga::{self, OpenFgaAuthzClient},
     postgres::{
         PgAuditRepo, PgChatAttachmentRepo, PgCommentRepo, PgGroupRepo, PgNotificationRepo,
-        PgProjectRepo, PgRequestRepo, PgTicketRepo, PgUserRepo, build_pool,
+        PgProjectRepo, PgReportingRepo, PgRequestRepo, PgTicketRepo, PgUserRepo, build_pool,
     },
     redis::{PresenceStore, RateLimiter, RedisEventPublisher, RedisTokenRevocation},
+    report::PrintPdfReportRenderer,
     scylla::{ScyllaChatRepo, build_session},
     signed_url::SignedUrl,
 };
@@ -64,6 +66,9 @@ pub struct AppState {
     pub comment: Arc<CommentService>,
     pub announcement: Arc<AnnouncementService>,
     pub notification: Arc<NotificationService>,
+    pub report: Arc<ReportService>,
+    // Director/HR gate for the report endpoints (resolved per request).
+    pub perms: Arc<Permissions>,
     // Session-cookie tokens + the real-time pub/sub handle, consumed by the auth
     // middleware and the chat WebSocket respectively.
     pub token: Arc<TokenService>,
@@ -191,6 +196,13 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
     let audit_service = Arc::new(AuditService::new(audit, perms.clone()));
     let storage_port: Arc<dyn FileStorage> = storage.clone();
 
+    // Reporting: one Pg repo serves both the aggregate reads and the archive
+    // writes; the renderer is stateless.
+    let report_repo = Arc::new(PgReportingRepo::new(pool.clone()));
+    let report_stats: Arc<dyn ReportStatsRepository> = report_repo.clone();
+    let report_archive: Arc<dyn ReportArchiveRepository> = report_repo;
+    let report_renderer: Arc<dyn ReportRenderer> = Arc::new(PrintPdfReportRenderer::new());
+
     // Cookie-session tokens and the real-time pub/sub handle (chat WebSocket).
     let token = Arc::new(TokenService::new(
         &cfg.jwt_secret,
@@ -240,7 +252,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             chats.clone(),
             users.clone(),
             chat_attachments,
-            storage_port,
+            storage_port.clone(),
             perms.clone(),
             events.clone(),
         )),
@@ -260,6 +272,14 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             notifications.clone(),
             perms.clone(),
         )),
+        report: Arc::new(ReportService::new(
+            report_stats,
+            report_archive,
+            report_renderer,
+            storage_port.clone(),
+            users.clone(),
+        )),
+        perms: perms.clone(),
         token,
         revocation,
         realtime,
@@ -298,6 +318,7 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::announcements::router())
         .merge(routes::notifications::router())
         .merge(routes::audit::router())
+        .merge(routes::reports::router())
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::middleware::rate_limit::per_user,

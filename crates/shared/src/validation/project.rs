@@ -20,3 +20,16 @@ pub fn validate_project_name(name: &str) -> Result<(), SharedError> {
 pub fn validate_project_description(description: &str) -> Result<(), SharedError> {
     max_len("Project description", description, DESCRIPTION_MAX)
 }
+
+/// # Errors
+///
+/// Returns [`SharedError::Validation`] when `progress` exceeds 100.
+pub fn validate_project_progress(progress: u8) -> Result<(), SharedError> {
+    if progress <= 100 {
+        Ok(())
+    } else {
+        Err(SharedError::Validation(
+            "Progress must be between 0 and 100".to_owned(),
+        ))
+    }
+}

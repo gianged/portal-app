@@ -19,6 +19,7 @@ use crate::features::ui::{section_heading, subtle};
 use crate::primitives::badge::Badge;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
+use crate::primitives::chart::ProgressBar;
 use crate::primitives::cluster::Cluster;
 use crate::primitives::dialog::{Dialog, DialogBody, DialogFooter, DialogHeader};
 use crate::primitives::empty_state::EmptyState;
@@ -151,6 +152,7 @@ fn project_card(p: ProjectDto) -> impl IntoView {
     let desc = p.description.clone();
     let status = p.status;
     let owner = p.owner_group.name.clone();
+    let progress = p.progress;
     let card_link = class("text-decoration: none; display: block;");
     let name_cls = class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c}; margin: 0;",
@@ -175,6 +177,7 @@ fn project_card(p: ProjectDto) -> impl IntoView {
                         <Badge variant=project_status_variant(status)>{status.label()}</Badge>
                     </Cluster>
                     <p class=desc_cls>{desc}</p>
+                    <ProgressBar value=Signal::derive(move || progress) />
                     {subtle(&format!("Owned by {owner}"))}
                 </Stack>
             </Card>

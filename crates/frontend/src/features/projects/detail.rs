@@ -12,6 +12,7 @@ use shared::dto::project::{
     ChangeProjectStatusRequest, InviteGroupRequest, ProjectDetailDto, ProjectStatus,
 };
 use shared::dto::request::RequestDto;
+use shared::dto::user::UserRole;
 
 use crate::features::audit::components::{AuditTrailPanel, TrailKind};
 use crate::features::groups::api as groups_api;
@@ -21,11 +22,14 @@ use crate::features::ui::{back_link, page_title, section_heading, subtle};
 use crate::primitives::badge::Badge;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
+use crate::primitives::chart::ProgressBar;
 use crate::primitives::cluster::Cluster;
 use crate::primitives::dialog::{Dialog, DialogBody, DialogFooter, DialogHeader};
 use crate::primitives::icon::{Icon, IconName};
+use crate::primitives::input::Input;
 use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
+use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
 use crate::theme::{class, color, space, typography};
 use crate::util::format::project_status_variant;
@@ -54,6 +58,7 @@ impl StatusTarget {
 #[component]
 pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
+    let auth = use_context::<AuthState>().expect("AuthState context");
     let detail: Loadable<ProjectDetailDto> = RwSignal::new(None);
     let requests: Loadable<Vec<RequestDto>> = RwSignal::new(None);
     let reload = RwSignal::new(0u32);
@@ -123,12 +128,28 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                 Some(Err(e)) => load_error(&e),
                 Some(Ok(d)) => {
                     let status = d.project.status;
+                    let progress = d.project.progress;
                     let title_v = page_title(&d.project.name);
                     let owner = d.project.owner_group.name.clone();
                     let desc_v = desc_block(&d.project.description);
                     let actions_v = status_bar(status, run);
                     let collab_v = collaborators_card(&d, remove_collab, open_invite);
                     let invites_v = pending_invites_card(&d, revoke);
+                    let can_edit_progress = auth.user.with_untracked(|u| {
+                        u.as_ref().is_some_and(|u| {
+                            matches!(u.role, UserRole::GroupLeader | UserRole::GroupSubLeader)
+                                && u.group_name.as_deref() == Some(owner.as_str())
+                        })
+                    });
+                    let progress_editor = if can_edit_progress {
+                        if let Some(pid) = id.get_untracked() {
+                            view! { <ProgressEditor id=pid initial=progress reload=reload /> }.into_any()
+                        } else {
+                            ().into_any()
+                        }
+                    } else {
+                        ().into_any()
+                    };
                     view! {
                         <Stack gap=Gap::Lg>
                             <Card>
@@ -138,10 +159,12 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                                         <Badge variant=project_status_variant(status)>{status.label()}</Badge>
                                     </Cluster>
                                     {subtle(&format!("Owned by {owner}"))}
+                                    {progress_row(progress)}
                                     {desc_v}
                                 </Stack>
                             </Card>
                             {actions_v}
+                            {progress_editor}
                             {collab_v}
                             {invites_v}
                             <ProjectRequests requests=requests />
@@ -372,6 +395,80 @@ fn InviteGroupDialog(
                 <Button variant=ButtonVariant::Primary on_click=confirm>"Send invite"</Button>
             </DialogFooter>
         </Dialog>
+    }
+}
+
+fn progress_row(progress: u8) -> AnyView {
+    let wrap = class("display: flex; align-items: center; gap: 12px;");
+    let label = class(format!(
+        "font-family: {ff}; font-size: {fs}; color: {c}; white-space: nowrap;",
+        ff = typography::FONT_SANS,
+        fs = typography::TEXT_CAPTION,
+        c = color::TEXT_MUTED,
+    ));
+    let bar = class("flex: 1; max-width: 260px;");
+    view! {
+        <div class=wrap>
+            <span class=label>{format!("Progress {progress}%")}</span>
+            <div class=bar>
+                <ProgressBar value=Signal::derive(move || progress) />
+            </div>
+        </div>
+    }
+    .into_any()
+}
+
+#[component]
+fn ProgressEditor(id: ProjectId, initial: u8, reload: RwSignal<u32>) -> impl IntoView {
+    let toast = use_context::<ToastState>().expect("ToastState context");
+    let value = RwSignal::new(initial.to_string());
+    let saving = RwSignal::new(false);
+    let on_input = Callback::new(move |v: String| value.set(v));
+    let save = Callback::new(move |_| {
+        if saving.get_untracked() {
+            return;
+        }
+        let parsed = value.get_untracked().trim().parse::<u8>();
+        let Ok(p) = parsed else {
+            toast.error("Progress must be a whole number between 0 and 100.");
+            return;
+        };
+        if p > 100 {
+            toast.error("Progress must be between 0 and 100.");
+            return;
+        }
+        saving.set(true);
+        spawn_local(async move {
+            match api::set_progress(id, p).await {
+                Ok(_) => {
+                    toast.success("Progress updated");
+                    reload.update(|n| *n += 1);
+                }
+                Err(e) => toast.error_from(&e),
+            }
+            saving.set(false);
+        });
+    });
+    let input_wrap = class("width: 110px;");
+    view! {
+        <Card>
+            <Stack gap=Gap::Sm>
+                {section_heading("Set progress")}
+                <Cluster gap=Gap::Sm>
+                    <div class=input_wrap>
+                        <Input value=value on_input=on_input placeholder="0-100" />
+                    </div>
+                    <Button
+                        variant=ButtonVariant::Primary
+                        size=ButtonSize::Sm
+                        on_click=save
+                        disabled=saving.get()
+                    >
+                        "Save"
+                    </Button>
+                </Cluster>
+            </Stack>
+        </Card>
     }
 }
 

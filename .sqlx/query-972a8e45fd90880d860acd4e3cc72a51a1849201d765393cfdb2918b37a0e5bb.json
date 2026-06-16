@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH months AS (\n                 SELECT generate_series($1::timestamptz,\n                                        $1::timestamptz + interval '11 months',\n                                        interval '1 month') AS month\n               ),\n               joiners AS (\n                 SELECT date_trunc('month', joined_at) AS month, COUNT(*) AS n\n                 FROM org.memberships WHERE joined_at >= $1 AND joined_at < $2 GROUP BY 1\n               ),\n               deacts AS (\n                 SELECT date_trunc('month', deactivated_at) AS month, COUNT(*) AS n\n                 FROM org.memberships WHERE deactivated_at >= $1 AND deactivated_at < $2 GROUP BY 1\n               ),\n               tix AS (\n                 SELECT date_trunc('month', created_at) AS month, COUNT(*) AS n\n                 FROM ticket.tickets WHERE created_at >= $1 AND created_at < $2 GROUP BY 1\n               ),\n               proj_done AS (\n                 SELECT date_trunc('month', completed_at) AS month, COUNT(*) AS n\n                 FROM project.projects WHERE completed_at >= $1 AND completed_at < $2 GROUP BY 1\n               ),\n               req_done AS (\n                 SELECT date_trunc('month', completed_at) AS month, COUNT(*) AS n\n                 FROM project.requests WHERE completed_at >= $1 AND completed_at < $2 GROUP BY 1\n               )\n               SELECT\n                 m.month                                  AS \"month!\",\n                 COALESCE(j.n, 0)                         AS \"new_joiners!\",\n                 COALESCE(d.n, 0)                         AS \"deactivations!\",\n                 (SUM(COALESCE(j.n,0) - COALESCE(d.n,0))\n                    OVER (ORDER BY m.month))::bigint       AS \"headcount_delta_cum!\",\n                 COALESCE(x.n, 0)                         AS \"tickets_created!\",\n                 COALESCE(pd.n, 0)                        AS \"projects_completed!\",\n                 COALESCE(rd.n, 0)                        AS \"requests_completed!\"\n               FROM months m\n               LEFT JOIN joiners   j  ON j.month  = m.month\n               LEFT JOIN deacts    d  ON d.month  = m.month\n               LEFT JOIN tix       x  ON x.month  = m.month\n               LEFT JOIN proj_done pd ON pd.month = m.month\n               LEFT JOIN req_done  rd ON rd.month = m.month\n               ORDER BY m.month",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "month!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "new_joiners!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "deactivations!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "headcount_delta_cum!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "tickets_created!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "projects_completed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "requests_completed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "972a8e45fd90880d860acd4e3cc72a51a1849201d765393cfdb2918b37a0e5bb"
+}

@@ -60,6 +60,8 @@ pub struct ProjectDto {
     pub name: String,
     pub description: String,
     pub status: ProjectStatus,
+    /// Manual completion percentage (0-100), set by group leaders.
+    pub progress: u8,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
@@ -114,6 +116,12 @@ pub struct UpdateProjectMetadataRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChangeProjectStatusRequest {
     pub status: ProjectStatus,
+}
+
+/// New completion percentage (0-100); validated server-side.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SetProjectProgressRequest {
+    pub progress: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

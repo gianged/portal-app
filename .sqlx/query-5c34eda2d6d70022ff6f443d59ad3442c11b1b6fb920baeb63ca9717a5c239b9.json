@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO reporting.reports\n                 (id, kind, scope, group_id, period_start, period_end,\n                  storage_key, content_type, size_bytes, generated_by, generated_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n               ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "reporting.report_kind",
+            "kind": {
+              "Enum": [
+                "monthly",
+                "yearly"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "reporting.report_scope",
+            "kind": {
+              "Enum": [
+                "company",
+                "group"
+              ]
+            }
+          }
+        },
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Int8",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5c34eda2d6d70022ff6f443d59ad3442c11b1b6fb920baeb63ca9717a5c239b9"
+}

@@ -28,3 +28,4 @@ futures = { workspace = true }
 apalis = { workspace = true }
 apalis-redis = { workspace = true }
 lettre = { workspace = true }
+printpdf = { workspace = true }

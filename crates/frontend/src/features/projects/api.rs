@@ -4,7 +4,8 @@
 use shared::dto::ids::{GroupId, ProjectId, ProjectInviteId};
 use shared::dto::project::{
     ChangeProjectStatusRequest, CreateProjectRequest, InviteGroupRequest, ProjectDetailDto,
-    ProjectDto, ProjectInviteDto, RespondInviteRequest, UpdateProjectMetadataRequest,
+    ProjectDto, ProjectInviteDto, RespondInviteRequest, SetProjectProgressRequest,
+    UpdateProjectMetadataRequest,
 };
 
 use crate::api::client;
@@ -48,6 +49,12 @@ pub async fn change_status(
     req: &ChangeProjectStatusRequest,
 ) -> Result<ProjectDto, FrontendError> {
     client::post_json(&format!("/projects/{}/status", id.0), req).await
+}
+
+/// Set a project's manual completion percentage (group leaders / sub-leaders).
+pub async fn set_progress(id: ProjectId, progress: u8) -> Result<ProjectDto, FrontendError> {
+    let req = SetProjectProgressRequest { progress };
+    client::post_json(&format!("/projects/{}/progress", id.0), &req).await
 }
 
 pub async fn invite_group(

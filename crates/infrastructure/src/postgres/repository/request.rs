@@ -36,6 +36,7 @@ struct RequestRow {
     status: SqlRequestStatus,
     priority: SqlRequestPriority,
     due_at: Option<OffsetDateTime>,
+    completed_at: Option<OffsetDateTime>,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
 }
@@ -52,6 +53,7 @@ impl From<RequestRow> for Request {
             status: r.status.into(),
             priority: r.priority.into(),
             due_at: r.due_at,
+            completed_at: r.completed_at,
             created_at: r.created_at,
             updated_at: r.updated_at,
         }
@@ -103,6 +105,7 @@ impl RequestRepository for PgRequestRepo {
                  status   AS "status: SqlRequestStatus",
                  priority AS "priority: SqlRequestPriority",
                  due_at,
+                 completed_at,
                  created_at,
                  updated_at
                FROM project.requests
@@ -136,6 +139,7 @@ impl RequestRepository for PgRequestRepo {
                  status   AS "status: SqlRequestStatus",
                  priority AS "priority: SqlRequestPriority",
                  due_at,
+                 completed_at,
                  created_at,
                  updated_at
                FROM project.requests
@@ -174,6 +178,7 @@ impl RequestRepository for PgRequestRepo {
                  status   AS "status: SqlRequestStatus",
                  priority AS "priority: SqlRequestPriority",
                  due_at,
+                 completed_at,
                  created_at,
                  updated_at
                FROM project.requests
@@ -197,8 +202,8 @@ impl RequestRepository for PgRequestRepo {
         sqlx::query!(
             r#"INSERT INTO project.requests
                  (id, project_id, creator_user_id, assignee_user_id, title, description,
-                  status, priority, due_at, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                  status, priority, due_at, completed_at, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                ON CONFLICT (id) DO UPDATE SET
                  project_id        = EXCLUDED.project_id,
                  creator_user_id   = EXCLUDED.creator_user_id,
@@ -207,7 +212,8 @@ impl RequestRepository for PgRequestRepo {
                  description       = EXCLUDED.description,
                  status            = EXCLUDED.status,
                  priority          = EXCLUDED.priority,
-                 due_at            = EXCLUDED.due_at"#,
+                 due_at            = EXCLUDED.due_at,
+                 completed_at      = EXCLUDED.completed_at"#,
             request.id.0,
             request.project_id.0,
             request.creator_user_id.0,
@@ -217,6 +223,7 @@ impl RequestRepository for PgRequestRepo {
             status as SqlRequestStatus,
             priority as SqlRequestPriority,
             request.due_at,
+            request.completed_at,
             request.created_at,
         )
         .execute(&self.pool)

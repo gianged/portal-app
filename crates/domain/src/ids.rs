@@ -23,3 +23,4 @@ id_newtype!(ChatAttachmentId);
 id_newtype!(CommentId);
 id_newtype!(NotificationId);
 id_newtype!(AuditLogId);
+id_newtype!(ReportId);

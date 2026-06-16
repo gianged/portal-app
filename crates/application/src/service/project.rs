@@ -69,6 +69,8 @@ impl ProjectService {
             name: cmd.name,
             description: cmd.description,
             status: ProjectStatus::Planning,
+            progress: 0,
+            completed_at: None,
             created_at: now,
             updated_at: now,
         };
@@ -114,6 +116,38 @@ impl ProjectService {
         }
         project.updated_at = now;
         self.projects.save_project(&project).await?;
+        self.events
+            .emit(DomainEvent::ProjectMetadataUpdated {
+                project_id: project.id,
+                actor,
+                at: now,
+                before,
+                after: project.clone(),
+            })
+            .await?;
+        Ok(project)
+    }
+
+    /// Sets the project's manual completion percentage (0-100).
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader or sub-leader of the owner group, or a repository or event error if the datastore or event bus is unavailable.
+    pub async fn set_progress(
+        &self,
+        actor: UserId,
+        project_id: ProjectId,
+        progress: u8,
+    ) -> Result<Project> {
+        let mut project = self.load(project_id).await?;
+        self.perms
+            .require_group_leader_or_sub(actor, project.owner_group_id)
+            .await?;
+        let before = project.clone();
+        let now = OffsetDateTime::now_utc();
+        project.set_progress(progress, now);
+        self.projects.save_project(&project).await?;
+        // Reuse the metadata-updated event; before/after carry the full project,
+        // so the progress change is captured for audit without a new event variant.
         self.events
             .emit(DomainEvent::ProjectMetadataUpdated {
                 project_id: project.id,

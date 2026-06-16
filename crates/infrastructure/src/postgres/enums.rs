@@ -1,7 +1,7 @@
 use domain::model::{
     AuditAction, GroupKind, GroupRole, NotificationKind, ProjectInviteStatus, ProjectStatus,
-    RequestPriority, RequestStatus, SystemRole, TicketCategory, TicketPriority, TicketStatus,
-    UserStatus,
+    ReportKind, ReportScope, RequestPriority, RequestStatus, SystemRole, TicketCategory,
+    TicketPriority, TicketStatus, UserStatus,
 };
 
 #[derive(Debug, Clone, Copy, sqlx::Type)]
@@ -431,6 +431,56 @@ impl From<SqlTicketStatus> for TicketStatus {
             SqlTicketStatus::Resolved => Self::Resolved,
             SqlTicketStatus::Closed => Self::Closed,
             SqlTicketStatus::Reopened => Self::Reopened,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[sqlx(type_name = "reporting.report_kind", rename_all = "snake_case")]
+pub(crate) enum SqlReportKind {
+    Monthly,
+    Yearly,
+}
+
+impl From<ReportKind> for SqlReportKind {
+    fn from(v: ReportKind) -> Self {
+        match v {
+            ReportKind::Monthly => Self::Monthly,
+            ReportKind::Yearly => Self::Yearly,
+        }
+    }
+}
+
+impl From<SqlReportKind> for ReportKind {
+    fn from(v: SqlReportKind) -> Self {
+        match v {
+            SqlReportKind::Monthly => Self::Monthly,
+            SqlReportKind::Yearly => Self::Yearly,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[sqlx(type_name = "reporting.report_scope", rename_all = "snake_case")]
+pub(crate) enum SqlReportScope {
+    Company,
+    Group,
+}
+
+impl From<ReportScope> for SqlReportScope {
+    fn from(v: ReportScope) -> Self {
+        match v {
+            ReportScope::Company => Self::Company,
+            ReportScope::Group => Self::Group,
+        }
+    }
+}
+
+impl From<SqlReportScope> for ReportScope {
+    fn from(v: SqlReportScope) -> Self {
+        match v {
+            SqlReportScope::Company => Self::Company,
+            SqlReportScope::Group => Self::Group,
         }
     }
 }

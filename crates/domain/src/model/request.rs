@@ -17,6 +17,8 @@ pub struct Request {
     pub status: RequestStatus,
     pub priority: RequestPriority,
     pub due_at: Option<OffsetDateTime>,
+    /// Set when the request transitions into `Completed`; `None` otherwise.
+    pub completed_at: Option<OffsetDateTime>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -170,6 +172,7 @@ impl Request {
 
     pub fn complete(&mut self, now: OffsetDateTime) -> Result<(), TransitionError> {
         self.status = self.status.try_complete()?;
+        self.completed_at = Some(now);
         self.updated_at = now;
         Ok(())
     }
@@ -217,6 +220,7 @@ mod tests {
             status,
             priority: RequestPriority::Normal,
             due_at: None,
+            completed_at: None,
             created_at: t0,
             updated_at: t0,
         }

@@ -40,6 +40,12 @@ pub struct Config {
     pub smtp_tls: String,
     /// Public frontend origin used for the links inside emails.
     pub portal_base_url: String,
+    /// When false, the monthly report scheduler does not run.
+    pub report_enabled: bool,
+    /// Day of month on/after which the previous month's report is generated.
+    pub report_schedule_day: u8,
+    /// How often the report scheduler wakes to check whether it should run.
+    pub report_schedule_interval: StdDuration,
 }
 
 pub fn from_env() -> anyhow::Result<Config> {
@@ -68,6 +74,16 @@ pub fn from_env() -> anyhow::Result<Config> {
     let ticket_autoclose_interval_hours: u64 = optional("TICKET_AUTOCLOSE_INTERVAL_HOURS", "1")
         .parse()
         .context("invalid TICKET_AUTOCLOSE_INTERVAL_HOURS")?;
+
+    let report_enabled: bool = optional("REPORT_ENABLED", "true")
+        .parse()
+        .context("invalid REPORT_ENABLED (expected true/false)")?;
+    let report_schedule_day: u8 = optional("REPORT_SCHEDULE_DAY", "1")
+        .parse()
+        .context("invalid REPORT_SCHEDULE_DAY")?;
+    let report_schedule_interval_hours: u64 = optional("REPORT_SCHEDULE_INTERVAL_HOURS", "24")
+        .parse()
+        .context("invalid REPORT_SCHEDULE_INTERVAL_HOURS")?;
 
     let email_enabled: bool = optional("EMAIL_ENABLED", "false")
         .parse()
@@ -115,6 +131,9 @@ pub fn from_env() -> anyhow::Result<Config> {
         smtp_from,
         smtp_tls,
         portal_base_url: optional("PORTAL_BASE_URL", "http://localhost:8081"),
+        report_enabled,
+        report_schedule_day,
+        report_schedule_interval: StdDuration::from_secs(report_schedule_interval_hours * 3600),
     })
 }
 

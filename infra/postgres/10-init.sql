@@ -39,6 +39,7 @@ CREATE SCHEMA IF NOT EXISTS chat;
 CREATE SCHEMA IF NOT EXISTS notification;
 CREATE SCHEMA IF NOT EXISTS org;
 CREATE SCHEMA IF NOT EXISTS project;
+CREATE SCHEMA IF NOT EXISTS reporting;
 CREATE SCHEMA IF NOT EXISTS ticket;
 
 
@@ -130,6 +131,17 @@ CREATE TYPE project.request_status AS ENUM (
     'review',
     'completed',
     'cancelled'
+);
+
+-- reporting
+CREATE TYPE reporting.report_kind AS ENUM (
+    'monthly',
+    'yearly'
+);
+
+CREATE TYPE reporting.report_scope AS ENUM (
+    'company',
+    'group'
 );
 
 -- ticket
@@ -324,10 +336,16 @@ CREATE TABLE project.projects (
     name                TEXT        NOT NULL,
     description         TEXT        NOT NULL DEFAULT '',
     status              project.project_status NOT NULL DEFAULT 'planning',
+    progress            SMALLINT    NOT NULL DEFAULT 0,
+    completed_at        TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT pk_projects PRIMARY KEY (id)
+    CONSTRAINT pk_projects PRIMARY KEY (id),
+    CONSTRAINT chk_projects_progress_range CHECK (progress BETWEEN 0 AND 100),
+    -- completed_at is set iff the project is in a terminal-completed state
+    CONSTRAINT chk_projects_completed_at_consistency
+        CHECK ((status = 'completed') = (completed_at IS NOT NULL))
 );
 
 -- project.project_collaborators ----------------------------------------------
@@ -374,13 +392,17 @@ CREATE TABLE project.requests (
     status            project.request_status NOT NULL DEFAULT 'draft',
     priority          project.request_priority NOT NULL DEFAULT 'normal',
     due_at            TIMESTAMPTZ,
+    completed_at      TIMESTAMPTZ,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT pk_requests PRIMARY KEY (id),
     -- A request beyond 'submitted' must have an assignee
     CONSTRAINT chk_requests_assignee_required_after_submitted
-        CHECK (status IN ('draft', 'submitted', 'cancelled') OR assignee_user_id IS NOT NULL)
+        CHECK (status IN ('draft', 'submitted', 'cancelled') OR assignee_user_id IS NOT NULL),
+    -- completed_at is set iff the request reached 'completed'
+    CONSTRAINT chk_requests_completed_at_consistency
+        CHECK ((status = 'completed') = (completed_at IS NOT NULL))
 );
 
 -- project.request_attachments ------------------------------------------------
@@ -415,6 +437,31 @@ CREATE TABLE project.request_comments (
 
     CONSTRAINT pk_request_comments PRIMARY KEY (id),
     CONSTRAINT chk_request_comments_body_not_empty CHECK (length(btrim(body)) > 0)
+);
+
+-- reporting.reports ----------------------------------------------------------
+-- Archive of generated report artifacts (monthly scheduled + on-demand). The
+-- PDF payload lives in MinIO under storage_key; only metadata is here.
+-- Write-once; no updated_at. id is an app-supplied UUIDv7 (no DB default).
+CREATE TABLE reporting.reports (
+    id            UUID        NOT NULL,
+    kind          reporting.report_kind  NOT NULL,
+    scope         reporting.report_scope NOT NULL,
+    group_id      UUID,                       -- NULL iff scope = 'company'
+    period_start  TIMESTAMPTZ NOT NULL,       -- inclusive (first instant of month / Jan 1)
+    period_end    TIMESTAMPTZ NOT NULL,       -- exclusive (first instant of next period)
+    storage_key   TEXT        NOT NULL,
+    content_type  TEXT        NOT NULL DEFAULT 'application/pdf',
+    size_bytes    BIGINT      NOT NULL,
+    generated_by  UUID,                       -- NULL for the scheduled job
+    generated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_reports PRIMARY KEY (id),
+    CONSTRAINT uq_reports_storage_key UNIQUE (storage_key),
+    CONSTRAINT chk_reports_size_positive CHECK (size_bytes > 0),
+    CONSTRAINT chk_reports_period_order CHECK (period_end > period_start),
+    CONSTRAINT chk_reports_scope_group_consistency
+        CHECK ((scope = 'group') = (group_id IS NOT NULL))
 );
 
 -- ticket.tickets -------------------------------------------------------------
@@ -560,6 +607,17 @@ ALTER TABLE ticket.tickets
     FOREIGN KEY (assignee_user_id) REFERENCES auth.users (id)
     ON DELETE RESTRICT;
 
+-- reporting.reports
+ALTER TABLE reporting.reports
+    ADD CONSTRAINT fk_reports_group_id
+    FOREIGN KEY (group_id) REFERENCES org.groups (id)
+    ON DELETE RESTRICT;
+
+ALTER TABLE reporting.reports
+    ADD CONSTRAINT fk_reports_generated_by
+    FOREIGN KEY (generated_by) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
 -- notification.notifications
 ALTER TABLE notification.notifications
     ADD CONSTRAINT fk_notifications_recipient_user_id
@@ -685,6 +743,26 @@ CREATE INDEX idx_tickets_status_priority_open
     ON ticket.tickets (status, priority)
     WHERE status IN ('open', 'triaged', 'assigned', 'in_progress', 'reopened');
 
+-- reporting.reports
+-- Browse "latest reports of a kind" newest-first.
+CREATE INDEX idx_reports_kind_period
+    ON reporting.reports (kind, period_start DESC);
+
+CREATE INDEX idx_reports_group_id_period
+    ON reporting.reports (group_id, period_start DESC)
+    WHERE group_id IS NOT NULL;
+
+-- Idempotency for the scheduler: at most one company report per (kind, period),
+-- and one per-group report per (kind, group, period). Split because group_id is
+-- NULL for company scope (NULLs are distinct in a plain unique index).
+CREATE UNIQUE INDEX uq_reports_company_period
+    ON reporting.reports (kind, period_start)
+    WHERE scope = 'company';
+
+CREATE UNIQUE INDEX uq_reports_group_period
+    ON reporting.reports (kind, group_id, period_start)
+    WHERE scope = 'group';
+
 -- notification.notifications
 CREATE INDEX idx_notifications_recipient_user_id_unread
     ON notification.notifications (recipient_user_id, created_at DESC)
@@ -784,6 +862,7 @@ COMMENT ON SCHEMA chat         IS 'Relational sidecar for chat: trusted attachme
 COMMENT ON SCHEMA notification IS 'Persisted user-facing notifications. Read fanout is denormalized via the payload JSONB.';
 COMMENT ON SCHEMA org          IS 'Organizational structure: groups and memberships.';
 COMMENT ON SCHEMA project      IS 'Projects, group collaborations, work requests, attachments.';
+COMMENT ON SCHEMA reporting    IS 'Generated report artifacts (metadata only; payload in MinIO).';
 COMMENT ON SCHEMA ticket       IS 'IT support tickets. Separate hierarchy from projects.';
 
 COMMENT ON TABLE auth.users IS
@@ -813,6 +892,13 @@ COMMENT ON TABLE project.projects IS
     'Body of work owned by exactly one group. Ownership transfer requires mutual consent of both group leaders (enforced in application).';
 COMMENT ON COLUMN project.projects.status IS
     'planning -> active -> {on_hold, completed, cancelled}. Owner-leader-driven transitions.';
+COMMENT ON COLUMN project.projects.progress IS
+    'Completion percentage (0-100) set manually by group leaders; feeds the reporting roll-up.';
+COMMENT ON COLUMN project.projects.completed_at IS
+    'Set by the app on the transition into ''completed''; NULL otherwise. Used for period-accurate completion metrics.';
+
+COMMENT ON TABLE reporting.reports IS
+    'Archive of generated reports (monthly scheduled + on-demand). storage_key points at the MinIO object; write-once metadata, no updated_at. generated_by is NULL for the scheduled job.';
 
 COMMENT ON TABLE project.project_collaborators IS
     'Group-level collaboration. Owner group cannot also be a collaborator (invariant 7, enforced by trg_project_collaborators_no_self_collab).';

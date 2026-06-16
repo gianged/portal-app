@@ -4,14 +4,18 @@ use anyhow::Context;
 use apalis_redis::RedisStorage;
 
 use application::{
-    AuditProjector, EmailNotifier, MaintenanceService, NotificationFanout, events::EventBus,
+    AuditProjector, EmailNotifier, MaintenanceService, NotificationFanout, ReportService,
+    events::EventBus,
 };
 use domain::{
-    ports::{file_storage::FileStorage, mailer::Mailer},
+    ports::{
+        file_storage::FileStorage, job_queue::JobQueue, mailer::Mailer,
+        report_renderer::ReportRenderer,
+    },
     repository::{
         AuditRepository, ChatAttachmentRepository, ChatRepository, GroupRepository,
-        NotificationRepository, ProjectRepository, RequestRepository, TicketRepository,
-        UserRepository,
+        NotificationRepository, ProjectRepository, ReportArchiveRepository, ReportStatsRepository,
+        RequestRepository, TicketRepository, UserRepository,
     },
 };
 use infrastructure::{
@@ -23,9 +27,10 @@ use infrastructure::{
     mailer::{LogMailer, SmtpMailer, SmtpTls},
     postgres::{
         PgAuditRepo, PgChatAttachmentRepo, PgGroupRepo, PgNotificationRepo, PgProjectRepo,
-        PgRequestRepo, PgTicketRepo, PgUserRepo, build_pool,
+        PgReportingRepo, PgRequestRepo, PgTicketRepo, PgUserRepo, build_pool,
     },
     redis::RedisEventPublisher,
+    report::PrintPdfReportRenderer,
     scylla::{ScyllaChatRepo, build_session},
     signed_url::SignedUrl,
 };
@@ -41,6 +46,8 @@ pub struct WorkerContext {
     pub maintenance: Arc<MaintenanceService>,
     pub mailer: Arc<dyn Mailer>,
     pub email_storage: RedisStorage<EmailEnvelope>,
+    pub report: Arc<ReportService>,
+    pub email_queue: Arc<dyn JobQueue>,
 }
 
 /// Builds the infrastructure adapters, wires the notification fan-out service,
@@ -99,6 +106,20 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         Arc::new(ApalisAuditQueue::new(audit_storage.clone())),
     ));
 
+    // Reporting: one Pg repo backs the aggregate reads + the archive; the renderer
+    // is stateless. Built before the fan-out moves the repo handles below.
+    let report_repo = Arc::new(PgReportingRepo::new(pool.clone()));
+    let report_stats: Arc<dyn ReportStatsRepository> = report_repo.clone();
+    let report_archive: Arc<dyn ReportArchiveRepository> = report_repo;
+    let report_renderer: Arc<dyn ReportRenderer> = Arc::new(PrintPdfReportRenderer::new());
+    let report = Arc::new(ReportService::new(
+        report_stats,
+        report_archive.clone(),
+        report_renderer,
+        file_storage.clone(),
+        users.clone(),
+    ));
+
     // Built before the fan-out moves the repo handles below.
     let chat_attachments: Arc<dyn ChatAttachmentRepository> =
         Arc::new(PgChatAttachmentRepo::new(pool.clone()));
@@ -108,6 +129,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         tickets.clone(),
         chat_attachments,
         users.clone(),
+        report_archive,
         file_storage,
         events,
     ));
@@ -140,6 +162,8 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         Arc::new(ApalisEmailQueue::new(email_store.clone())),
         cfg.portal_base_url.clone(),
     ));
+    // Dedicated queue handle for the report scheduler's email fan-out.
+    let email_queue: Arc<dyn JobQueue> = Arc::new(ApalisEmailQueue::new(email_store.clone()));
 
     let fanout = Arc::new(
         NotificationFanout::new(
@@ -162,5 +186,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         maintenance,
         mailer,
         email_storage: email_store,
+        report,
+        email_queue,
     })
 }

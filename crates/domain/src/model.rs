@@ -5,6 +5,7 @@ pub mod comment;
 pub mod group;
 pub mod notification;
 pub mod project;
+pub mod report;
 pub mod request;
 pub mod ticket;
 pub mod user;
@@ -20,6 +21,11 @@ pub use group::{Group, GroupKind, GroupRole, Membership};
 pub use notification::{Notification, NotificationKind, NotificationPayload};
 pub use project::{
     Project, ProjectCollaborator, ProjectInvite, ProjectInviteStatus, ProjectStatus,
+};
+pub use report::{
+    CompanyStaffStats, GroupProjectStats, GroupReportRow, GroupRequestStats, GroupStaffStats,
+    GrowthPoint, GrowthSeries, MonthlyBucket, MonthlyReportData, Period, Report, ReportKind,
+    ReportScope, StaffSummary, TicketStats, TicketSummary, YearlyReportData, YearlyTotals,
 };
 pub use request::{Request, RequestAttachment, RequestPriority, RequestStatus};
 pub use ticket::{Ticket, TicketCategory, TicketPriority, TicketStatus};

@@ -115,6 +115,7 @@ impl EmailNotifier {
                 to: user.email,
                 subject: subject.clone(),
                 body: body.clone(),
+                attachments: Vec::new(),
             };
             let bytes = match serde_json::to_vec(&message) {
                 Ok(bytes) => bytes,
@@ -165,6 +166,9 @@ mod tests {
             Ok(())
         }
         async fn list_avatar_keys(&self) -> Result<Vec<String>, RepositoryError> {
+            Ok(Vec::new())
+        }
+        async fn list_with_system_role(&self) -> Result<Vec<User>, RepositoryError> {
             Ok(Vec::new())
         }
     }

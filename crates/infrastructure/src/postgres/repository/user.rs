@@ -209,4 +209,31 @@ impl UserRepository for PgUserRepo {
         .map_err(map_pg_error)?;
         Ok(rows.into_iter().map(|r| r.avatar_storage_key).collect())
     }
+
+    async fn list_with_system_role(&self) -> Result<Vec<User>, RepositoryError> {
+        let rows = sqlx::query_as!(
+            UserRow,
+            r#"SELECT
+                 id,
+                 email,
+                 password_hash,
+                 full_name,
+                 avatar_storage_key,
+                 phone,
+                 timezone,
+                 status            AS "status: SqlUserStatus",
+                 system_role       AS "system_role: SqlSystemRole",
+                 first_logged_in_at,
+                 deactivated_at,
+                 created_at,
+                 updated_at
+               FROM auth.users
+               WHERE system_role IS NOT NULL AND status = 'active'
+               ORDER BY created_at"#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_pg_error)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
 }

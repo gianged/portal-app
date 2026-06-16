@@ -7,6 +7,7 @@ mod cleanup;
 mod config;
 mod emails;
 mod notifications;
+mod report_schedule;
 mod telemetry;
 mod ticket_autoclose;
 mod uploads;
@@ -48,6 +49,8 @@ async fn run() -> anyhow::Result<()> {
         maintenance,
         mailer,
         email_storage,
+        report,
+        email_queue,
     } = bootstrap::build(&cfg).await?;
 
     // Periodic maintenance loops run alongside the queue consumer. Each loop handles and
@@ -69,6 +72,17 @@ async fn run() -> anyhow::Result<()> {
         cfg.ticket_autoclose_window,
         cfg.ticket_autoclose_interval,
     ));
+    if cfg.report_enabled {
+        tokio::spawn(report_schedule::run(
+            report,
+            email_queue,
+            cfg.report_schedule_day,
+            cfg.report_schedule_interval,
+        ));
+    } else {
+        tracing::info!("monthly report scheduler disabled (REPORT_ENABLED=false)");
+        drop((report, email_queue));
+    }
 
     // One worker per durable queue the server enqueues. Separate queues keep the
     // (non-idempotent) notification fan-out and the audit projector isolated so a
@@ -87,7 +101,7 @@ async fn run() -> anyhow::Result<()> {
         .build_fn(emails::handle);
 
     tracing::info!(
-        "workers ready: notification + audit + email consumers + maintenance loops (cleanup, uploads, ticket auto-close)"
+        "workers ready: notification + audit + email consumers + maintenance loops (cleanup, uploads, ticket auto-close, monthly report)"
     );
     // Guarantees Ctrl-C exits even if the Monitor's graceful shutdown stalls.
     tokio::spawn(force_exit_watchdog());

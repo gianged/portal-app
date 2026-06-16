@@ -26,19 +26,22 @@ use application::{
     service::{
         announcement::AnnouncementService, audit::AuditService, chat::ChatService,
         comment::CommentService, group::GroupService, notification::NotificationService,
-        project::ProjectService, request::RequestService, ticket::TicketService, user::UserService,
+        project::ProjectService, report::ReportService, request::RequestService,
+        ticket::TicketService, user::UserService,
     },
 };
 use domain::{
-    error::{AuthzError, EventError, JobError, RepositoryError},
+    error::{AuthzError, EventError, JobError, RenderError, RepositoryError},
     ids::{
         ChannelId, CommentId, GroupId, MessageId, NotificationId, ProjectCollaboratorId, ProjectId,
-        ProjectInviteId, RequestId, TicketId, UserId,
+        ProjectInviteId, ReportId, RequestId, TicketId, UserId,
     },
     model::{
         Announcement, AuditLog, Channel, ChannelKind, ChannelMembership, ChatAttachment, Comment,
-        CommentEntity, Group, Membership, Message, Notification, Project, ProjectCollaborator,
-        ProjectInvite, Request, RequestAttachment, RequestStatus, Ticket, User, UserStatus,
+        CommentEntity, CompanyStaffStats, Group, GroupProjectStats, GroupRequestStats,
+        GroupStaffStats, Membership, Message, MonthlyBucket, MonthlyReportData, Notification,
+        Period, Project, ProjectCollaborator, ProjectInvite, Report, ReportKind, Request,
+        RequestAttachment, RequestStatus, Ticket, TicketStats, User, UserStatus, YearlyReportData,
     },
     ports::{
         authz_client::{AuthzClient, RelationTuple},
@@ -46,12 +49,13 @@ use domain::{
         job_queue::JobQueue,
         presence::Presence,
         rate_limit::RateLimit,
+        report_renderer::ReportRenderer,
         token_revocation::TokenRevocation,
     },
     repository::{
         AuditRepository, ChatAttachmentRepository, ChatRepository, CommentRepository,
-        GroupRepository, NotificationRepository, ProjectRepository, RequestRepository,
-        TicketRepository, UserRepository,
+        GroupRepository, NotificationRepository, ProjectRepository, ReportArchiveRepository,
+        ReportStatsRepository, RequestRepository, TicketRepository, UserRepository,
     },
 };
 use infrastructure::local_storage::LocalStorage;
@@ -100,6 +104,9 @@ impl UserRepository for FakeUsers {
         Ok(())
     }
     async fn list_avatar_keys(&self) -> Result<Vec<String>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn list_with_system_role(&self) -> Result<Vec<User>, RepositoryError> {
         Ok(Vec::new())
     }
 }
@@ -641,6 +648,91 @@ impl TokenRevocation for FakeRevocation {
     }
 }
 
+// --- reporting fakes -----------------------------------------------------------
+
+struct FakeReportStats;
+
+#[async_trait]
+impl ReportStatsRepository for FakeReportStats {
+    async fn project_stats_by_group(
+        &self,
+        _period: Period,
+        _stuck_days: i32,
+    ) -> Result<Vec<GroupProjectStats>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn request_stats_by_group(
+        &self,
+        _period: Period,
+    ) -> Result<Vec<GroupRequestStats>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn ticket_stats(&self, _period: Period) -> Result<TicketStats, RepositoryError> {
+        Ok(TicketStats {
+            created_in_period: 0,
+            resolved_in_period: 0,
+            by_status: Vec::new(),
+            by_category: Vec::new(),
+            avg_resolve_hours: None,
+        })
+    }
+    async fn staff_stats_by_group(
+        &self,
+        _period: Period,
+    ) -> Result<Vec<GroupStaffStats>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn company_staff_stats(
+        &self,
+        _period: Period,
+    ) -> Result<CompanyStaffStats, RepositoryError> {
+        Ok(CompanyStaffStats {
+            active_users: 0,
+            new_active_users: 0,
+            deactivated_users: 0,
+        })
+    }
+    async fn monthly_growth(&self, _year: i32) -> Result<Vec<MonthlyBucket>, RepositoryError> {
+        Ok(Vec::new())
+    }
+}
+
+struct FakeReportArchive;
+
+#[async_trait]
+impl ReportArchiveRepository for FakeReportArchive {
+    async fn insert(&self, _report: &Report) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+    async fn list(&self, _limit: u32) -> Result<Vec<Report>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn find_by_id(&self, _id: ReportId) -> Result<Option<Report>, RepositoryError> {
+        Ok(None)
+    }
+    async fn find_by_period(
+        &self,
+        _kind: ReportKind,
+        _period_start: OffsetDateTime,
+    ) -> Result<Option<Report>, RepositoryError> {
+        Ok(None)
+    }
+    async fn list_all_storage_keys(&self) -> Result<Vec<String>, RepositoryError> {
+        Ok(Vec::new())
+    }
+}
+
+struct FakeRenderer;
+
+impl ReportRenderer for FakeRenderer {
+    fn render_monthly(&self, _data: &MonthlyReportData) -> Result<Vec<u8>, RenderError> {
+        Ok(Vec::new())
+    }
+    fn render_yearly(&self, _data: &YearlyReportData) -> Result<Vec<u8>, RenderError> {
+        Ok(Vec::new())
+    }
+}
+
 // --- model builders ------------------------------------------------------------
 
 /// An `Active` user with the given id and email, no system role.
@@ -762,7 +854,18 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
             perms.clone(),
             events.clone(),
         )),
-        notification: Arc::new(NotificationService::new(Arc::new(FakeNotifications), perms)),
+        notification: Arc::new(NotificationService::new(
+            Arc::new(FakeNotifications),
+            perms.clone(),
+        )),
+        report: Arc::new(ReportService::new(
+            Arc::new(FakeReportStats),
+            Arc::new(FakeReportArchive),
+            Arc::new(FakeRenderer),
+            storage.clone(),
+            users.clone(),
+        )),
+        perms,
         token: Arc::new(TokenService::new("test-secret", 3600, false)),
         revocation: revocation.clone(),
         realtime,

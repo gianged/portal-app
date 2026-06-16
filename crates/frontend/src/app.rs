@@ -13,6 +13,7 @@ use crate::features::home::routes::{DashboardPage, FilesPage, LandingPage, Permi
 use crate::features::notifications::api::unread_count;
 use crate::features::notifications::routes::InboxPage;
 use crate::features::projects::routes::{ProjectDetailPage, ProjectsPage};
+use crate::features::reports::routes::ReportsPage;
 use crate::features::requests::routes::{RequestDetailPage, RequestsPage};
 use crate::features::tickets::routes::{TicketDetailPage, TicketsPage};
 use crate::features::users::routes::{UserDetailPage, UsersPage};
@@ -82,6 +83,7 @@ pub fn App() -> impl IntoView {
                 <Route path=path!("/files") view=FilesPage />
                 <Route path=path!("/permissions") view=PermissionsPage />
                 <Route path=path!("/audit") view=AuditPage />
+                <Route path=path!("/reports") view=ReportsPage />
             </Routes>
         </Router>
         <ToastHost />

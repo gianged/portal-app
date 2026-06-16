@@ -61,3 +61,11 @@ pub enum MailError {
     #[error("backend error: {0}")]
     Backend(String),
 }
+
+#[derive(Debug, Error)]
+pub enum RenderError {
+    #[error("layout error: {0}")]
+    Layout(String),
+    #[error("backend error: {0}")]
+    Backend(String),
+}

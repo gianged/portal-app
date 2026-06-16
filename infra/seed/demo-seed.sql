@@ -143,18 +143,18 @@ ON CONFLICT (group_id, user_id) DO NOTHING;
 -- 5. Sample projects (created_by = the owner group's leader)
 --    No unique key on projects, so each insert is guarded by NOT EXISTS (name).
 -- -----------------------------------------------------------------------------
-INSERT INTO project.projects (owner_group_id, created_by_user_id, name, description, status)
-SELECT g.id, lead.user_id, p.name, p.descr, p.status::project.project_status
+INSERT INTO project.projects (owner_group_id, created_by_user_id, name, description, status, progress)
+SELECT g.id, lead.user_id, p.name, p.descr, p.status::project.project_status, p.progress
 FROM (VALUES
-    ('Atlas Platform',   'Engineering',      'Core platform revamp',      'active'),
-    ('Phoenix Mobile',   'Engineering',      'Mobile app rewrite',        'planning'),
-    ('Helios Analytics', 'Product & Design', 'Analytics dashboard',       'active'),
-    ('Orion CRM',        'Sales',            'CRM integration',           'on_hold'),
-    ('Nimbus Campaign',  'Marketing',        'Q3 brand campaign',         'active'),
-    ('Quantum Ledger',   'Finance & Ops',    'Finance automation',        'planning'),
-    ('Beacon Support',   'Customer Support', 'Self-service support portal','active'),
-    ('Vertex Roadmap',   'Executive Office', 'Company-wide OKRs',         'active')
-) AS p(name, owner_group, descr, status)
+    ('Atlas Platform',   'Engineering',      'Core platform revamp',      'active',   65),
+    ('Phoenix Mobile',   'Engineering',      'Mobile app rewrite',        'planning', 10),
+    ('Helios Analytics', 'Product & Design', 'Analytics dashboard',       'active',   45),
+    ('Orion CRM',        'Sales',            'CRM integration',           'on_hold',  30),
+    ('Nimbus Campaign',  'Marketing',        'Q3 brand campaign',         'active',   80),
+    ('Quantum Ledger',   'Finance & Ops',    'Finance automation',        'planning', 5),
+    ('Beacon Support',   'Customer Support', 'Self-service support portal','active',  55),
+    ('Vertex Roadmap',   'Executive Office', 'Company-wide OKRs',         'active',   70)
+) AS p(name, owner_group, descr, status, progress)
 JOIN org.groups g ON g.name = p.owner_group
 JOIN LATERAL (
     SELECT m.user_id FROM org.memberships m
@@ -183,10 +183,11 @@ ON CONFLICT (project_id, group_id) DO NOTHING;
 --    Statuses beyond draft/submitted/cancelled require an assignee
 --    (chk_requests_assignee_required_after_submitted) -> use the owner leader.
 -- -----------------------------------------------------------------------------
-INSERT INTO project.requests (project_id, creator_user_id, assignee_user_id, title, description, status, priority)
+INSERT INTO project.requests (project_id, creator_user_id, assignee_user_id, title, description, status, priority, completed_at)
 SELECT pr.id, lead.user_id,
        (CASE WHEN r.status IN ('draft','submitted','cancelled') THEN NULL ELSE lead.user_id END),
-       r.title, '', r.status::project.request_status, r.priority::project.request_priority
+       r.title, '', r.status::project.request_status, r.priority::project.request_priority,
+       (CASE WHEN r.status = 'completed' THEN NOW() - INTERVAL '3 days' ELSE NULL END)
 FROM (VALUES
     ('Atlas Platform',   'Design auth module',        'in_progress', 'high'),
     ('Atlas Platform',   'Set up CI pipeline',        'review',      'normal'),

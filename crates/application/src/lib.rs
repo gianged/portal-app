@@ -10,6 +10,7 @@ pub use events::{DomainEvent, EventBus};
 pub use permissions::Permissions;
 pub use service::{
     AnnouncementService, AuditProjector, AuditService, ChannelOverview, ChatService,
-    CommentService, EmailNotifier, GroupService, MaintenanceService, NotificationFanout,
-    NotificationService, ProjectService, RequestService, TicketService, UserService,
+    CommentService, EmailNotifier, GeneratedReport, GroupService, MaintenanceService,
+    NotificationFanout, NotificationService, ProjectService, ReportService, RequestService,
+    TicketService, UserService,
 };

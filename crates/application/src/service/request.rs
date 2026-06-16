@@ -65,6 +65,7 @@ impl RequestService {
             status: RequestStatus::Draft,
             priority: cmd.priority,
             due_at: cmd.due_at,
+            completed_at: None,
             created_at: now,
             updated_at: now,
         };

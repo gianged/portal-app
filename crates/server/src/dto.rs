@@ -16,6 +16,7 @@ mod comment;
 mod group;
 mod notification;
 mod project;
+mod report;
 mod request;
 mod ticket;
 mod user;
@@ -37,6 +38,7 @@ pub use self::{
         create_project_command, project_collaborator_dto, project_dto, project_invite_dto,
         project_invite_status_dto, project_status_dto, update_project_metadata_command,
     },
+    report::{monthly_report_dto, report_summary_dto, yearly_report_dto},
     request::{
         create_request_command, request_attachment_dto, request_dto, request_priority_domain,
         request_priority_dto, request_status_domain, request_status_dto, update_request_command,
@@ -85,6 +87,7 @@ id_map!(chat_attachment_id, ChatAttachmentId);
 id_map!(comment_id, CommentId);
 id_map!(notification_id, NotificationId);
 id_map!(audit_log_id, AuditLogId);
+id_map!(report_id, ReportId);
 
 // `channel_id` would collide with the local binding name in the notification
 // payload match arms; this alias lets that module project a `ChannelId` there.

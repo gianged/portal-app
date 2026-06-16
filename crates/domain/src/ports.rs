@@ -5,4 +5,5 @@ pub mod job_queue;
 pub mod mailer;
 pub mod presence;
 pub mod rate_limit;
+pub mod report_renderer;
 pub mod token_revocation;

@@ -7,6 +7,7 @@ pub mod groups;
 pub mod home;
 pub mod notifications;
 pub mod projects;
+pub mod reports;
 pub mod requests;
 pub mod tickets;
 pub mod ui;

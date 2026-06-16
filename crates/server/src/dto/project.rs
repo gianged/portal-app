@@ -51,6 +51,7 @@ pub fn project_dto(
         name: project.name.clone(),
         description: project.description.clone(),
         status: project_status_dto(project.status),
+        progress: project.progress,
         created_at: project.created_at,
         updated_at: project.updated_at,
     }

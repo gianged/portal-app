@@ -33,6 +33,8 @@ struct ProjectRow {
     name: String,
     description: String,
     status: SqlProjectStatus,
+    progress: i16,
+    completed_at: Option<OffsetDateTime>,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
 }
@@ -46,6 +48,9 @@ impl From<ProjectRow> for Project {
             name: r.name,
             description: r.description,
             status: r.status.into(),
+            // CHECK constrains the column to 0..=100, so the cast never truncates.
+            progress: u8::try_from(r.progress).unwrap_or(0),
+            completed_at: r.completed_at,
             created_at: r.created_at,
             updated_at: r.updated_at,
         }
@@ -112,6 +117,8 @@ impl ProjectRepository for PgProjectRepo {
                  name,
                  description,
                  status AS "status: SqlProjectStatus",
+                 progress,
+                 completed_at,
                  created_at,
                  updated_at
                FROM project.projects
@@ -140,6 +147,8 @@ impl ProjectRepository for PgProjectRepo {
                  name,
                  description,
                  status AS "status: SqlProjectStatus",
+                 progress,
+                 completed_at,
                  created_at,
                  updated_at
                FROM project.projects
@@ -168,6 +177,8 @@ impl ProjectRepository for PgProjectRepo {
                  p.name,
                  p.description,
                  p.status AS "status: SqlProjectStatus",
+                 p.progress,
+                 p.completed_at,
                  p.created_at,
                  p.updated_at
                FROM project.projects p
@@ -187,20 +198,25 @@ impl ProjectRepository for PgProjectRepo {
         let status = SqlProjectStatus::from(project.status);
         sqlx::query!(
             r#"INSERT INTO project.projects
-                 (id, owner_group_id, created_by_user_id, name, description, status, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)
+                 (id, owner_group_id, created_by_user_id, name, description, status,
+                  progress, completed_at, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                ON CONFLICT (id) DO UPDATE SET
                  owner_group_id     = EXCLUDED.owner_group_id,
                  created_by_user_id = EXCLUDED.created_by_user_id,
                  name               = EXCLUDED.name,
                  description        = EXCLUDED.description,
-                 status             = EXCLUDED.status"#,
+                 status             = EXCLUDED.status,
+                 progress           = EXCLUDED.progress,
+                 completed_at       = EXCLUDED.completed_at"#,
             project.id.0,
             project.owner_group_id.0,
             project.created_by_user_id.0,
             project.name,
             project.description,
             status as SqlProjectStatus,
+            i16::from(project.progress),
+            project.completed_at,
             project.created_at,
         )
         .execute(&self.pool)

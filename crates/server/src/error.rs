@@ -92,7 +92,8 @@ impl AppError {
                 application::Error::Repository(_)
                 | application::Error::Storage(_)
                 | application::Error::Event(_)
-                | application::Error::Job(_) => (
+                | application::Error::Job(_)
+                | application::Error::Render(_) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     ErrorCode::Internal,
                     "internal server error".to_owned(),

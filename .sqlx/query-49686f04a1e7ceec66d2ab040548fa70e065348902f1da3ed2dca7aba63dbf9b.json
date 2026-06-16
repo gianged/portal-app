@@ -1,0 +1,179 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 id,\n                 kind        AS \"kind: SqlReportKind\",\n                 scope       AS \"scope: SqlReportScope\",\n                 group_id,\n                 period_start,\n                 period_end,\n                 storage_key,\n                 content_type,\n                 size_bytes,\n                 generated_by,\n                 generated_at\n               FROM reporting.reports\n               WHERE kind = $1 AND scope = 'company' AND period_start = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "reporting.reports",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind: SqlReportKind",
+        "type_info": {
+          "Custom": {
+            "name": "reporting.report_kind",
+            "kind": {
+              "Enum": [
+                "monthly",
+                "yearly"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "reporting.reports",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "scope: SqlReportScope",
+        "type_info": {
+          "Custom": {
+            "name": "reporting.report_scope",
+            "kind": {
+              "Enum": [
+                "company",
+                "group"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "reporting.reports",
+            "name": "scope"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "group_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "reporting.reports",
+            "name": "group_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "period_start",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reporting.reports",
+            "name": "period_start"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "period_end",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reporting.reports",
+            "name": "period_end"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "storage_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reporting.reports",
+            "name": "storage_key"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "content_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reporting.reports",
+            "name": "content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "size_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reporting.reports",
+            "name": "size_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "generated_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "reporting.reports",
+            "name": "generated_by"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "generated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reporting.reports",
+            "name": "generated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "reporting.report_kind",
+            "kind": {
+              "Enum": [
+                "monthly",
+                "yearly"
+              ]
+            }
+          }
+        },
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "49686f04a1e7ceec66d2ab040548fa70e065348902f1da3ed2dca7aba63dbf9b"
+}

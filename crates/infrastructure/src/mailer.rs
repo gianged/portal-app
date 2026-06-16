@@ -2,7 +2,8 @@
 
 use async_trait::async_trait;
 use lettre::{
-    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor, message::Mailbox,
+    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
+    message::{Attachment, Mailbox, MultiPart, SinglePart, header::ContentType},
     transport::smtp::authentication::Credentials,
 };
 
@@ -60,12 +61,28 @@ impl Mailer for SmtpMailer {
             .to
             .parse::<Mailbox>()
             .map_err(|e| MailError::Invalid(format!("invalid recipient address: {e}")))?;
-        let email = Message::builder()
+        let builder = Message::builder()
             .from(self.from.clone())
             .to(to)
-            .subject(&message.subject)
-            .body(message.body.clone())
-            .map_err(|e| MailError::Invalid(e.to_string()))?;
+            .subject(&message.subject);
+        let email = if message.attachments.is_empty() {
+            builder
+                .body(message.body.clone())
+                .map_err(|e| MailError::Invalid(e.to_string()))?
+        } else {
+            let mut multipart =
+                MultiPart::mixed().singlepart(SinglePart::plain(message.body.clone()));
+            for a in &message.attachments {
+                let content_type = ContentType::parse(&a.content_type)
+                    .map_err(|e| MailError::Invalid(e.to_string()))?;
+                multipart = multipart.singlepart(
+                    Attachment::new(a.filename.clone()).body(a.bytes.clone(), content_type),
+                );
+            }
+            builder
+                .multipart(multipart)
+                .map_err(|e| MailError::Invalid(e.to_string()))?
+        };
         self.transport
             .send(email)
             .await
@@ -83,6 +100,7 @@ impl Mailer for LogMailer {
         tracing::info!(
             to = %message.to,
             subject = %message.subject,
+            attachments = message.attachments.len(),
             "email suppressed (EMAIL_ENABLED=false): logging instead of sending"
         );
         Ok(())

@@ -133,6 +133,13 @@ pub fn sidebar_sections() -> Vec<NavSection> {
                     count: None,
                     enabled: true,
                 },
+                NavItem {
+                    label: "Reports",
+                    href: "/reports",
+                    icon: IconName::Doc,
+                    count: None,
+                    enabled: true,
+                },
             ],
         },
     ]

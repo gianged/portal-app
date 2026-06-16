@@ -5,6 +5,7 @@ pub mod box_;
 pub mod button;
 pub mod card;
 pub mod center;
+pub mod chart;
 pub mod checkbox;
 pub mod cluster;
 pub mod dialog;

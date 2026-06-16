@@ -21,4 +21,8 @@ pub trait UserRepository: Send + Sync {
 
     /// Every non-null avatar storage key. Backs the upload orphan-sweep job.
     async fn list_avatar_keys(&self) -> Result<Vec<String>, RepositoryError>;
+
+    /// Active users carrying a `system_role` (Director / HR). Backs report
+    /// recipient enumeration for the scheduled mail.
+    async fn list_with_system_role(&self) -> Result<Vec<User>, RepositoryError>;
 }

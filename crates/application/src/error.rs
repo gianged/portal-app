@@ -1,5 +1,5 @@
 use domain::error::{
-    AuthzError, EventError, JobError, RepositoryError, StorageError, TransitionError,
+    AuthzError, EventError, JobError, RenderError, RepositoryError, StorageError, TransitionError,
 };
 use thiserror::Error;
 
@@ -30,6 +30,8 @@ pub enum Error {
     Event(#[from] EventError),
     #[error(transparent)]
     Job(#[from] JobError),
+    #[error(transparent)]
+    Render(#[from] RenderError),
 }
 
 impl From<AuthzError> for Error {

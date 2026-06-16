@@ -7,6 +7,7 @@ pub mod group;
 pub mod ids;
 pub mod notification;
 pub mod project;
+pub mod report;
 pub mod request;
 pub mod ticket;
 pub mod user;
