@@ -28,9 +28,12 @@ pub struct Config {
     pub cookie_secure: bool,
     /// Per-window request ceilings for the rate-limit middleware: `auth_rate_limit`
     /// gates unauthenticated `/login` per client IP, `api_rate_limit` gates the
-    /// protected API per user. `rate_limit_window_secs` is the fixed window width.
+    /// protected API per user, `chat_rate_limit` gates the WebSocket `SendMessage`
+    /// path per user (the HTTP per-user limiter never sees WS frames).
+    /// `rate_limit_window_secs` is the fixed window width.
     pub auth_rate_limit: u64,
     pub api_rate_limit: u64,
+    pub chat_rate_limit: u64,
     pub rate_limit_window_secs: i64,
     /// Origins allowed to call the API with credentials (the WASM frontend).
     /// Credentialed CORS forbids a wildcard, so these are enumerated.
@@ -106,6 +109,9 @@ pub fn from_env() -> anyhow::Result<Config> {
         api_rate_limit: optional("API_RATE_LIMIT", "120")
             .parse()
             .context("invalid API_RATE_LIMIT")?,
+        chat_rate_limit: optional("CHAT_RATE_LIMIT", "120")
+            .parse()
+            .context("invalid CHAT_RATE_LIMIT")?,
         rate_limit_window_secs: optional("RATE_LIMIT_WINDOW_SECS", "60")
             .parse()
             .context("invalid RATE_LIMIT_WINDOW_SECS")?,

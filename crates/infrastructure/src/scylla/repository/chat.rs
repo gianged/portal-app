@@ -1,12 +1,19 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use async_trait::async_trait;
 // `::scylla` (leading `::`) names the driver crate explicitly; a bare `scylla`
 // here is ambiguous with this crate's own `scylla` module.
 use ::scylla::{
     client::session::Session,
-    statement::{batch::Batch, prepared::PreparedStatement},
+    statement::{
+        batch::{Batch, BatchType},
+        prepared::PreparedStatement,
+    },
 };
+use futures::{StreamExt, TryStreamExt, stream};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -19,7 +26,7 @@ use domain::{
 
 use crate::scylla::mappers::{
     AnnouncementRow, ChannelMembershipRow, ChannelRow, MessageRow, channel_kind_str,
-    row_to_announcement, row_to_channel, row_to_membership, row_to_message, uuid_to_timeuuid,
+    row_to_announcement, row_to_channel, row_to_membership, row_to_message,
 };
 
 /// Prepared statements held for the lifetime of the repository. Preparing
@@ -69,8 +76,6 @@ pub struct ScyllaChatRepo {
 }
 
 impl ScyllaChatRepo {
-    // Setup-only: a straight-line list of `prepare` calls is the clearest
-    // shape for the prepared-statement table; splitting it just relocates noise.
     #[allow(clippy::too_many_lines)]
     pub async fn new(session: Arc<Session>) -> Result<Self, RepositoryError> {
         let stmts = Statements {
@@ -237,6 +242,40 @@ async fn prepare(
 
 fn backend<E: std::fmt::Display>(e: E) -> RepositoryError {
     RepositoryError::Backend(e.to_string())
+}
+
+// Single-partition UNLOGGED batch insert for one channel's chunk. A free fn (not a
+// closure) so the future has a concrete type the stream combinators accept.
+async fn write_message_batch(
+    session: &Session,
+    stmt: &PreparedStatement,
+    chunk: Vec<&Message>,
+) -> Result<(), RepositoryError> {
+    // Unlogged: a single-partition batch is already atomic and isolated, so the
+    // batchlog round-trip a logged batch (Batch::default) pays would be pure
+    // write-amplification.
+    let mut batch = Batch::new(BatchType::Unlogged);
+    let mut values = Vec::with_capacity(chunk.len());
+    for message in &chunk {
+        batch.append_statement(stmt.clone());
+        let mentions: HashSet<Uuid> = message.mentions.iter().map(|u| u.0).collect();
+        values.push((
+            message.channel_id.0,
+            message.id.0,
+            message.sender_user_id.0,
+            message.body.clone(),
+            mentions,
+            message.attachment_keys.clone(),
+            message.is_announcement,
+            message.edited_at,
+            message.deleted_at,
+        ));
+    }
+    session
+        .batch(&batch, values.as_slice())
+        .await
+        .map_err(backend)?;
+    Ok(())
 }
 
 #[async_trait]
@@ -437,16 +476,14 @@ impl ChatRepository for ScyllaChatRepo {
                 .execute_unpaged(&self.stmts.list_messages_latest, (channel_id.0, limit))
                 .await
                 .map_err(backend)?,
-            Some(cursor) => {
-                let cursor_tuuid = uuid_to_timeuuid(cursor.0);
-                self.session
-                    .execute_unpaged(
-                        &self.stmts.list_messages_before,
-                        (channel_id.0, cursor_tuuid, limit),
-                    )
-                    .await
-                    .map_err(backend)?
-            }
+            Some(cursor) => self
+                .session
+                .execute_unpaged(
+                    &self.stmts.list_messages_before,
+                    (channel_id.0, cursor.0, limit),
+                )
+                .await
+                .map_err(backend)?,
         };
         let rows = result.into_rows_result().map_err(backend)?;
         let mut out = Vec::new();
@@ -461,10 +498,9 @@ impl ChatRepository for ScyllaChatRepo {
         channel_id: ChannelId,
         message_id: MessageId,
     ) -> Result<Option<Message>, RepositoryError> {
-        let cursor = uuid_to_timeuuid(message_id.0);
         let result = self
             .session
-            .execute_unpaged(&self.stmts.find_message, (channel_id.0, cursor))
+            .execute_unpaged(&self.stmts.find_message, (channel_id.0, message_id.0))
             .await
             .map_err(backend)?;
         let rows = result.into_rows_result().map_err(backend)?;
@@ -476,13 +512,12 @@ impl ChatRepository for ScyllaChatRepo {
 
     async fn save_message(&self, message: &Message) -> Result<(), RepositoryError> {
         let mentions: HashSet<Uuid> = message.mentions.iter().map(|u| u.0).collect();
-        let message_id = uuid_to_timeuuid(message.id.0);
         self.session
             .execute_unpaged(
                 &self.stmts.save_message,
                 (
                     message.channel_id.0,
-                    message_id,
+                    message.id.0,
                     message.sender_user_id.0,
                     &message.body,
                     mentions,
@@ -497,15 +532,50 @@ impl ChatRepository for ScyllaChatRepo {
         Ok(())
     }
 
+    async fn save_messages(&self, messages: &[Message]) -> Result<(), RepositoryError> {
+        if messages.is_empty() {
+            return Ok(());
+        }
+
+        // messages_by_channel is partitioned by channel_id, and Scylla batches are
+        // only efficient within one partition. Group per channel, then chunk to
+        // stay under the server's per-batch statement limit.
+        const MAX_BATCH_STATEMENTS: usize = 100;
+        const MAX_CONCURRENT_BATCHES: usize = 16;
+
+        let mut by_channel: HashMap<ChannelId, Vec<&Message>> = HashMap::new();
+        for message in messages {
+            by_channel
+                .entry(message.channel_id)
+                .or_default()
+                .push(message);
+        }
+
+        let mut batches = Vec::new();
+        for group in by_channel.into_values() {
+            for chunk in group.chunks(MAX_BATCH_STATEMENTS) {
+                batches.push(write_message_batch(
+                    &self.session,
+                    &self.stmts.save_message,
+                    chunk.to_vec(),
+                ));
+            }
+        }
+
+        stream::iter(batches)
+            .buffer_unordered(MAX_CONCURRENT_BATCHES)
+            .try_for_each(|()| async { Ok(()) })
+            .await
+    }
+
     async fn find_announcement(
         &self,
         channel_id: ChannelId,
         message_id: MessageId,
     ) -> Result<Option<Announcement>, RepositoryError> {
-        let cursor = uuid_to_timeuuid(message_id.0);
         let result = self
             .session
-            .execute_unpaged(&self.stmts.find_announcement, (channel_id.0, cursor))
+            .execute_unpaged(&self.stmts.find_announcement, (channel_id.0, message_id.0))
             .await
             .map_err(backend)?;
         let rows = result.into_rows_result().map_err(backend)?;
@@ -533,13 +603,12 @@ impl ChatRepository for ScyllaChatRepo {
     }
 
     async fn save_announcement(&self, announcement: &Announcement) -> Result<(), RepositoryError> {
-        let message_id = uuid_to_timeuuid(announcement.id.0);
         self.session
             .execute_unpaged(
                 &self.stmts.save_announcement,
                 (
                     announcement.channel_id.0,
-                    message_id,
+                    announcement.id.0,
                     announcement.sender_user_id.0,
                     &announcement.body,
                     announcement.edited_at,
@@ -561,9 +630,9 @@ impl ChatRepository for ScyllaChatRepo {
         let mut batch = Batch::default();
         batch.append_statement(self.stmts.delete_announcement_row.clone());
         batch.append_statement(self.stmts.delete_announcement_message.clone());
-        let id_tuuid = uuid_to_timeuuid(message_id.0);
+        let id = message_id.0;
         self.session
-            .batch(&batch, ((channel_id.0, id_tuuid), (channel_id.0, id_tuuid)))
+            .batch(&batch, ((channel_id.0, id), (channel_id.0, id)))
             .await
             .map_err(backend)?;
         Ok(())

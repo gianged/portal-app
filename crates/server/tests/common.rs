@@ -24,10 +24,20 @@ use application::{
     events::EventBus,
     permissions::Permissions,
     service::{
-        announcement::AnnouncementService, audit::AuditService, chat::ChatService,
-        comment::CommentService, group::GroupService, notification::NotificationService,
-        project::ProjectService, report::ReportService, request::RequestService,
-        ticket::TicketService, user::UserService,
+        announcement::AnnouncementService,
+        audit::AuditService,
+        chat::{
+            ChatService,
+            ingest::{ChatIngest, ChatIngestConfig},
+        },
+        comment::CommentService,
+        group::GroupService,
+        notification::NotificationService,
+        project::ProjectService,
+        report::ReportService,
+        request::RequestService,
+        ticket::TicketService,
+        user::UserService,
     },
 };
 use domain::{
@@ -768,6 +778,7 @@ pub struct TestApp {
 
 /// Assembles a full [`AppState`] over in-memory fakes with the given rate-limit
 /// ceilings. No network or filesystem is touched.
+#[allow(clippy::too_many_lines)]
 #[must_use]
 pub fn test_app(rate_limits: RateLimits) -> TestApp {
     let users = Arc::new(FakeUsers::default());
@@ -797,6 +808,23 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
     let presence: Arc<dyn Presence> = Arc::new(FakePresence);
     let rate_limiter: Arc<dyn RateLimit> = Arc::new(FakeRateLimit::default());
     let revocation = Arc::new(FakeRevocation::default());
+
+    // Chat service + its ingest buffer. The drain loop is not spawned here: no
+    // harness test drives the WS enqueue path, so the buffer only needs to exist.
+    let chat = Arc::new(ChatService::new(
+        chats.clone(),
+        users.clone(),
+        Arc::new(FakeChatAttachments),
+        storage.clone(),
+        perms.clone(),
+        events.clone(),
+    ));
+    let (chat_ingest, _chat_ingest_rx) = ChatIngest::new(
+        chat.clone(),
+        chats.clone(),
+        events.clone(),
+        ChatIngestConfig::default(),
+    );
 
     let state = AppState {
         user: Arc::new(UserService::new(
@@ -834,14 +862,8 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
             perms.clone(),
             events.clone(),
         )),
-        chat: Arc::new(ChatService::new(
-            chats,
-            users.clone(),
-            Arc::new(FakeChatAttachments),
-            storage.clone(),
-            perms.clone(),
-            events.clone(),
-        )),
+        chat,
+        chat_ingest,
         comment: Arc::new(CommentService::new(
             Arc::new(FakeComments),
             requests.clone(),
@@ -891,5 +913,6 @@ pub fn default_test_app() -> TestApp {
     test_app(RateLimits {
         auth: 1000,
         api: 1000,
+        chat: 1000,
     })
 }

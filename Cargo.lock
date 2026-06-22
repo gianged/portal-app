@@ -4143,6 +4143,7 @@ dependencies = [
  "futures",
  "infrastructure",
  "jsonwebtoken",
+ "redis 1.2.1",
  "serde",
  "serde_json",
  "shared",

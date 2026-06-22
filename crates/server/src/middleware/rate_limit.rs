@@ -1,14 +1,18 @@
-//! Fixed-window rate limiting, layered over two planes:
+//! Fixed-window rate limiting, layered over three planes:
 //!
 //! - [`per_ip`] guards the unauthenticated `/login` route by client IP, blunting
 //!   credential-stuffing. It degrades to a shared `login:unknown` bucket when no
 //!   [`ConnectInfo`] is attached (e.g. under `oneshot` tests).
 //! - [`per_user`] guards the protected API by caller id, read from the
 //!   [`AuthUser`] the auth layer inserts — so it must sit *inside* the auth layer.
+//! - [`within_chat_rate`] guards the WebSocket `SendMessage` path by caller id.
+//!   Unlike the other two it is NOT middleware: WS frames are not HTTP requests,
+//!   so the per-connection task calls it per frame instead.
 //!
-//! Both call [`RateLimit::incr`] and compare the returned count against the
-//! relevant ceiling in [`RateLimits`], returning [`AppError::RateLimited`] (429)
-//! when exceeded.
+//! All three call [`RateLimit::incr`] and compare the returned count against the
+//! relevant ceiling in [`RateLimits`]. The HTTP planes return
+//! [`AppError::RateLimited`] (429) when exceeded; the chat plane returns a bool so
+//! the WS layer can answer with an error frame instead.
 
 use std::net::SocketAddr;
 
@@ -17,6 +21,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use domain::ids::UserId;
 
 use crate::{app::AppState, error::AppError, extractors::auth_user::AuthUser};
 
@@ -28,6 +33,9 @@ pub struct RateLimits {
     pub auth: u64,
     /// Ceiling for protected API calls, per authenticated user.
     pub api: u64,
+    /// Ceiling for WebSocket `SendMessage` frames, per authenticated user.
+    /// Applied by [`within_chat_rate`] per frame, not as a middleware layer.
+    pub chat: u64,
 }
 
 /// Per-IP limiter for the public auth routes. Reads the peer address from the
@@ -64,6 +72,20 @@ pub async fn per_user(
         .await?;
     }
     Ok(next.run(req).await)
+}
+
+/// Per-user gate for WebSocket `SendMessage`, under a dedicated `chat:` bucket.
+/// Returns `true` when the message may proceed. Fails open on a limiter backend
+/// error: a transient blip should not drop a real message, and the ingest buffer
+/// still backstops with its own overload shedding.
+pub async fn within_chat_rate(state: &AppState, uid: UserId) -> bool {
+    match state.rate_limiter.incr(&format!("chat:{}", uid.0)).await {
+        Ok(count) => count <= state.rate_limits.chat,
+        Err(e) => {
+            tracing::warn!(error = %e, "ws: chat rate-limit check failed, allowing");
+            true
+        }
+    }
 }
 
 /// Increments `bucket` and rejects with 429 once the count passes `limit`. A

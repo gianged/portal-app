@@ -34,8 +34,15 @@ tower-http = { workspace = true }
 futures = { workspace = true }
 dotenvy = { workspace = true }
 
+[features]
+# Gates the live-infra integration tests (Scylla/Redis/Postgres). Off by default
+# so `cargo test` and CI stay infra-free.
+integration = []
+
 [dev-dependencies]
 # `util` brings `ServiceExt::oneshot`, used to drive the router in integration tests.
 tower = { workspace = true, features = ["util"] }
 # Test fakes implement the `#[async_trait]` domain ports/repositories.
 async-trait = { workspace = true }
+# Raw pub/sub subscriber for the chat throughput integration test (asserts fan-out).
+redis = { workspace = true }

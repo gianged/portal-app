@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use ::scylla::value::CqlTimeuuid;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -78,7 +77,7 @@ pub(crate) fn row_to_channel(row: ChannelRow) -> Result<Channel, RepositoryError
 /// `is_announcement`, `edited_at`, `deleted_at`. `channel_id` is part of the partition
 /// key and is supplied by the caller — no need to round-trip it through the row.
 pub(crate) type MessageRow = (
-    CqlTimeuuid,
+    Uuid,
     Uuid,
     String,
     Option<HashSet<Uuid>>,
@@ -105,7 +104,7 @@ pub(crate) fn row_to_message(channel_id: ChannelId, row: MessageRow) -> Message 
         .map(UserId)
         .collect();
     Message {
-        id: MessageId(timeuuid_to_uuid(message_id)),
+        id: MessageId(message_id),
         channel_id,
         sender_user_id: UserId(sender_user_id),
         body,
@@ -121,18 +120,17 @@ pub(crate) fn row_to_message(channel_id: ChannelId, row: MessageRow) -> Message 
 ///
 /// Columns: `message_id`, `sender_user_id`, `body`, `edited_at`. `created_at` is
 /// derived from the embedded timestamp in the v7 `message_id` UUID since the
-/// schema does not store it explicitly (TIMEUUID was meant to carry it).
-pub(crate) type AnnouncementRow = (CqlTimeuuid, Uuid, String, Option<OffsetDateTime>);
+/// schema does not store it explicitly.
+pub(crate) type AnnouncementRow = (Uuid, Uuid, String, Option<OffsetDateTime>);
 
 pub(crate) fn row_to_announcement(
     channel_id: ChannelId,
     row: AnnouncementRow,
 ) -> Result<Announcement, RepositoryError> {
     let (message_id, sender_user_id, body, edited_at) = row;
-    let id_uuid = timeuuid_to_uuid(message_id);
-    let created_at = uuid_v7_timestamp(id_uuid)?;
+    let created_at = uuid_v7_timestamp(message_id)?;
     Ok(Announcement {
-        id: MessageId(id_uuid),
+        id: MessageId(message_id),
         channel_id,
         sender_user_id: UserId(sender_user_id),
         body,
@@ -178,14 +176,6 @@ fn parse_channel_kind(s: &str) -> Result<ChannelKind, RepositoryError> {
             "unknown channel kind: {other}"
         ))),
     }
-}
-
-pub(crate) fn timeuuid_to_uuid(t: CqlTimeuuid) -> Uuid {
-    Uuid::from_bytes(*t.as_bytes())
-}
-
-pub(crate) fn uuid_to_timeuuid(u: Uuid) -> CqlTimeuuid {
-    CqlTimeuuid::from(u)
 }
 
 /// Extracts the UUID v7 embedded millisecond timestamp as `OffsetDateTime`.

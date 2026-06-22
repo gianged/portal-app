@@ -77,6 +77,15 @@ pub trait ChatRepository: Send + Sync {
 
     async fn save_message(&self, message: &Message) -> Result<(), RepositoryError>;
 
+    /// Persist a batch of messages. Default loops `save_message`; adapters override
+    /// for true backend batching.
+    async fn save_messages(&self, messages: &[Message]) -> Result<(), RepositoryError> {
+        for message in messages {
+            self.save_message(message).await?;
+        }
+        Ok(())
+    }
+
     async fn find_announcement(
         &self,
         channel_id: ChannelId,

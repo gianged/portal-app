@@ -10,8 +10,10 @@
 --
 -- Modelling notes:
 --   - Each table answers one access pattern. Don't query across them.
---   - message_id is TIMEUUID (type 1 UUID) so rows are naturally
---     time-ordered without a separate timestamp clustering column.
+--   - message_id is a UUIDv7 stored as UUID. Its leading bytes are the
+--     millisecond timestamp, so rows cluster time-ordered without a separate
+--     timestamp column. Not TIMEUUID: that type requires a v1 UUID and the
+--     driver/server reject the v7 ids the app generates.
 --   - All "*_at" columns are TIMESTAMP (Cassandra has no TIMESTAMPTZ;
 --     always serialize from UTC on the client side).
 --   - At 100-1000 users we expect modest channel volumes; if a hot
@@ -76,7 +78,7 @@ CREATE TABLE IF NOT EXISTS channels (
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS messages_by_channel (
     channel_id        UUID,
-    message_id        TIMEUUID,
+    message_id        UUID,
     sender_user_id    UUID,
     body              TEXT,
     mentions          SET<UUID>,
@@ -91,7 +93,7 @@ CREATE TABLE IF NOT EXISTS messages_by_channel (
       'compaction_window_unit': 'DAYS',
       'compaction_window_size': '7'
   }
-  AND comment = 'Per-channel message log. Newest-first via TIMEUUID DESC.';
+  AND comment = 'Per-channel message log. Newest-first via UUIDv7 DESC.';
 
 
 -- -----------------------------------------------------------------------------
@@ -107,7 +109,7 @@ CREATE TABLE IF NOT EXISTS messages_by_channel (
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS announcements_by_channel (
     channel_id        UUID,
-    message_id        TIMEUUID,
+    message_id        UUID,
     sender_user_id    UUID,
     body              TEXT,
     edited_at         TIMESTAMP,

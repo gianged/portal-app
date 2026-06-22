@@ -18,6 +18,8 @@ use crate::{
     permissions::Permissions,
 };
 
+pub mod ingest;
+
 /// Members can delete only their own messages within this window after posting.
 /// Group-channel leaders bypass this grace and can delete anytime.
 const MESSAGE_DELETE_GRACE: Duration = Duration::minutes(15);
@@ -181,13 +183,16 @@ impl ChatService {
         Ok(self.chats.list_messages(channel_id, before, limit).await?)
     }
 
-    /// Posts a message to a channel the actor may post in.
+    /// Validates a post and builds the `Message`, without persisting or emitting.
+    /// Shared by `post_message` and the write-behind `ChatIngest` buffer so the
+    /// permission and attachment-ownership checks live in exactly one place.
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not active or cannot post in the
-    /// channel, `NotFound` if the channel does not exist, a repository error if
-    /// the datastore is unavailable, or an event error if the event bus fails.
-    pub async fn post_message(&self, actor: UserId, cmd: PostMessageCommand) -> Result<Message> {
+    /// channel, `NotFound` if the channel does not exist, `Validation` if the
+    /// attachments exceed the cap or are not owned by the actor in this channel,
+    /// or a repository error if the datastore is unavailable.
+    async fn prepare_message(&self, actor: UserId, cmd: PostMessageCommand) -> Result<Message> {
         self.perms.require_active(actor).await?;
         let channel = self
             .chats
@@ -215,8 +220,7 @@ impl ChatService {
             }
         }
 
-        let now = OffsetDateTime::now_utc();
-        let message = Message {
+        Ok(Message {
             id: MessageId(Uuid::now_v7()),
             channel_id: cmd.channel_id,
             sender_user_id: actor,
@@ -226,15 +230,25 @@ impl ChatService {
             is_announcement: false,
             edited_at: None,
             deleted_at: None,
-        };
+        })
+    }
+
+    /// Posts a message to a channel the actor may post in.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not active or cannot post in the
+    /// channel, `NotFound` if the channel does not exist, a repository error if
+    /// the datastore is unavailable, or an event error if the event bus fails.
+    pub async fn post_message(&self, actor: UserId, cmd: PostMessageCommand) -> Result<Message> {
+        let message = self.prepare_message(actor, cmd).await?;
         self.chats.save_message(&message).await?;
         self.events
             .emit(DomainEvent::MessagePosted {
                 message_id: message.id,
                 channel_id: message.channel_id,
-                sender: actor,
+                sender: message.sender_user_id,
                 mentions: message.mentions.clone(),
-                at: now,
+                at: uuid_v7_created_at(message.id.0),
                 after: message.clone(),
             })
             .await?;

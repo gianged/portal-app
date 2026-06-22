@@ -33,7 +33,7 @@ pub async fn run() -> anyhow::Result<()> {
     telemetry::init();
 
     let cfg = config::from_env()?;
-    let router = app::build(&cfg).await?;
+    let (router, ingest) = app::build(&cfg).await?;
 
     let listener = tokio::net::TcpListener::bind(cfg.server_addr).await?;
     tracing::info!(addr = %cfg.server_addr, "server listening");
@@ -41,12 +41,16 @@ pub async fn run() -> anyhow::Result<()> {
     tokio::spawn(force_exit_watchdog());
     // `ConnectInfo` exposes the peer address to the per-IP rate limiter; graceful
     // shutdown lets in-flight requests and WebSocket connections drain on signal.
-    axum::serve(
+    let serve_result = axum::serve(
         listener,
         router.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown_signal())
-    .await?;
+    .await;
+    // HTTP server stopped: flush the chat ingest buffer's tail before exit, even
+    // if serve returned an error, so optimistically-acked messages still persist.
+    ingest.shutdown().await;
+    serve_result?;
     Ok(())
 }
 

@@ -10,9 +10,10 @@
 //!   when a membership is revoked, so access ends without waiting for a
 //!   reconnect.
 //!
-//! Inbound `SendMessage` goes through `ChatService::post_message`; the resulting
-//! event returns to every subscribed connection (including the sender) through
-//! the `portal.chat` plane, so there is no echo special case.
+//! Inbound `SendMessage` goes through the write-behind `ChatIngest` buffer, which
+//! validates and acks on this task then persists and fans out in batches; the
+//! resulting event returns to every subscribed connection (including the sender)
+//! through the `portal.chat` plane, so there is no echo special case.
 //!
 //! Authorization is checked per `Subscribe` through `ChatService::ensure_can_view`
 //! (never cached at connect), so newly created channels work immediately and
@@ -147,6 +148,7 @@ async fn open_streams(state: &AppState) -> Result<SelectAll<ByteStream>, EventEr
 }
 
 /// Handles one client frame. Returns `false` when the connection should close.
+#[allow(clippy::too_many_lines)]
 async fn on_client_frame(
     state: &AppState,
     uid: UserId,
@@ -224,13 +226,25 @@ async fn on_client_frame(
                 )
                 .await;
             }
+            // Per-user WS rate gate before the expensive enqueue (the HTTP per-user
+            // limiter never sees WS frames).
+            if !crate::middleware::rate_limit::within_chat_rate(state, uid).await {
+                return send(
+                    sink,
+                    &ServerFrame::Error {
+                        code: "rate_limited".to_owned(),
+                        message: "too many messages, slow down".to_owned(),
+                    },
+                )
+                .await;
+            }
             let cmd = PostMessageCommand {
                 channel_id: ChannelId(channel_id.0),
                 body,
                 mentions: mentions.into_iter().map(|u| UserId(u.0)).collect(),
                 attachment_keys,
             };
-            match state.chat.post_message(uid, cmd).await {
+            match state.chat_ingest.enqueue(uid, cmd).await {
                 Ok(_) => true, // echo arrives via the portal.chat plane
                 Err(e) => {
                     send(

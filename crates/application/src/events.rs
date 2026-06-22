@@ -411,4 +411,45 @@ impl EventBus {
         }
         Ok(())
     }
+
+    /// Broadcasts `event` to the real-time publisher only, skipping the durable
+    /// job queue. The batched chat drain uses this so it can enqueue
+    /// notifications selectively rather than once per message.
+    ///
+    /// Unlike [`Self::emit`] this does NOT apply the `NOTIFY_TOPICS` /
+    /// `AUDIT_TOPICS` routing: callers own that. Pairing it with a topic that
+    /// belongs to `AUDIT_TOPICS` and not enqueuing the audit job elsewhere would
+    /// silently drop an audit-log entry.
+    ///
+    /// # Errors
+    /// Returns an `Event` error if publishing to the broadcast publisher fails.
+    ///
+    /// # Panics
+    /// Panics only if `serde_json::to_vec` fails for `DomainEvent`, which cannot
+    /// happen for these infallibly-serialisable variants.
+    pub async fn broadcast(&self, event: &DomainEvent) -> Result<()> {
+        let payload = serde_json::to_vec(event)
+            .expect("DomainEvent variants only contain serde-derivable types");
+        self.publisher.publish(event.topic(), &payload).await?;
+        Ok(())
+    }
+
+    /// Enqueues `event` onto the durable notification queue only, skipping the
+    /// broadcast. Pairs with [`Self::broadcast`] for callers that fan out a batch
+    /// and enqueue notifications for just the events that need them. Like
+    /// [`Self::broadcast`], it does not consult `NOTIFY_TOPICS` / `AUDIT_TOPICS`:
+    /// the caller decides which events warrant a notification.
+    ///
+    /// # Errors
+    /// Returns a `Job` error if enqueuing onto the job queue fails.
+    ///
+    /// # Panics
+    /// Panics only if `serde_json::to_vec` fails for `DomainEvent`, which cannot
+    /// happen for these infallibly-serialisable variants.
+    pub async fn enqueue_notification(&self, event: &DomainEvent) -> Result<()> {
+        let payload = serde_json::to_vec(event)
+            .expect("DomainEvent variants only contain serde-derivable types");
+        self.jobs.enqueue("notifications", &payload).await?;
+        Ok(())
+    }
 }

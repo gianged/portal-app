@@ -15,10 +15,20 @@ use application::{
     events::EventBus,
     permissions::Permissions,
     service::{
-        announcement::AnnouncementService, audit::AuditService, chat::ChatService,
-        comment::CommentService, group::GroupService, notification::NotificationService,
-        project::ProjectService, report::ReportService, request::RequestService,
-        ticket::TicketService, user::UserService,
+        announcement::AnnouncementService,
+        audit::AuditService,
+        chat::{
+            ChatService,
+            ingest::{ChatIngest, ChatIngestConfig},
+        },
+        comment::CommentService,
+        group::GroupService,
+        notification::NotificationService,
+        project::ProjectService,
+        report::ReportService,
+        request::RequestService,
+        ticket::TicketService,
+        user::UserService,
     },
 };
 use domain::{
@@ -63,6 +73,9 @@ pub struct AppState {
     pub request: Arc<RequestService>,
     pub ticket: Arc<TicketService>,
     pub chat: Arc<ChatService>,
+    // Write-behind buffer in front of chat persistence; the WS SendMessage path
+    // enqueues here instead of calling `chat.post_message` inline.
+    pub chat_ingest: Arc<ChatIngest>,
     pub comment: Arc<CommentService>,
     pub announcement: Arc<AnnouncementService>,
     pub notification: Arc<NotificationService>,
@@ -85,13 +98,28 @@ pub struct AppState {
     pub signed_url: Arc<SignedUrl>,
 }
 
+/// Owns the chat ingest drain task so the serving loop can flush its buffered
+/// tail before exit. [`Self::shutdown`] signals the loop and waits for it.
+pub struct IngestShutdown {
+    trigger: tokio::sync::oneshot::Sender<()>,
+    drain: tokio::task::JoinHandle<()>,
+}
+
+impl IngestShutdown {
+    /// Signals the chat drain loop to flush its tail, then awaits it. Errors
+    /// (loop already gone) are ignored: there is nothing left to drain.
+    pub async fn shutdown(self) {
+        let _ = self.trigger.send(());
+        let _ = self.drain.await;
+    }
+}
+
 /// Builds every infrastructure adapter, assembles the application services, and
-/// returns the HTTP router. `OpenFGA` is initialised here (get-or-create store +
-/// model), so no external bootstrap step is required.
-// Composition root: one linear list of adapter + service constructors; splitting
-// it would only scatter the wiring across helpers.
+/// returns the HTTP router plus an [`IngestShutdown`] handle for the chat drain
+/// task. `OpenFGA` is initialised here (get-or-create store + model), so no
+/// external bootstrap step is required.
 #[allow(clippy::too_many_lines)]
-pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
+pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
     // Backends.
     let pool = build_pool(&cfg.database_url, cfg.pg_max_connections)
         .await
@@ -211,7 +239,29 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
     ));
     let realtime = Realtime::new(publisher, cfg.redis_url.clone());
 
-    // Application services, each built per its own constructor.
+    // Chat service + its write-behind ingest buffer. The drain loop is spawned
+    // here; `IngestShutdown` lets the serving loop flush its tail before exit.
+    let chat = Arc::new(ChatService::new(
+        chats.clone(),
+        users.clone(),
+        chat_attachments,
+        storage_port.clone(),
+        perms.clone(),
+        events.clone(),
+    ));
+    let (chat_ingest, chat_ingest_rx) = ChatIngest::new(
+        chat.clone(),
+        chats.clone(),
+        events.clone(),
+        ChatIngestConfig::default(),
+    );
+    let (ingest_shutdown_tx, ingest_shutdown_rx) = tokio::sync::oneshot::channel();
+    let ingest_drain = tokio::spawn(chat_ingest.clone().run(chat_ingest_rx, ingest_shutdown_rx));
+    let ingest_shutdown = IngestShutdown {
+        trigger: ingest_shutdown_tx,
+        drain: ingest_drain,
+    };
+
     let state = AppState {
         user: Arc::new(UserService::new(
             users.clone(),
@@ -248,14 +298,8 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
             perms.clone(),
             events.clone(),
         )),
-        chat: Arc::new(ChatService::new(
-            chats.clone(),
-            users.clone(),
-            chat_attachments,
-            storage_port.clone(),
-            perms.clone(),
-            events.clone(),
-        )),
+        chat,
+        chat_ingest,
         comment: Arc::new(CommentService::new(
             comments,
             requests.clone(),
@@ -289,12 +333,14 @@ pub async fn build(cfg: &Config) -> anyhow::Result<Router> {
         rate_limits: RateLimits {
             auth: cfg.auth_rate_limit,
             api: cfg.api_rate_limit,
+            chat: cfg.chat_rate_limit,
         },
         storage,
         signed_url,
     };
 
-    Ok(router(state).layer(cors_layer(&cfg.cors_allowed_origins)))
+    let app = router(state).layer(cors_layer(&cfg.cors_allowed_origins));
+    Ok((app, ingest_shutdown))
 }
 
 /// Composes the route tree and middleware stack over a fully-built [`AppState`].
