@@ -189,7 +189,11 @@ async fn token_minted_before_a_version_bump_is_401() {
 #[tokio::test]
 async fn per_user_rate_limit_returns_429() {
     // api ceiling 0: the per-user limiter trips on the first authenticated call.
-    let app = test_app(RateLimits { auth: 1000, api: 0, chat: 1000 });
+    let app = test_app(RateLimits {
+        auth: 1000,
+        api: 0,
+        chat: 1000,
+    });
     let token = app.state.token.issue(UserId(Uuid::now_v7()), 0);
     let response = router(app.state)
         .oneshot(authed_get("/api/v1/me", &token))
