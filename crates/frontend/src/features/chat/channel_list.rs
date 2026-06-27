@@ -1,21 +1,20 @@
 //! Chat left rail: the caller's channels with unread dots, plus a New DM action that opens (or finds) a direct channel and selects it.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 
 use shared::dto::chat::{ChannelDto, ChannelKind, ChannelSummaryDto};
 use shared::dto::ids::{ChannelId, UserId};
 
 use crate::features::chat::api;
-use crate::features::ui::section_heading;
+use crate::features::ui;
 use crate::features::users::picker::UserPicker;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::dialog::{Dialog, DialogBody, DialogFooter, DialogHeader};
 use crate::primitives::icon::{Icon, IconName};
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, radius, space, typography};
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, radius, space, typography};
+use crate::util::load::{self, Loadable};
 
 fn channel_id(c: &ChannelDto) -> ChannelId {
     match c {
@@ -41,7 +40,7 @@ pub fn ChannelList(selected: RwSignal<Option<ChannelId>>) -> impl IntoView {
 
     Effect::new(move |_| {
         let _ = reload.get();
-        load(channels, api::channels());
+        load::load(channels, api::channels());
     });
 
     // Auto-select the first channel once the list arrives.
@@ -62,11 +61,11 @@ pub fn ChannelList(selected: RwSignal<Option<ChannelId>>) -> impl IntoView {
         reload.update(|n| *n += 1);
     });
 
-    let header = class(format!(
+    let header = theme::class(format!(
         "display: flex; align-items: center; justify-content: space-between; padding: {p};",
         p = space::D3,
     ));
-    let list_cls = class(format!(
+    let list_cls = theme::class(format!(
         "display: flex; flex-direction: column; gap: 1px; padding: 0 {p};",
         p = space::D2
     ));
@@ -74,15 +73,15 @@ pub fn ChannelList(selected: RwSignal<Option<ChannelId>>) -> impl IntoView {
     view! {
         <Stack gap=Gap::Xs>
             <div class=header>
-                {section_heading("Channels")}
+                {ui::section_heading("Channels")}
                 <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm on_click=open_dm>
                     <Icon name=IconName::Plus size=14 /> " DM"
                 </Button>
             </div>
             {move || match channels.get() {
-                None => note("Loading…"),
-                Some(Err(e)) => load_error(&e),
-                Some(Ok(list)) if list.is_empty() => note("No channels yet."),
+                None => load::note("Loading…"),
+                Some(Err(e)) => load::load_error(&e),
+                Some(Ok(list)) if list.is_empty() => load::note("No channels yet."),
                 Some(Ok(list)) => {
                     let rows = list.into_iter().map(|c| channel_row(c, selected)).collect_view();
                     view! { <div class=list_cls.clone()>{rows}</div> }.into_any()
@@ -112,17 +111,17 @@ fn channel_row(c: ChannelSummaryDto, selected: RwSignal<Option<ChannelId>>) -> i
         fw = typography::WEIGHT_MEDIUM,
     );
     let hover = format!("&:hover {{ background: {bh}; }}", bh = color::BG_HOVER);
-    let normal = class(format!("{base}{hover}"));
-    let active = class(format!(
+    let normal = theme::class(format!("{base}{hover}"));
+    let active = theme::class(format!(
         "{base} background: {bg}; color: {a}; &:hover {{ background: {bg}; }}",
         bg = color::ACCENT_BG,
         a = color::ACCENT,
     ));
 
-    let grow = class(
+    let grow = theme::class(
         "flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
     );
-    let dot = class(format!(
+    let dot = theme::class(format!(
         "width: 7px; height: 7px; border-radius: 50%; background: {a}; flex-shrink: 0;",
         a = color::ACCENT,
     ));

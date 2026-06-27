@@ -1,8 +1,7 @@
 //! Monthly company-report scheduler: on/after the configured day, generates the
 //! previous month's report (idempotently) and emails the PDF to Director/HR recipients.
 
-use std::sync::Arc;
-use std::time::Duration as StdDuration;
+use std::{sync::Arc, time::Duration as StdDuration};
 
 use time::OffsetDateTime;
 
@@ -29,7 +28,7 @@ pub async fn run(
         match reports.generate_and_store_monthly(year, month).await {
             Ok(generated) if generated.created => {
                 tracing::info!(year, month, "monthly report generated; emailing recipients");
-                email_report(&reports, &email_queue, &generated, year, month).await;
+                email_report(&reports, &*email_queue, &generated, year, month).await;
             }
             Ok(_) => {
                 tracing::debug!(year, month, "monthly report already exists; nothing to do");
@@ -49,8 +48,8 @@ fn previous_month(now: OffsetDateTime) -> (i32, u8) {
 }
 
 async fn email_report(
-    reports: &Arc<ReportService>,
-    email_queue: &Arc<dyn JobQueue>,
+    reports: &ReportService,
+    email_queue: &dyn JobQueue,
     generated: &GeneratedReport,
     year: i32,
     month: u8,

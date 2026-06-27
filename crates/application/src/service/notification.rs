@@ -1,9 +1,6 @@
 mod email;
 mod fanout;
 
-pub use email::EmailNotifier;
-pub use fanout::NotificationFanout;
-
 use std::sync::Arc;
 
 use domain::{
@@ -17,6 +14,9 @@ use crate::{
     error::{Error, Result},
     permissions::Permissions,
 };
+
+pub use email::EmailNotifier;
+pub use fanout::NotificationFanout;
 
 pub struct NotificationService {
     notifications: Arc<dyn NotificationRepository>,

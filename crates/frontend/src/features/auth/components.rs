@@ -1,7 +1,5 @@
-use leptos::prelude::*;
-use leptos::task::spawn_local;
-use leptos_router::NavigateOptions;
-use leptos_router::hooks::use_navigate;
+use leptos::{prelude::*, task::spawn_local};
+use leptos_router::{NavigateOptions, hooks::use_navigate};
 use shared::dto::user::LoginRequest;
 use shared::validation::user::{validate_email, validate_password};
 
@@ -14,7 +12,7 @@ use crate::primitives::error::ErrorCallout;
 use crate::primitives::input::{FieldError, FieldLabel, Input};
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
-use crate::theme::{class, color, typography};
+use crate::theme::{self, color, typography};
 
 #[component]
 pub fn LoginForm() -> impl IntoView {
@@ -153,7 +151,7 @@ pub fn RequireAuth(children: ChildrenFn) -> impl IntoView {
 }
 
 fn auth_loader() -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_BODY,

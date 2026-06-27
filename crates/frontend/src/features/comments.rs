@@ -1,7 +1,6 @@
 //! Discussion comments on requests and tickets: one shared API + thread component parameterized by [`CommentTarget`].
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 
 use shared::dto::comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest};
 use shared::dto::ids::{CommentId, RequestId, TicketId};
@@ -9,7 +8,7 @@ use shared::validation::comment::validate_comment_body;
 
 use crate::api::client;
 use crate::api::error::FrontendError;
-use crate::features::ui::section_heading;
+use crate::features::ui;
 use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
@@ -19,8 +18,8 @@ use crate::primitives::pagination::LoadMore;
 use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::textarea::Textarea;
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, space, typography};
-use crate::util::format::{relative_time, tone_for};
+use crate::theme::{self, color, space, typography};
+use crate::util::format;
 
 const PAGE: u32 = 50;
 
@@ -187,7 +186,7 @@ pub fn CommentThread(#[prop(into)] target: Signal<Option<CommentTarget>>) -> imp
     view! {
         <Card>
             <Stack gap=Gap::Md>
-                {section_heading("Comments")}
+                {ui::section_heading("Comments")}
                 <Show when=move || oldest.get().is_some() && !comments.get().is_empty() fallback=|| ()>
                     <LoadMore on_click=load_older loading=loading_older.into() label="Load older" />
                 </Show>
@@ -228,33 +227,33 @@ fn comment_row(
     do_delete: impl Fn(CommentId) + Copy + Send + Sync + 'static,
 ) -> impl IntoView {
     let author = c.author.full_name.clone();
-    let when = relative_time(c.created_at);
+    let when = format::relative_time(c.created_at);
     let edited = c.edited_at.is_some();
     let cid = c.id;
     let edit_seed = c.body.clone();
     let body = c.body.clone();
 
-    let row = class(format!(
+    let row = theme::class(format!(
         "display: flex; gap: {g}; padding: {py} 0; border-bottom: 1px solid {b};",
         g = space::D3,
         py = space::D2,
         b = color::BORDER,
     ));
-    let bodywrap = class("min-width: 0; flex: 1;");
-    let meta = class("display: flex; align-items: center; gap: 8px; margin-bottom: 2px;");
-    let author_cls = class(format!(
+    let bodywrap = theme::class("min-width: 0; flex: 1;");
+    let meta = theme::class("display: flex; align-items: center; gap: 8px; margin-bottom: 2px;");
+    let author_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let time_cls = class(format!(
+    let time_cls = theme::class(format!(
         "font-family: {ff}; font-size: 11.5px; color: {c};",
         ff = typography::FONT_SANS,
         c = color::TEXT_FAINT,
     ));
-    let text_cls = class(format!(
+    let text_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; line-height: 1.5; word-wrap: break-word; \
          white-space: pre-wrap;",
         ff = typography::FONT_SANS,
@@ -269,7 +268,7 @@ fn comment_row(
 
     // `editable` is the server's author-within-grace verdict for this viewer.
     let controls = if c.editable {
-        let actions_cls = class("margin-left: auto;");
+        let actions_cls = theme::class("margin-left: auto;");
         let edit_cb = Callback::new(move |_| begin_edit(cid, edit_seed.clone()));
         let delete_cb = Callback::new(move |_| do_delete(cid));
         view! {
@@ -287,7 +286,7 @@ fn comment_row(
 
     view! {
         <div class=row>
-            <Avatar name=author.clone() size=AvatarSize::Sm tone=tone_for(&author) />
+            <Avatar name=author.clone() size=AvatarSize::Sm tone=format::tone_for(&author) />
             <div class=bodywrap>
                 <div class=meta>
                     <span class=author_cls>{author}</span>

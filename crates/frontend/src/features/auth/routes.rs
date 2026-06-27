@@ -4,12 +4,12 @@ use crate::features::auth::components::LoginForm;
 use crate::primitives::card::Card;
 use crate::primitives::center::Center;
 use crate::primitives::stack::{Gap, Stack};
-use crate::theme::{class, color, space, typography};
+use crate::theme::{self, color, space, typography};
 
 #[component]
 pub fn LoginPage() -> impl IntoView {
-    let wrap = class("width: 100%; max-width: 400px;");
-    let title = class(format!(
+    let wrap = theme::class("width: 100%; max-width: 400px;");
+    let title = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; \
          color: {c}; margin: 0; letter-spacing: -0.02em;",
         ff = typography::FONT_SANS,
@@ -17,7 +17,7 @@ pub fn LoginPage() -> impl IntoView {
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let subtitle = class(format!(
+    let subtitle = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; margin: 0;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,

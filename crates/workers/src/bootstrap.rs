@@ -6,11 +6,13 @@ use apalis_redis::RedisStorage;
 use application::{
     AuditProjector, EmailNotifier, MaintenanceService, NotificationFanout, ReportService,
     events::EventBus,
+    resilience::{CircuitBreaker, Drainer, DrainerConfig, HealthRegistry},
 };
 use domain::{
+    health::BackendId,
     ports::{
-        file_storage::FileStorage, job_queue::JobQueue, mailer::Mailer,
-        report_renderer::ReportRenderer,
+        file_storage::FileStorage, health::HealthCheck, job_queue::JobQueue, mailer::Mailer,
+        report_renderer::ReportRenderer, spool::Spool,
     },
     repository::{
         AuditRepository, ChatAttachmentRepository, ChatRepository, GroupRepository,
@@ -19,19 +21,20 @@ use domain::{
     },
 };
 use infrastructure::{
+    health::{PgHealthCheck, RedisHealthCheck, ScyllaHealthCheck},
     jobs::{
-        ApalisAuditQueue, ApalisEmailQueue, ApalisNotificationQueue, AuditEnvelope, EmailEnvelope,
-        NotificationEnvelope, audit_storage, email_storage, notification_storage,
+        self, ApalisAuditQueue, ApalisEmailQueue, ApalisNotificationQueue, AuditEnvelope,
+        EmailEnvelope, NotificationEnvelope,
     },
     local_storage::LocalStorage,
     mailer::{LogMailer, SmtpMailer, SmtpTls},
     postgres::{
-        PgAuditRepo, PgChatAttachmentRepo, PgGroupRepo, PgNotificationRepo, PgProjectRepo,
-        PgReportingRepo, PgRequestRepo, PgTicketRepo, PgUserRepo, build_pool,
+        self, PgAuditRepo, PgChatAttachmentRepo, PgGroupRepo, PgNotificationRepo, PgProjectRepo,
+        PgReportingRepo, PgRequestRepo, PgTicketRepo, PgUserRepo,
     },
-    redis::RedisEventPublisher,
+    redis::{RedisEventPublisher, RedisSpool},
     report::PrintPdfReportRenderer,
-    scylla::{ScyllaChatRepo, build_session},
+    scylla::{self, ScyllaChatRepo},
     signed_url::SignedUrl,
 };
 
@@ -48,15 +51,22 @@ pub struct WorkerContext {
     pub email_storage: RedisStorage<EmailEnvelope>,
     pub report: Arc<ReportService>,
     pub email_queue: Arc<dyn JobQueue>,
+    /// Per-backend breakers + the prober that drives them.
+    pub health_registry: Arc<HealthRegistry>,
+    pub health_checks: Vec<Arc<dyn HealthCheck>>,
+    /// Postgres breaker, shared into the PG-writing job handlers as a fail-fast gate.
+    pub pg_breaker: Arc<CircuitBreaker>,
+    /// Replays chat batches that couldn't reach Scylla during an outage.
+    pub chat_drainer: Drainer,
 }
 
 /// Builds the infrastructure adapters and opens the apalis job storage the worker
 /// consumes. Mirrors the server composition root, minus the HTTP/authz slice.
 pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
-    let pool = build_pool(&cfg.database_url, cfg.pg_max_connections)
+    let pool = postgres::build_pool(&cfg.database_url, cfg.pg_max_connections)
         .await
         .context("building postgres pool")?;
-    let session = build_session(&cfg.scylla_hosts, &cfg.scylla_keyspace)
+    let session = scylla::build_session(&cfg.scylla_hosts, &cfg.scylla_keyspace)
         .await
         .context("building scylla session")?;
 
@@ -65,6 +75,8 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     let groups: Arc<dyn GroupRepository> = Arc::new(PgGroupRepo::new(pool.clone()));
     let users: Arc<dyn UserRepository> = Arc::new(PgUserRepo::new(pool.clone()));
     let requests: Arc<dyn RequestRepository> = Arc::new(PgRequestRepo::new(pool.clone()));
+    // Clone the session for the health probe before the repo takes ownership.
+    let scylla_health: Arc<dyn HealthCheck> = Arc::new(ScyllaHealthCheck::new(session.clone()));
     let chats: Arc<dyn ChatRepository> = Arc::new(
         ScyllaChatRepo::new(session)
             .await
@@ -80,13 +92,13 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         signer,
     ));
 
-    let storage = notification_storage(&cfg.redis_url)
+    let storage = jobs::notification_storage(&cfg.redis_url)
         .await
         .context("connecting apalis redis (jobs)")?;
-    let audit_storage = audit_storage(&cfg.redis_url)
+    let audit_storage = jobs::audit_storage(&cfg.redis_url)
         .await
         .context("connecting apalis redis (audit jobs)")?;
-    let email_store = email_storage(&cfg.redis_url)
+    let email_store = jobs::email_storage(&cfg.redis_url)
         .await
         .context("connecting apalis redis (email jobs)")?;
 
@@ -160,6 +172,43 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     // Dedicated queue handle for the report scheduler's email fan-out.
     let email_queue: Arc<dyn JobQueue> = Arc::new(ApalisEmailQueue::new(email_store.clone()));
 
+    // Health registry + per-backend probes. Workers touch Postgres, Scylla, and
+    // Redis (no OpenFGA), so only those are tracked.
+    let health_registry = Arc::new(HealthRegistry::new(&[
+        BackendId::Postgres,
+        BackendId::Scylla,
+        BackendId::Redis,
+    ]));
+    let health_checks: Vec<Arc<dyn HealthCheck>> = vec![
+        Arc::new(PgHealthCheck::new(pool.clone())),
+        scylla_health,
+        Arc::new(
+            RedisHealthCheck::new(&cfg.redis_url)
+                .await
+                .context("connecting redis (health)")?,
+        ),
+    ];
+    let pg_breaker = health_registry
+        .breaker(BackendId::Postgres)
+        .expect("postgres breaker registered");
+    let scylla_breaker = health_registry
+        .breaker(BackendId::Scylla)
+        .expect("scylla breaker registered");
+
+    // Chat write-behind spool drainer: replays batches the server spooled while
+    // Scylla was down, paced by the Scylla breaker.
+    let spool: Arc<dyn Spool> = Arc::new(
+        RedisSpool::new(&cfg.redis_url, "chat")
+            .await
+            .context("connecting redis (chat spool)")?,
+    );
+    let chat_drainer = Drainer::new(
+        spool,
+        chats.clone(),
+        scylla_breaker,
+        DrainerConfig::default(),
+    );
+
     let fanout = Arc::new(
         NotificationFanout::new(
             notifications,
@@ -183,5 +232,9 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         email_storage: email_store,
         report,
         email_queue,
+        health_registry,
+        health_checks,
+        pg_breaker,
+        chat_drainer,
     })
 }

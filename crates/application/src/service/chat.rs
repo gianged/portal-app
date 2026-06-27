@@ -1,3 +1,5 @@
+pub mod ingest;
+
 use std::sync::Arc;
 
 use domain::{
@@ -17,8 +19,6 @@ use crate::{
     events::{DomainEvent, EventBus},
     permissions::Permissions,
 };
-
-pub mod ingest;
 
 /// Members can delete only their own messages within this window after posting.
 /// Group-channel leaders bypass this grace and can delete anytime.

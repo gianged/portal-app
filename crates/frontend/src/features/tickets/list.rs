@@ -1,7 +1,6 @@
 //! IT-ticket index: a scope-filtered table (Mine / Assigned / Triage queue) with a raise dialog.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use leptos_router::components::A;
 use uuid::Uuid;
 
@@ -23,12 +22,10 @@ use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::table::{Table, TableToolbar, TableWrap};
 use crate::primitives::textarea::Textarea;
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, space, typography};
-use crate::util::debounce::debounced;
-use crate::util::format::{
-    relative_time, ticket_priority_variant, ticket_status_variant, tone_for,
-};
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, space, typography};
+use crate::util::debounce;
+use crate::util::format;
+use crate::util::load::{self, Loadable};
 
 fn category_wire(c: TicketCategory) -> &'static str {
     match c {
@@ -60,12 +57,12 @@ pub fn TicketsIndex() -> impl IntoView {
     let reload = RwSignal::new(0u32);
     let raise_open = RwSignal::new(false);
     let search = RwSignal::new(String::new());
-    let dq = debounced(search.into(), 300);
+    let dq = debounce::debounced(search.into(), 300);
 
     Effect::new(move |_| {
         let _ = reload.get();
         let term = dq.get().trim().to_owned();
-        load(
+        load::load(
             items,
             api::list(scope.get(), (!term.is_empty()).then_some(term)),
         );
@@ -73,7 +70,7 @@ pub fn TicketsIndex() -> impl IntoView {
 
     let raised = Callback::new(move |()| reload.update(|n| *n += 1));
     let open_raise = Callback::new(move |_| raise_open.set(true));
-    let search_wrap = class("width: 220px;");
+    let search_wrap = theme::class("width: 220px;");
 
     let seg = move |label: &'static str, s: Scope| {
         let active = Signal::derive(move || scope.get() == s);
@@ -100,8 +97,8 @@ pub fn TicketsIndex() -> impl IntoView {
                     </Cluster>
                 </TableToolbar>
                 {move || match items.get() {
-                    None => note("Loading tickets…"),
-                    Some(Err(e)) => load_error(&e),
+                    None => load::note("Loading tickets…"),
+                    Some(Err(e)) => load::load_error(&e),
                     Some(Ok(list)) if list.is_empty() => view! {
                         <EmptyState
                             icon=IconName::Ticket
@@ -145,14 +142,14 @@ fn ticket_row(t: TicketDto) -> impl IntoView {
     let status = t.status;
     let priority = t.priority;
     let requester = t.requester.full_name.clone();
-    let updated = relative_time(t.updated_at);
-    let link_cls = class(format!(
+    let updated = format::relative_time(t.updated_at);
+    let link_cls = theme::class(format!(
         "color: {c}; font-weight: {fw}; text-decoration: none; &:hover {{ color: {a}; }}",
         c = color::TEXT_STRONG,
         fw = typography::WEIGHT_MEDIUM,
         a = color::ACCENT,
     ));
-    let wrap = class(format!(
+    let wrap = theme::class(format!(
         "display: inline-flex; align-items: center; gap: {g};",
         g = space::D2
     ));
@@ -160,14 +157,14 @@ fn ticket_row(t: TicketDto) -> impl IntoView {
         <tr>
             <td><span class="mono cell-muted">{id_label}</span></td>
             <td><A href=href attr:class=link_cls>{title}</A></td>
-            <td><Badge variant=ticket_status_variant(status)>{status.label()}</Badge></td>
+            <td><Badge variant=format::ticket_status_variant(status)>{status.label()}</Badge></td>
             <td>{match priority {
-                Some(p) => view! { <Badge variant=ticket_priority_variant(p)>{p.label()}</Badge> }.into_any(),
+                Some(p) => view! { <Badge variant=format::ticket_priority_variant(p)>{p.label()}</Badge> }.into_any(),
                 None => view! { <span class="cell-muted">"—"</span> }.into_any(),
             }}</td>
             <td>
                 <span class=wrap>
-                    <Avatar name=requester.clone() size=AvatarSize::Sm tone=tone_for(&requester) />
+                    <Avatar name=requester.clone() size=AvatarSize::Sm tone=format::tone_for(&requester) />
                     <span class="cell-strong">{requester}</span>
                 </span>
             </td>

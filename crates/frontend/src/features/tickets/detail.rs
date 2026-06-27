@@ -2,8 +2,7 @@
 
 use futures::FutureExt;
 use futures::future::LocalBoxFuture;
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 
 use shared::dto::ids::{TicketId, UserId};
 use shared::dto::ticket::{
@@ -14,7 +13,7 @@ use crate::api::error::FrontendError;
 use crate::features::audit::components::{AuditTrailPanel, TrailKind};
 use crate::features::comments::{CommentTarget, CommentThread};
 use crate::features::tickets::api;
-use crate::features::ui::{back_link, page_title, subtle};
+use crate::features::ui;
 use crate::features::users::picker::UserPicker;
 use crate::primitives::badge::Badge;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
@@ -26,9 +25,9 @@ use crate::primitives::input::FieldLabel;
 use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, typography};
-use crate::util::format::{relative_time, ticket_priority_variant, ticket_status_variant};
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, typography};
+use crate::util::format;
+use crate::util::load::{self, Loadable};
 
 fn priority_wire(p: TicketPriority) -> &'static str {
     match p {
@@ -83,7 +82,7 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
     Effect::new(move |_| {
         let _ = reload.get();
         if let Some(tid) = id.get() {
-            load(detail, api::get(tid));
+            load::load(detail, api::get(tid));
         }
     });
 
@@ -149,14 +148,14 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
 
     view! {
         <Stack gap=Gap::Lg>
-            {back_link("/tickets", "Back to tickets")}
+            {ui::back_link("/tickets", "Back to tickets")}
             {move || match detail.get() {
-                None => note("Loading ticket…"),
-                Some(Err(e)) => load_error(&e),
+                None => load::note("Loading ticket…"),
+                Some(Err(e)) => load::load_error(&e),
                 Some(Ok(t)) => {
                     let status = t.status;
                     let priority = t.priority;
-                    let title_v = page_title(&t.title);
+                    let title_v = ui::page_title(&t.title);
                     let meta_v = meta_line(&t);
                     let desc_v = desc_block(&t.description);
                     let actions_v = lifecycle_bar(status, run, open_triage, open_assign);
@@ -167,9 +166,9 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
                                     <Cluster gap=Gap::Sm justify="space-between".to_string()>
                                         {title_v}
                                         <Cluster gap=Gap::Xs>
-                                            <Badge variant=ticket_status_variant(status)>{status.label()}</Badge>
+                                            <Badge variant=format::ticket_status_variant(status)>{status.label()}</Badge>
                                             {match priority {
-                                                Some(p) => view! { <Badge variant=ticket_priority_variant(p)>{p.label()}</Badge> }.into_any(),
+                                                Some(p) => view! { <Badge variant=format::ticket_priority_variant(p)>{p.label()}</Badge> }.into_any(),
                                                 None => ().into_any(),
                                             }}
                                         </Cluster>
@@ -316,15 +315,15 @@ fn meta_line(t: &TicketDto) -> AnyView {
         .assignee
         .as_ref()
         .map_or_else(|| "Unassigned".to_owned(), |a| a.full_name.clone());
-    let created = relative_time(t.created_at);
+    let created = format::relative_time(t.created_at);
     let category = t.category.label();
-    subtle(&format!(
+    ui::subtle(&format!(
         "{category} · raised by {requester} · {created} · Assignee: {assignee}"
     ))
 }
 
 fn desc_block(description: &str) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; line-height: 1.55; white-space: pre-wrap;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,

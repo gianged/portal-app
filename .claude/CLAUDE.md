@@ -62,6 +62,8 @@ Why: keeps business rules unit-testable in isolation, lets the frontend type-che
 | Frontend dev server | `cd crates/frontend && trunk serve` |
 | Bring up dep stack | `docker compose -f infra/docker-compose.yml up -d` |
 
+These are wrapped as `cargo make` tasks (`cargo make build | test | clippy | up | down | run-all`); `cargo make --list-all-steps` lists them. Prefer the `cargo make` form.
+
 `infra/` holds the Compose stack (`docker-compose.infra.yml` for the dependency services, `docker-compose.yml` for the full containerized stack), the Postgres and Scylla schema files, the OpenFGA model, and the bootstrap/backup scripts. Bring the stack up and apply schemas with `cargo make bootstrap` (idempotent). The Postgres schema is database-first: `infra/postgres/10-init.sql` is the single source of truth, applied by the docker entrypoint on an empty volume. Change it in place and reinitialize (`down -v` + `cargo make bootstrap`, then `cargo make sqlx-prepare`); there is no incremental-migration workflow.
 
 ## External services
@@ -70,7 +72,7 @@ Why: keeps business rules unit-testable in isolation, lets the frontend type-che
 | --- | --- |
 | PostgreSQL | Users, groups, projects, requests, tickets, attachment metadata. |
 | Cassandra / ScyllaDB | Chat history (high write volume, time-series). |
-| Redis | Sessions, pub/sub fan-out for WebSocket presence, rate limiting. |
+| Redis | Sessions, pub/sub fan-out for WebSocket presence, rate limiting, chat write-behind spool during Scylla outages. |
 | OpenFGA | Relationship-based access control derived from the org graph — never flat ACLs. |
 | Local filesystem | File uploads under `STORAGE_ROOT`. No S3 / MinIO. |
 
@@ -105,6 +107,7 @@ Enforce at the type or database level whenever possible:
 ## Conventions
 
 - Module layout: sibling `foo.rs` + `foo/`, never `mod.rs`.
+- Imports: types/traits/consts/macros to their leaf, read bare (`use std::sync::Arc;` -> `Arc`); free functions via their parent module (`use futures::stream;` -> `stream::iter(...)`); module-qualify only on a real name clash (`fmt::Result` vs `io::Result`). Group under shared prefixes: `use domain::{error::RepositoryError, ids::UserId};`.
 - IDs: `uuid::Uuid` v7 (time-ordered) wrapped in per-entity newtypes (`UserId`, `GroupId`, …) under `domain::ids`.
 - Time: `time::OffsetDateTime` everywhere — never `chrono`, never naive timestamps.
 - Errors: per-crate `thiserror` enum. `application::Error` is the boundary returned to `server` / `workers`; mapped to HTTP status in `server::error`.
@@ -117,3 +120,5 @@ Enforce at the type or database level whenever possible:
 - New HTTP route → handler in `server::routes`, request/response DTOs in `shared::dto`, validation in `shared::validation`.
 - New background job → register under `workers`, call into an `application` service.
 - New permission rule → model in the OpenFGA store, check via `domain::ports::authz_client`.
+- New resilience policy (retry / backoff / circuit-breaker / supervised restart) → `application::resilience`; the concrete probes and write-behind spool it drives live in `infrastructure` behind `domain::ports`.
+- Backend health → `HealthCheck` port in `domain::ports::health`, per-backend probes in `infrastructure::health`, wire types in `shared::dto::health`; `server` exposes `/healthz` (liveness) and `/readyz` (readiness, driven by the per-backend circuit breakers).

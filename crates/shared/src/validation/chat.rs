@@ -1,8 +1,7 @@
 use crate::{
     errors::SharedError,
     validation::common::{
-        ATTACHMENT_KEYS_MAX, MENTIONS_MAX, MESSAGE_BODY_MAX, STORAGE_KEY_MAX, len_range, max_items,
-        max_len,
+        self, ATTACHMENT_KEYS_MAX, MENTIONS_MAX, MESSAGE_BODY_MAX, STORAGE_KEY_MAX,
     },
 };
 
@@ -14,7 +13,7 @@ use crate::{
 /// Returns [`SharedError::Validation`] when `body` is empty/whitespace-only or
 /// longer than [`MESSAGE_BODY_MAX`].
 pub fn validate_message_body(body: &str) -> Result<(), SharedError> {
-    len_range("Message", body, 1, MESSAGE_BODY_MAX)
+    common::len_range("Message", body, 1, MESSAGE_BODY_MAX)
 }
 
 /// Caps the mention and attachment-key lists a message may carry; ownership of
@@ -28,10 +27,10 @@ pub fn validate_message_extras(
     mentions_len: usize,
     attachment_keys: &[String],
 ) -> Result<(), SharedError> {
-    max_items("Mentions", mentions_len, MENTIONS_MAX)?;
-    max_items("Attachments", attachment_keys.len(), ATTACHMENT_KEYS_MAX)?;
+    common::max_items("Mentions", mentions_len, MENTIONS_MAX)?;
+    common::max_items("Attachments", attachment_keys.len(), ATTACHMENT_KEYS_MAX)?;
     for key in attachment_keys {
-        max_len("Attachment key", key, STORAGE_KEY_MAX)?;
+        common::max_len("Attachment key", key, STORAGE_KEY_MAX)?;
     }
     Ok(())
 }

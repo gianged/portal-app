@@ -6,22 +6,22 @@ use crate::features::reports::api;
 use crate::features::reports::routes::section_title;
 use crate::primitives::card::Card;
 use crate::primitives::stack::{Gap, Stack};
-use crate::theme::{class, color, space, typography};
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, space, typography};
+use crate::util::load::{self, Loadable};
 
 #[component]
 pub fn ReportArchive() -> impl IntoView {
     let items: Loadable<Vec<ReportSummaryDto>> = RwSignal::new(None);
-    load(items, api::archive_list());
+    load::load(items, api::archive_list());
 
     view! {
         <Card>
             <Stack gap=Gap::Sm>
                 {section_title("Archive")}
                 {move || match items.get() {
-                    None => note("Loading…"),
-                    Some(Err(e)) => load_error(&e),
-                    Some(Ok(list)) if list.is_empty() => note("No reports generated yet."),
+                    None => load::note("Loading…"),
+                    Some(Err(e)) => load::load_error(&e),
+                    Some(Ok(list)) if list.is_empty() => load::note("No reports generated yet."),
                     Some(Ok(list)) => list.into_iter().map(archive_row).collect_view().into_any(),
                 }}
             </Stack>
@@ -30,33 +30,33 @@ pub fn ReportArchive() -> impl IntoView {
 }
 
 fn archive_row(r: ReportSummaryDto) -> impl IntoView {
-    let row = class(format!(
+    let row = theme::class(format!(
         "display: flex; align-items: center; gap: {g}; padding: {p} 0; border-bottom: 1px solid {b};",
         g = space::D3,
         p = space::D2,
         b = color::BORDER,
     ));
-    let label = class(format!(
+    let label = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         fw = typography::WEIGHT_MEDIUM,
         c = color::TEXT_STRONG,
     ));
-    let meta = class(format!(
+    let meta = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
         c = color::TEXT_MUTED,
     ));
-    let link = class(format!(
+    let link = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; font-weight: {fw};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         c = color::ACCENT,
         fw = typography::WEIGHT_MEDIUM,
     ));
-    let grow = class("flex: 1; min-width: 0;");
+    let grow = theme::class("flex: 1; min-width: 0;");
 
     let period = format!(
         "{}-{:02}",

@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 use crate::primitives::icon::{Icon, IconName};
-use crate::theme::{class, color, typography};
+use crate::theme::{self, color, typography};
 
 /// A controlled checkbox. The parent owns the `checked` signal; `on_change`
 /// yields the toggled value. An optional inline `label` makes the whole row
@@ -14,14 +14,14 @@ pub fn Checkbox(
     #[prop(optional)] on_change: Option<Callback<bool>>,
     #[prop(optional, into)] label: Option<String>,
 ) -> impl IntoView {
-    let wrap = class(format!(
+    let wrap = theme::class(format!(
         "display: inline-flex; align-items: center; gap: 8px; cursor: pointer; \
          font-family: {ff}; font-size: {fs}; color: {c}; user-select: none;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         c = color::TEXT,
     ));
-    let base = class(format!(
+    let base = theme::class(format!(
         "width: 16px; height: 16px; border: 1px solid {bs}; background: {bg}; \
          border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; \
          flex-shrink: 0; transition: background 120ms ease, border-color 120ms ease; \
@@ -30,7 +30,7 @@ pub fn Checkbox(
         bg = color::BG_ELEVATED,
         a = color::ACCENT,
     ));
-    let checked_box = class(format!(
+    let checked_box = theme::class(format!(
         "background: {a} !important; border-color: {a} !important; color: #fff;",
         a = color::ACCENT,
     ));

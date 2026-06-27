@@ -1,9 +1,11 @@
 pub mod authz_client;
 pub mod event_publisher;
 pub mod file_storage;
+pub mod health;
 pub mod job_queue;
 pub mod mailer;
 pub mod presence;
 pub mod rate_limit;
 pub mod report_renderer;
+pub mod spool;
 pub mod token_revocation;

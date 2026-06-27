@@ -1,11 +1,7 @@
 //! Work-request detail: status-gated lifecycle actions, the assignee picker, and attachment upload, plus the comment thread and audit trail.
 
-use futures::FutureExt;
-use futures::future::LocalBoxFuture;
-use leptos::html::Input as HtmlInputEl;
-use leptos::prelude::*;
-use leptos::task::spawn_local;
-use leptos_router::components::A;
+use futures::{FutureExt, future::LocalBoxFuture};
+use leptos::{html::Input as HtmlInputEl, prelude::*, task::spawn_local};
 use web_sys::FormData;
 
 use shared::dto::ids::{RequestId, UserId};
@@ -16,6 +12,7 @@ use crate::features::audit::components::{AuditTrailPanel, TrailKind};
 use crate::features::comments::{CommentTarget, CommentThread};
 use crate::features::requests::api;
 use crate::features::requests::components::{heading, subtle};
+use crate::features::ui;
 use crate::features::users::picker::UserPicker;
 use crate::primitives::badge::Badge;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
@@ -25,9 +22,9 @@ use crate::primitives::dialog::{Dialog, DialogBody, DialogFooter, DialogHeader};
 use crate::primitives::icon::{Icon, IconName};
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, space, typography};
-use crate::util::format::{relative_time, request_priority_variant, request_status_variant};
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, space, typography};
+use crate::util::format;
+use crate::util::load::{self, Loadable};
 
 fn human_size(bytes: u64) -> String {
     if bytes < 1024 {
@@ -75,7 +72,7 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
     Effect::new(move |_| {
         let _ = reload.get();
         if let Some(rid) = id.get() {
-            load(detail, api::get(rid));
+            load::load(detail, api::get(rid));
         }
     });
 
@@ -149,23 +146,12 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
     });
     let open_assign = Callback::new(move |_| assign_open.set(true));
 
-    let back_cls = class(format!(
-        "display: inline-flex; align-items: center; gap: 4px; font-family: {ff}; \
-         font-size: {fs}; color: {c}; text-decoration: none; &:hover {{ color: {a}; }}",
-        ff = typography::FONT_SANS,
-        fs = typography::TEXT_SMALL,
-        c = color::TEXT_MUTED,
-        a = color::ACCENT,
-    ));
-
     view! {
         <Stack gap=Gap::Lg>
-            <A href="/requests" attr:class=back_cls>
-                <Icon name=IconName::ChevronLeft size=14 /> "Back to requests"
-            </A>
+            {ui::back_link("/requests", "Back to requests")}
             {move || match detail.get() {
-                None => note("Loading request…"),
-                Some(Err(e)) => load_error(&e),
+                None => load::note("Loading request…"),
+                Some(Err(e)) => load::load_error(&e),
                 Some(Ok(d)) => {
                     let r = &d.request;
                     let status = r.status;
@@ -182,8 +168,8 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                                     <Cluster gap=Gap::Sm justify="space-between".to_string()>
                                         {title_v}
                                         <Cluster gap=Gap::Xs>
-                                            <Badge variant=request_status_variant(status)>{status.label()}</Badge>
-                                            <Badge variant=request_priority_variant(priority)>{priority.label()}</Badge>
+                                            <Badge variant=format::request_status_variant(status)>{status.label()}</Badge>
+                                            <Badge variant=format::request_priority_variant(priority)>{priority.label()}</Badge>
                                         </Cluster>
                                     </Cluster>
                                     {meta_v}
@@ -307,25 +293,25 @@ fn attachments_card(
     upload: Callback<()>,
     file_ref: NodeRef<HtmlInputEl>,
 ) -> AnyView {
-    let hidden_input = class("display: none;");
+    let hidden_input = theme::class("display: none;");
     let rows = detail
         .attachments
         .iter()
         .map(|a| {
-            let row = class(format!(
+            let row = theme::class(format!(
                 "display: flex; align-items: center; gap: {g}; padding: {p} 0; \
                  border-bottom: 1px solid {b};",
                 g = space::D2,
                 p = space::D2,
                 b = color::BORDER,
             ));
-            let name = class(format!(
+            let name = theme::class(format!(
                 "flex: 1; min-width: 0; font-family: {ff}; font-size: {fs}; color: {c};",
                 ff = typography::FONT_SANS,
                 fs = typography::TEXT_SMALL,
                 c = color::TEXT,
             ));
-            let meta = class(format!(
+            let meta = theme::class(format!(
                 "font-family: {ff}; font-size: {fs}; color: {c};",
                 ff = typography::FONT_SANS,
                 fs = typography::TEXT_CAPTION,
@@ -369,7 +355,7 @@ fn attachments_card(
 }
 
 fn title_block(title: &str) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c}; margin: 0; \
          letter-spacing: -0.015em;",
         ff = typography::FONT_SANS,
@@ -381,7 +367,7 @@ fn title_block(title: &str) -> AnyView {
 }
 
 fn meta_line(r: &RequestDto) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
@@ -392,7 +378,7 @@ fn meta_line(r: &RequestDto) -> AnyView {
         .assignee
         .as_ref()
         .map_or_else(|| "Unassigned".to_owned(), |a| a.full_name.clone());
-    let created = relative_time(r.created_at);
+    let created = format::relative_time(r.created_at);
     view! {
         <div class=cls>{format!("Created by {creator} · {created} · Assignee: {assignee}")}</div>
     }
@@ -400,7 +386,7 @@ fn meta_line(r: &RequestDto) -> AnyView {
 }
 
 fn desc_block(description: &str) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; line-height: 1.55; white-space: pre-wrap;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,

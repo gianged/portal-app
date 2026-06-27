@@ -1,5 +1,4 @@
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use time::OffsetDateTime;
 
 use shared::dto::report::{GroupReportRowDto, MonthlyReportDto};
@@ -14,8 +13,8 @@ use crate::primitives::icon::{Icon, IconName};
 use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, space, typography};
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, space, typography};
+use crate::util::load::{self, Loadable};
 
 #[component]
 pub fn MonthlyTab() -> impl IntoView {
@@ -29,7 +28,7 @@ pub fn MonthlyTab() -> impl IntoView {
 
     Effect::new(move |_| {
         download.set(None);
-        load(report, api::monthly(year.get(), month.get()));
+        load::load(report, api::monthly(year.get(), month.get()));
     });
 
     let month_value = Signal::derive(move || month.get().to_string());
@@ -64,9 +63,9 @@ pub fn MonthlyTab() -> impl IntoView {
         });
     });
 
-    let month_wrap = class("width: 150px;");
-    let year_wrap = class("width: 120px;");
-    let link_cls = class(format!(
+    let month_wrap = theme::class("width: 150px;");
+    let year_wrap = theme::class("width: 120px;");
+    let link_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; font-weight: {fw};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
@@ -109,8 +108,8 @@ pub fn MonthlyTab() -> impl IntoView {
             </Cluster>
 
             {move || match report.get() {
-                None => note("Loading report…"),
-                Some(Err(e)) => load_error(&e),
+                None => load::note("Loading report…"),
+                Some(Err(e)) => load::load_error(&e),
                 Some(Ok(data)) => monthly_view(data),
             }}
         </Stack>
@@ -165,28 +164,28 @@ fn monthly_view(data: MonthlyReportDto) -> AnyView {
 }
 
 fn group_row(g: GroupReportRowDto) -> impl IntoView {
-    let row = class(format!(
+    let row = theme::class(format!(
         "display: grid; grid-template-columns: 1.4fr 1fr 1.1fr 0.8fr 1.3fr 0.8fr; \
          gap: {gap}; align-items: center; padding: {p} 0; border-bottom: 1px solid {b};",
         gap = space::D3,
         p = space::D2,
         b = color::BORDER,
     ));
-    let name = class(format!(
+    let name = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let cell = class(format!(
+    let cell = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         c = color::TEXT_MUTED,
     ));
     let progress = g.avg_project_progress;
-    let bar_wrap = class("display: flex; align-items: center; gap: 6px;");
+    let bar_wrap = theme::class("display: flex; align-items: center; gap: 6px;");
 
     view! {
         <div class=row>

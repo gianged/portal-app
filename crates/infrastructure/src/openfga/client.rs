@@ -92,7 +92,7 @@ impl OpenFgaAuthzClient {
         }
     }
 
-    /// Single-tuple write that treats OpenFGA's "already exists" 400 as success,
+    /// Single-tuple write that treats `OpenFGA`'s "already exists" 400 as success,
     /// making a re-grant idempotent. Batch `write_tuples` stays strict.
     async fn write_single(&self, req: &WriteRequest<'_>) -> Result<(), AuthzError> {
         let url = self.store_url("write");

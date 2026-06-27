@@ -4,8 +4,7 @@
 //! `AuthUser` into the request extensions; this extractor reads it back out.
 //! Roles are NOT carried here - services resolve them through `Permissions`.
 
-use axum::extract::FromRequestParts;
-use axum::http::request::Parts;
+use axum::{extract::FromRequestParts, http::request::Parts};
 
 use domain::ids::UserId;
 
@@ -35,8 +34,7 @@ where
 mod tests {
     use super::*;
 
-    use axum::http::{Request, StatusCode};
-    use axum::response::IntoResponse;
+    use axum::{http::{Request, StatusCode}, response::IntoResponse};
 
     fn parts_with(user: Option<AuthUser>) -> Parts {
         let mut request = Request::builder().body(()).expect("build request");

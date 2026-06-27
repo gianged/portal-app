@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use time::OffsetDateTime;
-use uuid::Uuid;
-
 use domain::{
     ids::{CommentId, UserId},
     model::{Comment, CommentEntity},
     repository::{CommentRepository, RequestRepository, TicketRepository},
 };
+use time::OffsetDateTime;
+use uuid::Uuid;
 
 use crate::{
     error::{Error, Result},

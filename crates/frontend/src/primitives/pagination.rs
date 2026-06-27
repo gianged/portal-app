@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::theme::{class, color, radius, space, typography};
+use crate::theme::{self, color, radius, space, typography};
 
 /// A centered "load more / load older" button with a busy state. Used to page
 /// through chat history (cursor-based) and other append-style lists.
@@ -11,11 +11,11 @@ pub fn LoadMore(
     #[prop(optional, into)] label: Option<String>,
 ) -> impl IntoView {
     let label = label.unwrap_or_else(|| "Load more".to_owned());
-    let wrap = class(format!(
+    let wrap = theme::class(format!(
         "display: flex; justify-content: center; padding: {p};",
         p = space::D3,
     ));
-    let btn = class(format!(
+    let btn = theme::class(format!(
         "background: transparent; border: 1px solid {b}; border-radius: {r}; \
          padding: 6px {px}; font-family: {ff}; font-size: {fs}; font-weight: {fw}; \
          color: {c}; cursor: pointer; transition: background 120ms ease; \

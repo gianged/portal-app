@@ -3,8 +3,8 @@
 use leptos::prelude::*;
 
 use crate::primitives::avatar::{Avatar, AvatarSize};
-use crate::theme::{class, color, typography};
-use crate::util::format::tone_for;
+use crate::theme::{self, color, typography};
+use crate::util::format;
 
 fn dimension(size: AvatarSize) -> &'static str {
     match size {
@@ -34,21 +34,21 @@ pub fn AvatarStack(
     let total = names.len();
     let overflow = total.saturating_sub(max);
 
-    let wrap = class(format!(
+    let wrap = theme::class(format!(
         "display: inline-flex; \
          & > span {{ margin-left: -6px; box-shadow: 0 0 0 2px {bg}; border-radius: 50%; }} \
          & > span:first-child {{ margin-left: 0; }}",
         bg = color::BG,
     ));
     let visible = names.into_iter().take(max).map(move |name| {
-        let tone = tone_for(&name);
+        let tone = format::tone_for(&name);
         view! { <Avatar name=name tone=tone size=size /> }
     });
 
     let overflow_chip = (overflow > 0).then(|| {
         let dim = dimension(size);
         let fs = font_size(size);
-        let cls = class(format!(
+        let cls = theme::class(format!(
             "display: inline-flex; align-items: center; justify-content: center; \
              width: {dim}; height: {dim}; background: {bg}; color: {c}; \
              font-family: {ff}; font-size: {fs}; font-weight: {fw};",

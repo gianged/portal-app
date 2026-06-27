@@ -69,3 +69,17 @@ pub enum RenderError {
     #[error("backend error: {0}")]
     Backend(String),
 }
+
+#[derive(Debug, Error)]
+pub enum HealthError {
+    #[error("backend timed out")]
+    Timeout,
+    #[error("backend error: {0}")]
+    Backend(String),
+}
+
+#[derive(Debug, Error)]
+pub enum SpoolError {
+    #[error("backend error: {0}")]
+    Backend(String),
+}

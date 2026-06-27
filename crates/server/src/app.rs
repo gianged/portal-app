@@ -1,12 +1,15 @@
-use std::sync::Arc;
+use std::{any::Any, sync::Arc};
 
 use anyhow::Context;
 use axum::{
-    Router,
-    http::{HeaderValue, Method, header},
+    Json, Router,
+    extract::State,
+    http::{HeaderValue, Method, StatusCode, header},
+    response::{IntoResponse, Response},
     routing::get,
 };
 use tower_http::{
+    catch_panic::CatchPanicLayer,
     cors::{AllowOrigin, CorsLayer},
     set_header::SetResponseHeaderLayer,
 };
@@ -14,6 +17,7 @@ use tower_http::{
 use application::{
     events::EventBus,
     permissions::Permissions,
+    resilience::{HealthRegistry, supervise},
     service::{
         announcement::AnnouncementService,
         audit::AuditService,
@@ -32,9 +36,10 @@ use application::{
     },
 };
 use domain::{
+    health::{BackendId, HealthStatus},
     ports::{
-        file_storage::FileStorage, presence::Presence, rate_limit::RateLimit,
-        report_renderer::ReportRenderer, token_revocation::TokenRevocation,
+        file_storage::FileStorage, health::HealthCheck, presence::Presence, rate_limit::RateLimit,
+        report_renderer::ReportRenderer, spool::Spool, token_revocation::TokenRevocation,
     },
     repository::{
         AuditRepository, ChatAttachmentRepository, ChatRepository, CommentRepository,
@@ -43,6 +48,7 @@ use domain::{
     },
 };
 use infrastructure::{
+    health::{OpenFgaHealthCheck, PgHealthCheck, RedisHealthCheck, ScyllaHealthCheck},
     jobs::{ApalisAuditQueue, ApalisNotificationQueue, audit_storage, notification_storage},
     local_storage::LocalStorage,
     openfga::{self, OpenFgaAuthzClient},
@@ -50,10 +56,14 @@ use infrastructure::{
         PgAuditRepo, PgChatAttachmentRepo, PgCommentRepo, PgGroupRepo, PgNotificationRepo,
         PgProjectRepo, PgReportingRepo, PgRequestRepo, PgTicketRepo, PgUserRepo, build_pool,
     },
-    redis::{PresenceStore, RateLimiter, RedisEventPublisher, RedisTokenRevocation},
+    redis::{PresenceStore, RateLimiter, RedisEventPublisher, RedisSpool, RedisTokenRevocation},
     report::PrintPdfReportRenderer,
     scylla::{ScyllaChatRepo, build_session},
     signed_url::SignedUrl,
+};
+use shared::dto::{
+    common::{ApiError, ErrorCode},
+    health::{BackendHealth, BackendStatus, ReadinessResponse},
 };
 
 use crate::{
@@ -96,6 +106,8 @@ pub struct AppState {
     // Verifies the signed `?exp&sig` on `/files` downloads; the same signer
     // (built from `STORAGE_SIGNING_SECRET`) backs `LocalStorage::presign_get`.
     pub signed_url: Arc<SignedUrl>,
+    // Per-backend circuit breakers + health snapshot, read by `/readyz`.
+    pub health: Arc<HealthRegistry>,
 }
 
 /// Owns the chat ingest drain task so the serving loop can flush its buffered
@@ -169,6 +181,8 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
     let comments: Arc<dyn CommentRepository> = Arc::new(PgCommentRepo::new(pool.clone()));
     let chat_attachments: Arc<dyn ChatAttachmentRepository> =
         Arc::new(PgChatAttachmentRepo::new(pool.clone()));
+    // Clone the session for the health probe before the repo takes ownership.
+    let scylla_health: Arc<dyn HealthCheck> = Arc::new(ScyllaHealthCheck::new(session.clone()));
     let chats: Arc<dyn ChatRepository> = Arc::new(
         ScyllaChatRepo::new(session)
             .await
@@ -239,8 +253,37 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
     ));
     let realtime = Realtime::new(publisher, cfg.redis_url.clone());
 
+    // Health registry + per-backend probes (Postgres, Scylla, Redis, OpenFGA).
+    // The prober drives the breakers and feeds `/readyz`; it is supervised so a
+    // panic restarts it.
+    let health = Arc::new(HealthRegistry::new(&BackendId::ALL));
+    let health_checks: Vec<Arc<dyn HealthCheck>> = vec![
+        Arc::new(PgHealthCheck::new(pool.clone())),
+        scylla_health,
+        Arc::new(
+            RedisHealthCheck::new(&cfg.redis_url)
+                .await
+                .context("connecting redis (health)")?,
+        ),
+        Arc::new(
+            OpenFgaHealthCheck::new(&cfg.openfga_api_url, cfg.openfga_bearer_token.clone())
+                .context("building openfga health check")?,
+        ),
+    ];
+    {
+        let registry = health.clone();
+        let checks = health_checks;
+        let interval = cfg.health_probe_interval;
+        supervise("health-prober", move || {
+            registry.clone().run_prober(checks.clone(), interval)
+        });
+    }
+
     // Chat service + its write-behind ingest buffer. The drain loop is spawned
-    // here; `IngestShutdown` lets the serving loop flush its tail before exit.
+    // here; `IngestShutdown` lets the serving loop flush its tail before exit. A
+    // batch that can't reach Scylla is spilled to this Redis spool (durable) and
+    // replayed by the workers' drainer, instead of being dropped after the
+    // optimistic ack.
     let chat = Arc::new(ChatService::new(
         chats.clone(),
         users.clone(),
@@ -249,12 +292,21 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
         perms.clone(),
         events.clone(),
     ));
+    let chat_spool: Arc<dyn Spool> = Arc::new(
+        RedisSpool::new(&cfg.redis_url, "chat")
+            .await
+            .context("connecting redis (chat spool)")?,
+    );
     let (chat_ingest, chat_ingest_rx) = ChatIngest::new(
         chat.clone(),
         chats.clone(),
         events.clone(),
+        Some(chat_spool),
         ChatIngestConfig::default(),
     );
+    // The drain loop owns a single-use receiver and a shutdown handshake that
+    // flushes its tail on exit, so it keeps its own spawn rather than the restart
+    // supervisor; a persist failure now spills instead of crashing the loop.
     let (ingest_shutdown_tx, ingest_shutdown_rx) = tokio::sync::oneshot::channel();
     let ingest_drain = tokio::spawn(chat_ingest.clone().run(chat_ingest_rx, ingest_shutdown_rx));
     let ingest_shutdown = IngestShutdown {
@@ -337,6 +389,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
         },
         storage,
         signed_url,
+        health,
     };
 
     let app = router(state).layer(cors_layer(&cfg.cors_allowed_origins));
@@ -390,10 +443,16 @@ pub fn router(state: AppState) -> Router {
 
     Router::new()
         .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
         .nest("/api/v1", api)
         // Applied outermost-to-innermost: trace, request-id, security headers, body
-        // limit, then the router (its protected sub-tree adds auth + limit); CORS is added by the caller.
+        // limit, catch-panic, then the router (its protected sub-tree adds auth +
+        // limit); CORS is added by the caller.
         //
+        // Catch-panic is innermost so it wraps the handlers directly: a handler
+        // panic becomes a logged 500 instead of a dropped connection, and the
+        // outer layers still see a normal response.
+        .layer(CatchPanicLayer::custom(on_panic))
         // Global 1 MiB JSON cap; upload routes override with their own DefaultBodyLimit.
         .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
         // Baseline security headers (no HSTS - internal plain HTTP); `if_not_present` lets a route override.
@@ -426,12 +485,10 @@ pub fn router(state: AppState) -> Router {
 pub fn cors_layer(origins: &[String]) -> CorsLayer {
     let parsed: Vec<HeaderValue> = origins
         .iter()
-        .filter_map(|o| match o.parse::<HeaderValue>() {
-            Ok(value) => Some(value),
-            Err(_) => {
-                tracing::warn!(origin = %o, "ignoring invalid CORS origin");
-                None
-            }
+        .filter_map(|o| {
+            o.parse::<HeaderValue>()
+                .inspect_err(|_| tracing::warn!(origin = %o, "ignoring invalid CORS origin"))
+                .ok()
         })
         .collect();
     CorsLayer::new()
@@ -447,6 +504,74 @@ pub fn cors_layer(origins: &[String]) -> CorsLayer {
         .allow_headers([header::CONTENT_TYPE])
 }
 
+/// Process liveness: returns `200 ok` as long as the process is up. Deliberately
+/// dependency-free so it never flaps on a backend outage.
 async fn healthz() -> &'static str {
     "ok"
+}
+
+/// Readiness: reports each backend's health from the circuit breakers and returns
+/// `503` when any backend is `Down`, so a load balancer / orchestrator drains
+/// this instance while it can't serve, and `200` while all are `Up`/`Degraded`.
+async fn readyz(State(state): State<AppState>) -> Response {
+    let snapshot = state.health.status();
+    let backends: Vec<BackendHealth> = snapshot
+        .iter()
+        .map(|(id, status)| BackendHealth {
+            backend: id.as_str().to_owned(),
+            status: map_status(*status),
+        })
+        .collect();
+    let overall = overall_status(&snapshot);
+    let code = if overall == BackendStatus::Down {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::OK
+    };
+    (
+        code,
+        Json(ReadinessResponse {
+            status: overall,
+            backends,
+        }),
+    )
+        .into_response()
+}
+
+/// Catch-panic responder: logs the panic payload and returns the same
+/// `{ code, message }` 500 body the rest of the API emits, so a handler panic is
+/// a structured error response rather than a dropped connection.
+#[allow(clippy::needless_pass_by_value)]
+fn on_panic(err: Box<dyn Any + Send + 'static>) -> Response {
+    let message = err
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| err.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("<non-string panic payload>");
+    tracing::error!(target: "panic", panic = message, "request handler panicked; returning 500");
+    let body = ApiError {
+        code: ErrorCode::Internal,
+        message: "internal server error".to_owned(),
+    };
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
+}
+
+fn map_status(status: HealthStatus) -> BackendStatus {
+    match status {
+        HealthStatus::Up => BackendStatus::Up,
+        HealthStatus::Degraded => BackendStatus::Degraded,
+        HealthStatus::Down => BackendStatus::Down,
+    }
+}
+
+/// Worst status across all backends: any `Down` -> `Down`, else any `Degraded`
+/// -> `Degraded`, else `Up`.
+fn overall_status(snapshot: &[(BackendId, HealthStatus)]) -> BackendStatus {
+    if snapshot.iter().any(|(_, s)| *s == HealthStatus::Down) {
+        BackendStatus::Down
+    } else if snapshot.iter().any(|(_, s)| *s == HealthStatus::Degraded) {
+        BackendStatus::Degraded
+    } else {
+        BackendStatus::Up
+    }
 }

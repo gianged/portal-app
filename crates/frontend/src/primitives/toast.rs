@@ -2,14 +2,14 @@ use leptos::prelude::*;
 
 use crate::primitives::icon::{Icon, IconName};
 use crate::state::toast::{ToastKind, ToastState};
-use crate::theme::{class, color, radius, space, typography};
+use crate::theme::{self, color, radius, space, typography};
 
 /// Renders the toast stack from [`ToastState`] in the bottom-right corner.
 /// Mounted once at the app root, above the routed content.
 #[component]
 pub fn ToastHost() -> impl IntoView {
     let toasts = use_context::<ToastState>().expect("ToastState context");
-    let host = class(format!(
+    let host = theme::class(format!(
         "position: fixed; bottom: {b}; right: {b}; z-index: 200; \
          display: flex; flex-direction: column; gap: {g}; max-width: 360px;",
         b = space::D5,
@@ -27,7 +27,7 @@ pub fn ToastHost() -> impl IntoView {
                         ToastKind::Success => (color::SUCCESS_BG, color::SUCCESS, color::SUCCESS_BORDER),
                         ToastKind::Error => (color::DANGER_BG, color::DANGER, color::DANGER_BORDER),
                     };
-                    let cls = class(format!(
+                    let cls = theme::class(format!(
                         "display: flex; align-items: flex-start; gap: {g}; padding: {py} {px}; \
                          background: {bg}; color: {fg}; border: 1px solid {border}; \
                          border-radius: {r}; box-shadow: {s}; font-family: {ff}; font-size: {fs}; \
@@ -40,14 +40,14 @@ pub fn ToastHost() -> impl IntoView {
                         ff = typography::FONT_SANS,
                         fs = typography::TEXT_SMALL,
                     ));
-                    let body = class("flex: 1; min-width: 0; display: flex; \
+                    let body = theme::class("flex: 1; min-width: 0; display: flex; \
                                       flex-direction: column; word-wrap: break-word;");
-                    let title_cls = class(format!(
+                    let title_cls = theme::class(format!(
                         "font-weight: {fw}; margin-bottom: {mb};",
                         fw = typography::WEIGHT_SEMIBOLD,
                         mb = space::D1,
                     ));
-                    let close = class("background: transparent; border: none; color: inherit; \
+                    let close = theme::class("background: transparent; border: none; color: inherit; \
                                        cursor: pointer; opacity: 0.7; display: inline-flex; \
                                        padding: 0; &:hover { opacity: 1; }");
                     let id = toast.id;

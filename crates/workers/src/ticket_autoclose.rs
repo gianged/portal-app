@@ -1,8 +1,7 @@
 //! Periodic ticket auto-close sweep: closes resolved tickets whose reopen window
 //! has lapsed, emitting audit + notification events. Idempotent, safe to abort.
 
-use std::sync::Arc;
-use std::time::Duration as StdDuration;
+use std::{sync::Arc, time::Duration as StdDuration};
 
 use time::{Duration, OffsetDateTime};
 

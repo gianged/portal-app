@@ -1,7 +1,6 @@
 //! Announcement UI: a channel-scoped feed (defaulting to General) with a broadcast composer and grace-window edit/delete on your own posts.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -14,7 +13,7 @@ use shared::validation::announcement::validate_announcement_body;
 
 use crate::features::announcements::api;
 use crate::features::chat::api as chat_api;
-use crate::features::ui::subtle;
+use crate::features::ui;
 use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::primitives::badge::{Badge, BadgeVariant};
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
@@ -27,9 +26,9 @@ use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::textarea::Textarea;
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, typography};
-use crate::util::format::{relative_time, tone_for};
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, typography};
+use crate::util::format;
+use crate::util::load::{self, Loadable};
 
 /// Minutes left in the edit grace window, or `None` once it has closed.
 fn remaining_edit_minutes(created_at: OffsetDateTime) -> Option<i64> {
@@ -42,7 +41,7 @@ fn remaining_edit_minutes(created_at: OffsetDateTime) -> Option<i64> {
 pub fn AnnouncementsIndex() -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
     let channels: Loadable<Vec<ChannelSummaryDto>> = RwSignal::new(None);
-    load(channels, chat_api::channels());
+    load::load(channels, chat_api::channels());
     let channel = RwSignal::new(None::<ChannelId>);
     let items: Loadable<Vec<AnnouncementDto>> = RwSignal::new(None);
     let reload = RwSignal::new(0u32);
@@ -63,7 +62,7 @@ pub fn AnnouncementsIndex() -> impl IntoView {
     Effect::new(move |_| {
         let _ = reload.get();
         if let Some(cid) = channel.get() {
-            load(items, api::list(cid));
+            load::load(items, api::list(cid));
         }
     });
 
@@ -98,7 +97,7 @@ pub fn AnnouncementsIndex() -> impl IntoView {
         });
     };
     let edited = Callback::new(move |()| reload.update(|n| *n += 1));
-    let select_wrap = class("width: 220px;");
+    let select_wrap = theme::class("width: 220px;");
 
     view! {
         <Stack gap=Gap::Lg>
@@ -123,8 +122,8 @@ pub fn AnnouncementsIndex() -> impl IntoView {
             </Cluster>
 
             {move || match items.get() {
-                None => note("Loading announcements…"),
-                Some(Err(e)) => load_error(&e),
+                None => load::note("Loading announcements…"),
+                Some(Err(e)) => load::load_error(&e),
                 Some(Ok(list)) if list.is_empty() => view! {
                     <EmptyState icon=IconName::Megaphone title="No announcements" description="Broadcasts to this channel appear here." />
                 }.into_any(),
@@ -155,7 +154,7 @@ fn announcement_card(
 ) -> AnyView {
     let sender = a.sender.full_name.clone();
     let body = a.body.clone();
-    let when = relative_time(a.created_at);
+    let when = format::relative_time(a.created_at);
     let edited = a.edited_at.is_some();
     let remaining = a
         .editable
@@ -168,14 +167,14 @@ fn announcement_card(
     let edit_cb = Callback::new(move |_| begin_edit(&a_clone));
     let delete_cb = Callback::new(move |_| do_delete(cid, mid));
 
-    let name_cls = class(format!(
+    let name_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let body_cls = class(format!(
+    let body_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; line-height: 1.55; white-space: pre-wrap; margin: 0;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
@@ -200,9 +199,9 @@ fn announcement_card(
             <Stack gap=Gap::Sm>
                 <Cluster gap=Gap::Sm justify="space-between".to_string()>
                     <Cluster gap=Gap::Sm>
-                        <Avatar name=sender.clone() size=AvatarSize::Sm tone=tone_for(&sender) />
+                        <Avatar name=sender.clone() size=AvatarSize::Sm tone=format::tone_for(&sender) />
                         <div class=name_cls>{sender}</div>
-                        {subtle(&if edited { format!("{when} · edited") } else { when })}
+                        {ui::subtle(&if edited { format!("{when} · edited") } else { when })}
                     </Cluster>
                     {controls}
                 </Cluster>

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use time::OffsetDateTime;
 
 use crate::{
     error::RepositoryError,
@@ -56,7 +57,7 @@ pub trait ReportArchiveRepository: Send + Sync {
     async fn find_by_period(
         &self,
         kind: ReportKind,
-        period_start: time::OffsetDateTime,
+        period_start: OffsetDateTime,
     ) -> Result<Option<Report>, RepositoryError>;
 
     /// Every stored report's storage key. Keeps the upload orphan-sweep from

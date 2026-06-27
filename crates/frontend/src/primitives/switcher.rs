@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 use crate::primitives::stack::Gap;
-use crate::theme::class;
+use crate::theme;
 
 /// Lays children in a row, switching to a stacked column below `threshold` width.
 #[component]
@@ -13,7 +13,7 @@ pub fn Switcher(
     children: Children,
 ) -> impl IntoView {
     let threshold = threshold.unwrap_or_else(|| "30rem".to_string());
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: flex; flex-wrap: wrap; gap: {g}; \
          & > * {{ flex-grow: 1; flex-basis: calc(({t} - 100%) * 999); }}",
         g = gap.value(),

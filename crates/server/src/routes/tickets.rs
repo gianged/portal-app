@@ -14,12 +14,16 @@ use domain::{
     ids::{CommentId, TicketId, UserId},
     model::{CommentEntity, Ticket},
 };
-use shared::dto::comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest};
-use shared::dto::ticket::{
-    AssignTicketRequest, RaiseTicketRequest, TicketDto, TriageTicketRequest,
+use shared::{
+    dto::{
+        comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest},
+        ticket::{AssignTicketRequest, RaiseTicketRequest, TicketDto, TriageTicketRequest},
+    },
+    validation::{
+        comment::validate_comment_body,
+        ticket::{validate_ticket_description, validate_ticket_title},
+    },
 };
-use shared::validation::comment::validate_comment_body;
-use shared::validation::ticket::{validate_ticket_description, validate_ticket_title};
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
 

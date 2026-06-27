@@ -1,11 +1,13 @@
-use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    io::ErrorKind,
+    path::{Component, Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use async_trait::async_trait;
-use tokio::fs;
-
 use time::OffsetDateTime;
+use tokio::fs;
 
 use domain::{
     error::StorageError,
@@ -95,7 +97,7 @@ impl FileStorage for LocalStorage {
     async fn get(&self, key: &str) -> Result<Vec<u8>, StorageError> {
         let path = self.resolve(key)?;
         fs::read(&path).await.map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => StorageError::NotFound,
+            ErrorKind::NotFound => StorageError::NotFound,
             _ => StorageError::Backend(e.to_string()),
         })
     }
@@ -105,7 +107,7 @@ impl FileStorage for LocalStorage {
         match fs::remove_file(&path).await {
             Ok(()) => Ok(()),
             // Idempotent: deleting a missing object is a no-op.
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
             Err(e) => Err(StorageError::Backend(e.to_string())),
         }
     }
@@ -139,7 +141,7 @@ impl FileStorage for LocalStorage {
             let mut entries = match fs::read_dir(&dir).await {
                 Ok(entries) => entries,
                 // A missing prefix directory simply yields no objects.
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(e) if e.kind() == ErrorKind::NotFound => continue,
                 Err(e) => return Err(StorageError::Backend(e.to_string())),
             };
             while let Some(entry) = entries

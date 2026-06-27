@@ -18,6 +18,7 @@ time = { version = "0.3", features = ["serde"] }
 uuid = { version = "1", features = ["v7", "serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
 
 # backend
 tokio = { version = "1", features = ["full"] }
@@ -34,7 +35,7 @@ axum-extra = { version = "0.12", features = ["cookie"] }
 # here because we only sign/verify HS256, never RSA.
 jsonwebtoken = { version = "10", default-features = false, features = ["hmac", "rust_crypto"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "cors", "limit", "set-header"] }
+tower-http = { version = "0.7", features = ["trace", "cors", "limit", "set-header", "catch-panic"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
 redis = { version = "1", features = ["tokio-comp", "connection-manager"] }
 scylla = { version = "1", features = ["time-03", "rustls-023"] }

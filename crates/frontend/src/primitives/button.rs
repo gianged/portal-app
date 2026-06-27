@@ -1,7 +1,7 @@
 use leptos::ev::MouseEvent;
 use leptos::prelude::*;
 
-use crate::theme::{class, color, radius, space, typography};
+use crate::theme::{self, color, radius, space, typography};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum ButtonVariant {
@@ -144,7 +144,7 @@ pub fn Button(
         ring = typography::RING,
     );
 
-    let cls = class(format!("{base} {}", variant_css(variant)));
+    let cls = theme::class(format!("{base} {}", variant_css(variant)));
     let type_ = type_.unwrap_or_else(|| "button".to_string());
     let on_click_handler = move |ev: MouseEvent| {
         if let Some(cb) = on_click {

@@ -4,7 +4,7 @@
 //! are re-resolved per call from Postgres + `OpenFGA`, so deactivation is immediate.
 
 use axum_extra::extract::cookie::{Cookie, SameSite};
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
@@ -89,14 +89,14 @@ impl TokenService {
             ver,
         };
         // HS256 signing with a valid key is infallible; an error here is a startup config bug.
-        encode(&Header::new(Algorithm::HS256), &claims, &self.encoding)
+        jsonwebtoken::encode(&Header::new(Algorithm::HS256), &claims, &self.encoding)
             .expect("HS256 encoding of session claims is infallible")
     }
 
     /// Verifies signature + expiry and returns the decoded contents. Tokens
     /// minted before the jti/ver claims existed fail decode and read as invalid.
     pub fn verify(&self, token: &str) -> Result<VerifiedToken, AuthError> {
-        let data = decode::<Claims>(token, &self.decoding, &self.validation)
+        let data = jsonwebtoken::decode::<Claims>(token, &self.decoding, &self.validation)
             .map_err(|_| AuthError::Invalid)?;
         Ok(VerifiedToken {
             user_id: UserId(data.claims.sub),

@@ -5,7 +5,7 @@ use leptos::prelude::*;
 
 use crate::api::display::{ErrorDisplay, Severity};
 use crate::primitives::icon::{Icon, IconName};
-use crate::theme::{class, color, radius, space, typography};
+use crate::theme::{self, color, radius, space, typography};
 
 #[component]
 pub fn ErrorCallout(display: ErrorDisplay) -> impl IntoView {
@@ -29,7 +29,7 @@ pub fn ErrorCallout(display: ErrorDisplay) -> impl IntoView {
             IconName::Info,
         ),
     };
-    let wrap = class(format!(
+    let wrap = theme::class(format!(
         "display: flex; align-items: flex-start; gap: {g}; padding: {py} {px}; \
          background: {bg}; border: 1px solid {border}; border-radius: {r}; \
          font-family: {ff}; font-size: {fs}; line-height: 1.45; color: {fg};",
@@ -40,20 +40,20 @@ pub fn ErrorCallout(display: ErrorDisplay) -> impl IntoView {
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
     ));
-    let body = class("flex: 1; min-width: 0;");
-    let title = class(format!(
+    let body = theme::class("flex: 1; min-width: 0;");
+    let title = theme::class(format!(
         "font-weight: {fw};",
         fw = typography::WEIGHT_SEMIBOLD
     ));
-    let chip = class(format!(
+    let chip = theme::class(format!(
         "display: inline-block; margin: {mt} 0; font-family: {ff}; font-size: {fs}; \
          opacity: 0.85;",
         mt = space::D1,
         ff = typography::FONT_MONO,
         fs = typography::TEXT_CAPTION,
     ));
-    let msg = class(format!("color: {c};", c = color::TEXT));
-    let reference = class(format!(
+    let msg = theme::class(format!("color: {c};", c = color::TEXT));
+    let reference = theme::class(format!(
         "margin-top: {mt}; font-family: {ff}; font-size: {fs}; color: {c};",
         mt = space::D1,
         ff = typography::FONT_MONO,

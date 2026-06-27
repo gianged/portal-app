@@ -1,8 +1,6 @@
 //! Message composer: sends over the WebSocket when connected, else falls back to a REST post; emits typing signals and attaches files by storage key on send.
 
-use leptos::html::Input as HtmlInputEl;
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{html::Input as HtmlInputEl, prelude::*, task::spawn_local};
 use web_sys::FormData;
 
 use shared::dto::chat::{ChatAttachmentDto, MessageDto, SendMessageRequest};
@@ -11,14 +9,14 @@ use shared::dto::ws::ClientFrame;
 
 use crate::api::ws::WsClient;
 use crate::features::chat::api;
-use crate::features::chat::ws::push_message;
+use crate::features::chat::ws;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::cluster::Cluster;
 use crate::primitives::icon::{Icon, IconName};
 use crate::primitives::input::InputGroup;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, radius, space, typography};
+use crate::theme::{self, color, radius, space, typography};
 
 #[component]
 pub fn Composer(
@@ -67,7 +65,7 @@ pub fn Composer(
                     attachment_keys,
                 };
                 match api::send(cid, &req).await {
-                    Ok(msg) => push_message(messages, msg),
+                    Ok(msg) => ws::push_message(messages, msg),
                     Err(e) => toast.error_from(&e),
                 }
             });
@@ -107,13 +105,13 @@ pub fn Composer(
     });
     let send_btn = Callback::new(move |_| do_send());
 
-    let wrap = class(format!(
+    let wrap = theme::class(format!(
         "padding: {p}; border-top: 1px solid {b}; background: {bg};",
         p = space::D3,
         b = color::BORDER,
         bg = color::BG_SUBTLE,
     ));
-    let hidden_input = class("display: none;");
+    let hidden_input = theme::class("display: none;");
 
     let trailing = view! {
         <Button variant=ButtonVariant::Icon on_click=pick_file>
@@ -144,7 +142,7 @@ pub fn Composer(
 
 /// One pending-upload chip with a remove button.
 fn pending_chip(a: &ChatAttachmentDto, pending: RwSignal<Vec<ChatAttachmentDto>>) -> AnyView {
-    let chip_cls = class(format!(
+    let chip_cls = theme::class(format!(
         "display: inline-flex; align-items: center; gap: 6px; padding: 2px {p}; \
          border: 1px solid {b}; border-radius: {r}; font-family: {ff}; font-size: {fs}; color: {c};",
         p = space::D2,

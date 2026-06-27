@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 
-use crate::theme::class;
+use crate::theme;
 
 #[allow(dead_code)] // TODO: unused
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -193,7 +193,7 @@ impl IconName {
 #[component]
 pub fn Icon(name: IconName, #[prop(optional)] size: Option<u32>) -> impl IntoView {
     let s = size.unwrap_or(16);
-    let cls = class("flex-shrink: 0; display: inline-block; vertical-align: middle;");
+    let cls = theme::class("flex-shrink: 0; display: inline-block; vertical-align: middle;");
     view! {
         <svg
             class=cls

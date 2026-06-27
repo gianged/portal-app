@@ -7,13 +7,13 @@ mod config;
 mod emails;
 mod notifications;
 mod report_schedule;
-mod telemetry;
 mod ticket_autoclose;
 mod uploads;
 
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 
 use apalis::prelude::*;
+use application::resilience;
 
 use crate::bootstrap::WorkerContext;
 
@@ -37,7 +37,10 @@ fn main() -> anyhow::Result<()> {
 async fn run() -> anyhow::Result<()> {
     // Populate the process env from the repo-root .env before config is parsed.
     dotenvy::dotenv().ok();
-    telemetry::init();
+    // Capture panics as structured logs, then stand up the log sinks. The guard
+    // keeps the file-writer flush thread alive for the process lifetime.
+    infrastructure::telemetry::install_panic_hook();
+    let _log_guard = infrastructure::telemetry::init(Path::new("logs"), "workers");
 
     let cfg = config::from_env()?;
     let WorkerContext {
@@ -50,32 +53,54 @@ async fn run() -> anyhow::Result<()> {
         email_storage,
         report,
         email_queue,
+        health_registry,
+        health_checks,
+        pg_breaker,
+        chat_drainer,
     } = bootstrap::build(&cfg).await?;
 
+    // Health prober drives the per-backend circuit breakers (fail-fast + recovery).
+    {
+        let registry = health_registry.clone();
+        let checks = health_checks.clone();
+        let interval = cfg.health_probe_interval;
+        resilience::supervise("health-prober", move || {
+            registry.clone().run_prober(checks.clone(), interval)
+        });
+    }
+
     // Periodic maintenance loops run alongside the queue consumer. Each handles its own
-    // errors and never returns; idempotent, so aborting at shutdown is safe.
-    tokio::spawn(cleanup::run(
-        maintenance.clone(),
-        cfg.notification_retention,
-        cfg.cleanup_interval,
-    ));
-    tokio::spawn(uploads::run(
-        maintenance.clone(),
-        cfg.upload_grace,
-        cfg.upload_sweep_interval,
-    ));
-    tokio::spawn(ticket_autoclose::run(
-        maintenance,
-        cfg.ticket_autoclose_window,
-        cfg.ticket_autoclose_interval,
-    ));
+    // errors and never returns; supervised so a panic restarts the loop with backoff.
+    {
+        let m = maintenance.clone();
+        let (retention, interval) = (cfg.notification_retention, cfg.cleanup_interval);
+        resilience::supervise("cleanup", move || {
+            cleanup::run(m.clone(), retention, interval)
+        });
+    }
+    {
+        let m = maintenance.clone();
+        let (grace, interval) = (cfg.upload_grace, cfg.upload_sweep_interval);
+        resilience::supervise("uploads", move || uploads::run(m.clone(), grace, interval));
+    }
+    {
+        let m = maintenance.clone();
+        let (window, interval) = (cfg.ticket_autoclose_window, cfg.ticket_autoclose_interval);
+        resilience::supervise("ticket-autoclose", move || {
+            ticket_autoclose::run(m.clone(), window, interval)
+        });
+    }
+    // Chat spool drainer: replays optimistically-acked batches that couldn't reach
+    // Scylla, paced by the Scylla breaker so a revived backend isn't flooded.
+    resilience::supervise("chat-drainer", move || chat_drainer.clone().run());
+
     if cfg.report_enabled {
-        tokio::spawn(report_schedule::run(
-            report,
-            email_queue,
-            cfg.report_schedule_day,
-            cfg.report_schedule_interval,
-        ));
+        let reports = report.clone();
+        let queue = email_queue.clone();
+        let (day, interval) = (cfg.report_schedule_day, cfg.report_schedule_interval);
+        resilience::supervise("report-schedule", move || {
+            report_schedule::run(reports.clone(), queue.clone(), day, interval)
+        });
     } else {
         tracing::info!("monthly report scheduler disabled (REPORT_ENABLED=false)");
         drop((report, email_queue));
@@ -83,12 +108,16 @@ async fn run() -> anyhow::Result<()> {
 
     // One worker per durable queue. Separate queues isolate the non-idempotent
     // notification fan-out from the audit projector so a retry never re-runs the other.
+    // The Postgres breaker gates the two PG-writing handlers: while it is open they
+    // return a retryable error so the job stays queued, paced by the breaker cooldown.
     let notify_worker = WorkerBuilder::new("notifications")
         .data(fanout)
+        .data(pg_breaker.clone())
         .backend(storage)
         .build_fn(notifications::handle);
     let audit_worker = WorkerBuilder::new("audit")
         .data(audit_projector)
+        .data(pg_breaker)
         .backend(audit_storage)
         .build_fn(audit::handle);
     let email_worker = WorkerBuilder::new("emails")

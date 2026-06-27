@@ -8,8 +8,7 @@ use axum::{
     routing::get,
 };
 use serde::Deserialize;
-use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use uuid::Uuid;
 
 use domain::model::AuditLog;

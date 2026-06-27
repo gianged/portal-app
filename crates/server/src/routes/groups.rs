@@ -12,11 +12,13 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use domain::ids::{GroupId, UserId};
-use shared::dto::group::{
-    AddMemberRequest, ChangeMemberRoleRequest, CreateGroupRequest, GroupDetailDto, GroupDto,
-    MembershipDto, UpdateGroupRequest,
+use shared::{
+    dto::group::{
+        AddMemberRequest, ChangeMemberRoleRequest, CreateGroupRequest, GroupDetailDto, GroupDto,
+        MembershipDto, UpdateGroupRequest,
+    },
+    validation::group::{validate_group_description, validate_group_name},
 };
-use shared::validation::group::{validate_group_description, validate_group_name};
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
 

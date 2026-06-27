@@ -1,7 +1,5 @@
 mod projector;
 
-pub use projector::AuditProjector;
-
 use std::sync::Arc;
 
 use domain::{ids::UserId, model::AuditLog, repository::AuditRepository};
@@ -9,6 +7,8 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{error::Result, permissions::Permissions};
+
+pub use projector::AuditProjector;
 
 /// Read side of the audit log. Every method is admin-gated (Director or HR) via
 /// [`Permissions::require_admin`]; the write side is the system-level

@@ -2,7 +2,7 @@
 
 use leptos::prelude::*;
 
-use crate::theme::{class, color, radius, space};
+use crate::theme::{self, color, radius, space};
 
 #[derive(Clone, Copy, Default)]
 pub enum Pad {
@@ -41,7 +41,7 @@ pub fn Box_(
     } else {
         "none".to_string()
     };
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "padding: {p}; background: {bg}; border: {border}; border-radius: {r};",
         p = pad.value(),
         r = radius::MD,

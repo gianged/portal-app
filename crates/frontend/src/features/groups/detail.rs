@@ -1,7 +1,6 @@
 //! Group detail: the org-tree roster (leader, sub-leaders, members) plus member administration: add, change role, remove, transfer leadership.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 
 use shared::dto::group::{
     AddMemberRequest, ChangeMemberRoleRequest, GroupDetailDto, GroupKind, GroupRole, MembershipDto,
@@ -9,7 +8,7 @@ use shared::dto::group::{
 use shared::dto::ids::{GroupId, UserId};
 
 use crate::features::groups::api;
-use crate::features::ui::{back_link, page_title, section_heading, subtle};
+use crate::features::ui;
 use crate::features::users::picker::UserPicker;
 use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::primitives::badge::{Badge, BadgeVariant};
@@ -22,9 +21,9 @@ use crate::primitives::input::FieldLabel;
 use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, space, typography};
-use crate::util::format::tone_for;
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, space, typography};
+use crate::util::format;
+use crate::util::load::{self, Loadable};
 
 fn role_wire(r: GroupRole) -> &'static str {
     match r {
@@ -53,7 +52,7 @@ pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
     Effect::new(move |_| {
         let _ = reload.get();
         if let Some(gid) = id.get() {
-            load(detail, api::get(gid));
+            load::load(detail, api::get(gid));
         }
     });
 
@@ -104,12 +103,12 @@ pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
 
     view! {
         <Stack gap=Gap::Lg>
-            {back_link("/groups", "Back to groups")}
+            {ui::back_link("/groups", "Back to groups")}
             {move || match detail.get() {
-                None => note("Loading group…"),
-                Some(Err(e)) => load_error(&e),
+                None => load::note("Loading group…"),
+                Some(Err(e)) => load::load_error(&e),
                 Some(Ok(d)) => {
-                    let title_v = page_title(&d.group.name);
+                    let title_v = ui::page_title(&d.group.name);
                     let kind = d.group.kind;
                     let count = d.group.member_count;
                     let desc = d.group.description.clone();
@@ -125,9 +124,9 @@ pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
                                             GroupKind::Standard => ().into_any(),
                                         }}
                                     </Cluster>
-                                    {subtle(&format!("{count} members"))}
+                                    {ui::subtle(&format!("{count} members"))}
                                     {if desc.is_empty() { ().into_any() } else {
-                                        let cls = class(format!(
+                                        let cls = theme::class(format!(
                                             "font-family: {ff}; font-size: {fs}; color: {c};",
                                             ff = typography::FONT_SANS, fs = typography::TEXT_SMALL, c = color::TEXT,
                                         ));
@@ -161,7 +160,7 @@ fn roster_card(
         <Card>
             <Stack gap=Gap::Md>
                 <Cluster gap=Gap::Sm justify="space-between".to_string()>
-                    {section_heading("Members")}
+                    {ui::section_heading("Members")}
                     <Cluster gap=Gap::Xs>
                         <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_transfer>
                             <Icon name=IconName::Crown size=14 /> " Transfer lead"
@@ -186,20 +185,20 @@ fn member_row(
     let uid = m.user.id;
     let name = m.user.full_name.clone();
     let role = m.role;
-    let row = class(format!(
+    let row = theme::class(format!(
         "display: flex; align-items: center; gap: {g}; padding: {p} 0; border-bottom: 1px solid {b};",
         g = space::D3,
         p = space::D2,
         b = color::BORDER,
     ));
-    let grow = class(format!(
+    let grow = theme::class(format!(
         "flex: 1; min-width: 0; font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         fw = typography::WEIGHT_MEDIUM,
         c = color::TEXT,
     ));
-    let select_wrap = class("width: 130px;");
+    let select_wrap = theme::class("width: 130px;");
     let remove_cb = Callback::new(move |_| remove(uid));
 
     let controls = if role == GroupRole::Leader {
@@ -222,7 +221,7 @@ fn member_row(
 
     view! {
         <div class=row>
-            <Avatar name=name.clone() size=AvatarSize::Sm tone=tone_for(&name) />
+            <Avatar name=name.clone() size=AvatarSize::Sm tone=format::tone_for(&name) />
             <span class=grow>{name}</span>
             {controls}
         </div>

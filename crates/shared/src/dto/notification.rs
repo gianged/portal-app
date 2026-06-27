@@ -128,9 +128,9 @@ pub struct MarkReadRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use time::OffsetDateTime;
     use uuid::Uuid;
+
+    use super::*;
 
     #[test]
     fn payload_tagged_by_kind() {

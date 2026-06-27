@@ -5,7 +5,6 @@ use crate::ids::{
     ChannelId, CommentId, MessageId, NotificationId, ProjectId, ProjectInviteId, RequestId,
     TicketId, UserId,
 };
-
 use super::{project::ProjectInviteStatus, request::RequestStatus, ticket::TicketStatus};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,7 +1,6 @@
 //! The user profile detail: identity card with status, edit, deactivate/reactivate, and password change/reset dialogs.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 
 use shared::dto::ids::UserId;
 use shared::dto::user::{
@@ -13,7 +12,7 @@ use shared::validation::user::{
 };
 
 use crate::features::auth::api as auth_api;
-use crate::features::ui::{back_link, page_title, subtle};
+use crate::features::ui;
 use crate::features::users::api;
 use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::primitives::badge::{Badge, BadgeVariant};
@@ -26,9 +25,9 @@ use crate::primitives::input::{FieldLabel, Input};
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, space, typography};
-use crate::util::format::tone_for;
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, space, typography};
+use crate::util::format;
+use crate::util::load::{self, Loadable};
 
 fn status_variant(s: UserStatus) -> BadgeVariant {
     match s {
@@ -51,7 +50,7 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
     Effect::new(move |_| {
         let _ = reload.get();
         if let Some(uid) = id.get() {
-            load(profile, api::get(uid));
+            load::load(profile, api::get(uid));
         }
     });
 
@@ -86,18 +85,18 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
 
     view! {
         <Stack gap=Gap::Lg>
-            {back_link("/users", "Back to people")}
+            {ui::back_link("/users", "Back to people")}
             {move || match profile.get() {
-                None => note("Loading profile…"),
-                Some(Err(e)) => load_error(&e),
+                None => load::note("Loading profile…"),
+                Some(Err(e)) => load::load_error(&e),
                 Some(Ok(p)) => {
                     let name = p.full_name.clone();
                     let status = p.status;
                     let ep_name = p.full_name.clone();
                     let ep_phone = p.phone.clone().unwrap_or_default();
                     let ep_tz = p.timezone.clone();
-                    let title_v = page_title(&p.full_name);
-                    let email_v = subtle(&p.email);
+                    let title_v = ui::page_title(&p.full_name);
+                    let email_v = ui::subtle(&p.email);
                     let fields_v = profile_fields(&p);
                     let deactivate_cb = Callback::new(move |_| set_active(false));
                     let reactivate_cb = Callback::new(move |_| set_active(true));
@@ -124,7 +123,7 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
                                 <Stack gap=Gap::Md>
                                     <Cluster gap=Gap::Sm justify="space-between".to_string()>
                                         <Cluster gap=Gap::Sm>
-                                            <Avatar name=name.clone() size=AvatarSize::Lg tone=tone_for(&name) />
+                                            <Avatar name=name.clone() size=AvatarSize::Lg tone=format::tone_for(&name) />
                                             <Stack gap=Gap::Xs>
                                                 {title_v}
                                                 {email_v}
@@ -304,7 +303,7 @@ fn profile_fields(p: &UserProfileDto) -> AnyView {
         .system_role
         .map_or_else(|| "Member".to_owned(), |r| r.label().to_owned());
     let field = |label: &str, value: String| {
-        let l = class(format!(
+        let l = theme::class(format!(
             "font-family: {ff}; font-size: {fs}; font-weight: {fw}; text-transform: uppercase; \
              letter-spacing: 0.06em; color: {c};",
             ff = typography::FONT_SANS,
@@ -312,7 +311,7 @@ fn profile_fields(p: &UserProfileDto) -> AnyView {
             fw = typography::WEIGHT_SEMIBOLD,
             c = color::TEXT_FAINT,
         ));
-        let v = class(format!(
+        let v = theme::class(format!(
             "font-family: {ff}; font-size: {fs}; color: {c};",
             ff = typography::FONT_SANS,
             fs = typography::TEXT_SMALL,
@@ -321,7 +320,7 @@ fn profile_fields(p: &UserProfileDto) -> AnyView {
         let label = label.to_owned();
         view! { <Stack gap=Gap::Xs><div class=l>{label}</div><div class=v>{value}</div></Stack> }
     };
-    let grid = class(format!(
+    let grid = theme::class(format!(
         "display: grid; grid-template-columns: repeat(3, 1fr); gap: {g};",
         g = space::D5,
     ));

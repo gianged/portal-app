@@ -4,12 +4,12 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 
 use crate::primitives::icon::{Icon, IconName};
-use crate::theme::{class, color, typography};
+use crate::theme::{self, color, typography};
 
 /// Card / section heading (16px semibold strong).
 #[must_use]
 pub fn section_heading(text: &str) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c}; margin: 0;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_BODY,
@@ -22,7 +22,7 @@ pub fn section_heading(text: &str) -> AnyView {
 /// Page title (20px semibold strong).
 #[must_use]
 pub fn page_title(text: &str) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c}; margin: 0; \
          letter-spacing: -0.015em;",
         ff = typography::FONT_SANS,
@@ -36,7 +36,7 @@ pub fn page_title(text: &str) -> AnyView {
 /// Muted caption / secondary line.
 #[must_use]
 pub fn subtle(text: &str) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
@@ -48,7 +48,7 @@ pub fn subtle(text: &str) -> AnyView {
 /// Back link with a leading chevron, for detail pages.
 #[must_use]
 pub fn back_link(href: &'static str, label: &str) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: inline-flex; align-items: center; gap: 4px; font-family: {ff}; \
          font-size: {fs}; color: {c}; text-decoration: none; &:hover {{ color: {a}; }}",
         ff = typography::FONT_SANS,

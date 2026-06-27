@@ -12,7 +12,7 @@ use crate::primitives::icon::IconName;
 use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::tabs::{Tab, Tabs};
 use crate::state::auth::AuthState;
-use crate::theme::{class, color, typography};
+use crate::theme::{self, color, typography};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ReportTab {
@@ -88,15 +88,15 @@ fn ReportsIndex() -> impl IntoView {
 /// A small label + figure tile used across the report tabs.
 #[must_use]
 pub(crate) fn metric(label: &str, value: String) -> AnyView {
-    let wrap = class("display: flex; flex-direction: column; gap: 2px; min-width: 90px;");
-    let value_cls = class(format!(
+    let wrap = theme::class("display: flex; flex-direction: column; gap: 2px; min-width: 90px;");
+    let value_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_H3,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let label_cls = class(format!(
+    let label_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
@@ -114,7 +114,7 @@ pub(crate) fn metric(label: &str, value: String) -> AnyView {
 /// A section heading used inside report cards.
 #[must_use]
 pub(crate) fn section_title(text: &str) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c}; margin: 0;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,

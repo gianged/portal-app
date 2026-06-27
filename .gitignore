@@ -36,5 +36,6 @@ storage/uploads/*
 Thumbs.db
 desktop.ini
 
-# Reference Files
+# Reference development files
 references/
+plans/

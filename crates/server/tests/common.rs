@@ -23,6 +23,7 @@ use uuid::Uuid;
 use application::{
     events::EventBus,
     permissions::Permissions,
+    resilience::HealthRegistry,
     service::{
         announcement::AnnouncementService,
         audit::AuditService,
@@ -42,6 +43,7 @@ use application::{
 };
 use domain::{
     error::{AuthzError, EventError, JobError, RenderError, RepositoryError},
+    health::BackendId,
     ids::{
         ChannelId, CommentId, GroupId, MessageId, NotificationId, ProjectCollaboratorId, ProjectId,
         ProjectInviteId, ReportId, RequestId, TicketId, UserId,
@@ -68,8 +70,7 @@ use domain::{
         ReportStatsRepository, RequestRepository, TicketRepository, UserRepository,
     },
 };
-use infrastructure::local_storage::LocalStorage;
-use infrastructure::signed_url::SignedUrl;
+use infrastructure::{local_storage::LocalStorage, signed_url::SignedUrl};
 
 use server::{
     app::AppState, auth::TokenService, middleware::rate_limit::RateLimits, realtime::Realtime,
@@ -823,6 +824,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         chat.clone(),
         chats.clone(),
         events.clone(),
+        None,
         ChatIngestConfig::default(),
     );
 
@@ -897,6 +899,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         rate_limits,
         storage,
         signed_url,
+        health: Arc::new(HealthRegistry::new(&BackendId::ALL)),
     };
 
     TestApp {

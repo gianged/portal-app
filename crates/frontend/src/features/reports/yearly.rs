@@ -1,5 +1,4 @@
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use time::OffsetDateTime;
 
 use shared::dto::report::YearlyReportDto;
@@ -14,8 +13,8 @@ use crate::primitives::icon::{Icon, IconName};
 use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, typography};
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, typography};
+use crate::util::load::{self, Loadable};
 
 #[component]
 pub fn YearlyTab() -> impl IntoView {
@@ -28,7 +27,7 @@ pub fn YearlyTab() -> impl IntoView {
 
     Effect::new(move |_| {
         download.set(None);
-        load(report, api::yearly(year.get()));
+        load::load(report, api::yearly(year.get()));
     });
 
     let year_value = Signal::derive(move || year.get().to_string());
@@ -57,8 +56,8 @@ pub fn YearlyTab() -> impl IntoView {
         });
     });
 
-    let year_wrap = class("width: 120px;");
-    let link_cls = class(format!(
+    let year_wrap = theme::class("width: 120px;");
+    let link_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; font-weight: {fw};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
@@ -94,8 +93,8 @@ pub fn YearlyTab() -> impl IntoView {
             </Cluster>
 
             {move || match report.get() {
-                None => note("Loading report…"),
-                Some(Err(e)) => load_error(&e),
+                None => load::note("Loading report…"),
+                Some(Err(e)) => load::load_error(&e),
                 Some(Ok(data)) => yearly_view(data),
             }}
         </Stack>

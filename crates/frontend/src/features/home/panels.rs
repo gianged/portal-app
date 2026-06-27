@@ -14,14 +14,11 @@ use crate::primitives::badge::Badge;
 use crate::primitives::card::Card;
 use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::table::{Table, TableToolbar, TableWrap};
-use crate::theme::{class, color, space, typography};
-use crate::util::format::{
-    relative_time, request_priority_variant, request_status_variant, ticket_status_variant,
-    tone_for,
-};
+use crate::theme::{self, color, space, typography};
+use crate::util::format;
+use crate::util::load;
 
 pub use crate::util::load::Loadable;
-use crate::util::load::load_error;
 
 #[component]
 pub fn StatTiles(
@@ -30,7 +27,7 @@ pub fn StatTiles(
     channels: Loadable<Vec<ChannelSummaryDto>>,
     groups: Loadable<Vec<GroupDto>>,
 ) -> impl IntoView {
-    let grid = class(format!(
+    let grid = theme::class(format!(
         "display: grid; grid-template-columns: repeat(4, 1fr); gap: {g}; margin-bottom: {mb};",
         g = space::D4,
         mb = space::D5,
@@ -71,7 +68,7 @@ fn StatTile(
     #[prop(into)] value: Signal<String>,
     #[prop(into)] sub: Signal<String>,
 ) -> impl IntoView {
-    let label_cls = class(format!(
+    let label_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; text-transform: uppercase; \
          letter-spacing: 0.08em; color: {c};",
         ff = typography::FONT_SANS,
@@ -79,20 +76,20 @@ fn StatTile(
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_FAINT,
     ));
-    let value_cls = class(format!(
+    let value_cls = theme::class(format!(
         "font-family: {ff}; font-size: 26px; font-weight: {fw}; \
          letter-spacing: -0.02em; color: {c};",
         ff = typography::FONT_SANS,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let sub_cls = class(format!(
+    let sub_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
         c = color::TEXT_MUTED,
     ));
-    let row_cls = class("display: flex; align-items: baseline; gap: 8px;");
+    let row_cls = theme::class("display: flex; align-items: baseline; gap: 8px;");
     view! {
         <Card>
             <Stack gap=Gap::Md>
@@ -116,7 +113,7 @@ pub fn RequestsPanel(requests: Loadable<Vec<RequestDto>>) -> impl IntoView {
             </TableToolbar>
             {move || match requests.get() {
                 None => note("Loading requests…", true),
-                Some(Err(e)) => load_error(&e),
+                Some(Err(e)) => load::load_error(&e),
                 Some(Ok(items)) if items.is_empty() => {
                     note("Nothing assigned to you right now.", true)
                 }
@@ -134,7 +131,7 @@ pub fn TicketsPanel(tickets: Loadable<Vec<TicketDto>>) -> impl IntoView {
                 {panel_heading("My IT tickets")}
                 {move || match tickets.get() {
                     None => note("Loading tickets…", false),
-                    Some(Err(e)) => load_error(&e),
+                    Some(Err(e)) => load::load_error(&e),
                     Some(Ok(items)) if items.is_empty() => {
                         note("You haven't raised any tickets.", false)
                     }
@@ -153,7 +150,7 @@ pub fn ChannelsPanel(channels: Loadable<Vec<ChannelSummaryDto>>) -> impl IntoVie
                 {panel_heading("Channels")}
                 {move || match channels.get() {
                     None => note("Loading channels…", false),
-                    Some(Err(e)) => load_error(&e),
+                    Some(Err(e)) => load::load_error(&e),
                     Some(Ok(items)) if items.is_empty() => note("No channels yet.", false),
                     Some(Ok(items)) => channels_list(items),
                 }}
@@ -166,7 +163,7 @@ fn requests_table(items: Vec<RequestDto>) -> AnyView {
     let total = items.len();
     let rows = items.into_iter().take(6).map(request_row).collect_view();
     let footer = (total > 6).then(|| {
-        let cls = class(format!(
+        let cls = theme::class(format!(
             "padding: {p}; font-family: {ff}; font-size: {fs}; color: {c};",
             p = space::D3,
             ff = typography::FONT_SANS,
@@ -201,13 +198,13 @@ fn request_row(r: RequestDto) -> impl IntoView {
     let status = r.status;
     let priority = r.priority;
     let assignee = r.assignee.as_ref().map(|a| a.full_name.clone());
-    let updated = relative_time(r.updated_at);
+    let updated = format::relative_time(r.updated_at);
     view! {
         <tr>
             <td><span class="mono cell-muted">{format!("#{short}")}</span></td>
             <td><span class="cell-strong">{title}</span></td>
-            <td><Badge variant=request_status_variant(status)>{status.label()}</Badge></td>
-            <td><Badge variant=request_priority_variant(priority)>{priority.label()}</Badge></td>
+            <td><Badge variant=format::request_status_variant(status)>{status.label()}</Badge></td>
+            <td><Badge variant=format::request_priority_variant(priority)>{priority.label()}</Badge></td>
             <td>{match assignee {
                 Some(name) => assignee_cell(&name),
                 None => dash(),
@@ -223,18 +220,18 @@ fn tickets_list(items: Vec<TicketDto>) -> AnyView {
 }
 
 fn ticket_row(t: TicketDto) -> impl IntoView {
-    let row = class(format!(
+    let row = theme::class(format!(
         "display: flex; align-items: center; gap: {g};",
         g = space::D3
     ));
-    let title = class(format!(
+    let title = theme::class(format!(
         "flex: 1; min-width: 0; font-family: {ff}; font-size: {fs}; color: {c}; \
          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         c = color::TEXT,
     ));
-    let age = class(format!(
+    let age = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; flex-shrink: 0;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
@@ -242,11 +239,11 @@ fn ticket_row(t: TicketDto) -> impl IntoView {
     ));
     let label = t.title.clone();
     let status = t.status;
-    let created = relative_time(t.created_at);
+    let created = format::relative_time(t.created_at);
     view! {
         <div class=row>
             <span class=title>{label}</span>
-            <Badge variant=ticket_status_variant(status)>{status.label()}</Badge>
+            <Badge variant=format::ticket_status_variant(status)>{status.label()}</Badge>
             <span class=age>{created}</span>
         </div>
     }
@@ -258,16 +255,16 @@ fn channels_list(items: Vec<ChannelSummaryDto>) -> AnyView {
 }
 
 fn channel_row(c: ChannelSummaryDto) -> impl IntoView {
-    let row = class(format!(
+    let row = theme::class(format!(
         "display: flex; align-items: center; gap: {g};",
         g = space::D3
     ));
-    let dot = class(format!(
+    let dot = theme::class(format!(
         "width: 7px; height: 7px; border-radius: 50%; background: {c}; flex-shrink: 0;",
         c = color::ACCENT,
     ));
-    let spacer = class("width: 7px; flex-shrink: 0;");
-    let title = class(format!(
+    let spacer = theme::class("width: 7px; flex-shrink: 0;");
+    let title = theme::class(format!(
         "flex: 1; min-width: 0; font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c}; \
          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
         ff = typography::FONT_SANS,
@@ -275,7 +272,7 @@ fn channel_row(c: ChannelSummaryDto) -> impl IntoView {
         fw = typography::WEIGHT_MEDIUM,
         c = color::TEXT,
     ));
-    let age = class(format!(
+    let age = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; flex-shrink: 0;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
@@ -283,7 +280,7 @@ fn channel_row(c: ChannelSummaryDto) -> impl IntoView {
     ));
     let unread = c.unread;
     let name = c.title.clone();
-    let when = c.last_message_at.map(relative_time).unwrap_or_default();
+    let when = c.last_message_at.map(format::relative_time).unwrap_or_default();
     view! {
         <div class=row>
             {if unread {
@@ -298,13 +295,13 @@ fn channel_row(c: ChannelSummaryDto) -> impl IntoView {
 }
 
 fn assignee_cell(name: &str) -> AnyView {
-    let wrap = class(format!(
+    let wrap = theme::class(format!(
         "display: inline-flex; align-items: center; gap: {g};",
         g = space::D2
     ));
     view! {
         <span class=wrap>
-            <Avatar name=name.to_owned() size=AvatarSize::Sm tone=tone_for(name) />
+            <Avatar name=name.to_owned() size=AvatarSize::Sm tone=format::tone_for(name) />
             <span class="cell-strong">{name.to_owned()}</span>
         </span>
     }
@@ -316,7 +313,7 @@ fn dash() -> AnyView {
 }
 
 fn panel_heading(text: &str) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_BODY,
@@ -328,7 +325,7 @@ fn panel_heading(text: &str) -> AnyView {
 
 fn note(text: &str, padded: bool) -> AnyView {
     let pad = if padded { space::D5 } else { "0px" };
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "padding: {pad}; font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,

@@ -1,7 +1,6 @@
 //! Work-request index: the "assigned to me" table with a create dialog and a group to project cascade picker.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use leptos_router::components::A;
 use uuid::Uuid;
 
@@ -28,12 +27,10 @@ use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::table::{Table, TableToolbar, TableWrap};
 use crate::primitives::textarea::Textarea;
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, space, typography};
-use crate::util::debounce::debounced;
-use crate::util::format::{
-    relative_time, request_priority_variant, request_status_variant, tone_for,
-};
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, space, typography};
+use crate::util::debounce;
+use crate::util::format;
+use crate::util::load::{self, Loadable};
 
 const ALL_STATUSES: [RequestStatus; 7] = [
     RequestStatus::Draft,
@@ -91,12 +88,12 @@ pub fn RequestsIndex() -> impl IntoView {
     let reload = RwSignal::new(0u32);
     let create_open = RwSignal::new(false);
     let search = RwSignal::new(String::new());
-    let dq = debounced(search.into(), 300);
+    let dq = debounce::debounced(search.into(), 300);
 
     Effect::new(move |_| {
         let _ = reload.get();
         let term = dq.get().trim().to_owned();
-        load(
+        load::load(
             items,
             api::list_mine(status.get(), (!term.is_empty()).then_some(term)),
         );
@@ -107,8 +104,8 @@ pub fn RequestsIndex() -> impl IntoView {
         Signal::derive(move || status.get().map(status_wire).unwrap_or_default().to_owned());
     let open_create = Callback::new(move |_| create_open.set(true));
     let created = Callback::new(move |()| reload.update(|n| *n += 1));
-    let select_wrap = class("width: 170px;");
-    let search_wrap = class("width: 220px;");
+    let select_wrap = theme::class("width: 170px;");
+    let search_wrap = theme::class("width: 220px;");
 
     view! {
         <Stack gap=Gap::Lg>
@@ -136,8 +133,8 @@ pub fn RequestsIndex() -> impl IntoView {
                     </Cluster>
                 </TableToolbar>
                 {move || match items.get() {
-                    None => note("Loading requests…"),
-                    Some(Err(e)) => load_error(&e),
+                    None => load::note("Loading requests…"),
+                    Some(Err(e)) => load::load_error(&e),
                     Some(Ok(list)) if list.is_empty() => view! {
                         <EmptyState
                             icon=IconName::Doc
@@ -180,9 +177,9 @@ fn request_row(r: RequestDto) -> impl IntoView {
     let title = r.title.clone();
     let status = r.status;
     let priority = r.priority;
-    let updated = relative_time(r.updated_at);
+    let updated = format::relative_time(r.updated_at);
     let assignee = r.assignee.map(|a| a.full_name);
-    let link_cls = class(format!(
+    let link_cls = theme::class(format!(
         "color: {c}; font-weight: {fw}; text-decoration: none; &:hover {{ color: {a}; }}",
         c = color::TEXT_STRONG,
         fw = typography::WEIGHT_MEDIUM,
@@ -192,8 +189,8 @@ fn request_row(r: RequestDto) -> impl IntoView {
         <tr>
             <td><span class="mono cell-muted">{id_label}</span></td>
             <td><A href=href attr:class=link_cls>{title}</A></td>
-            <td><Badge variant=request_status_variant(status)>{status.label()}</Badge></td>
-            <td><Badge variant=request_priority_variant(priority)>{priority.label()}</Badge></td>
+            <td><Badge variant=format::request_status_variant(status)>{status.label()}</Badge></td>
+            <td><Badge variant=format::request_priority_variant(priority)>{priority.label()}</Badge></td>
             <td>{match assignee {
                 Some(name) => assignee_cell(&name),
                 None => view! { <span class="cell-muted">"—"</span> }.into_any(),
@@ -204,13 +201,13 @@ fn request_row(r: RequestDto) -> impl IntoView {
 }
 
 fn assignee_cell(name: &str) -> AnyView {
-    let wrap = class(format!(
+    let wrap = theme::class(format!(
         "display: inline-flex; align-items: center; gap: {g};",
         g = space::D2
     ));
     view! {
         <span class=wrap>
-            <Avatar name=name.to_owned() size=AvatarSize::Sm tone=tone_for(name) />
+            <Avatar name=name.to_owned() size=AvatarSize::Sm tone=format::tone_for(name) />
             <span class="cell-strong">{name.to_owned()}</span>
         </span>
     }
@@ -334,14 +331,14 @@ fn CreateRequestDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl I
 #[component]
 fn ProjectPicker(selected: RwSignal<Option<ProjectId>>) -> impl IntoView {
     let groups: Loadable<Vec<GroupDto>> = RwSignal::new(None);
-    load(groups, groups_api::list());
+    load::load(groups, groups_api::list());
     let group = RwSignal::new(None::<GroupId>);
     let projects: Loadable<Vec<ProjectDto>> = RwSignal::new(None);
 
     Effect::new(move |_| {
         if let Some(g) = group.get() {
             selected.set(None);
-            load(projects, projects_api::list_for_owner_group(g, None));
+            load::load(projects, projects_api::list_for_owner_group(g, None));
         }
     });
 

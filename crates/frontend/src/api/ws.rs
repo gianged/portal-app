@@ -7,11 +7,12 @@
 //! `WsClient` handle stays cheap and `Copy`; the task reconnects with backoff and
 //! a separate heartbeat task keeps presence alive with periodic `Ping`s.
 
-use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
-use futures::{SinkExt, StreamExt};
+use futures::{
+    SinkExt, StreamExt,
+    channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded},
+};
 use gloo::timers::future::TimeoutFuture;
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use reqwasm::websocket::{Message, futures::WebSocket};
 
 use shared::dto::ws::{ClientFrame, ServerFrame};

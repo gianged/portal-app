@@ -2,7 +2,7 @@
 
 use leptos::prelude::*;
 
-use crate::theme::{class, color, radius};
+use crate::theme::{self, color, radius};
 
 /// A controlled on/off toggle. The parent owns the `on` signal; `on_change`
 /// yields the toggled value.
@@ -11,7 +11,7 @@ pub fn Switch(
     #[prop(into)] on: Signal<bool>,
     #[prop(optional)] on_change: Option<Callback<bool>>,
 ) -> impl IntoView {
-    let base = class(format!(
+    let base = theme::class(format!(
         "position: relative; width: 32px; height: 18px; border-radius: {pill}; \
          background: {bs}; border: none; padding: 0; cursor: pointer; flex-shrink: 0; \
          transition: background 120ms ease; \
@@ -21,7 +21,7 @@ pub fn Switch(
         pill = radius::PILL,
         bs = color::BORDER_STRONG,
     ));
-    let on_cls = class(format!(
+    let on_cls = theme::class(format!(
         "background: {a} !important; &::after {{ transform: translateX(14px); }}",
         a = color::ACCENT,
     ));

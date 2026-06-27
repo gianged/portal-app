@@ -8,7 +8,7 @@ use shared::dto::user::UserDto;
 
 use crate::features::users::api;
 use crate::primitives::select::Select;
-use crate::util::load::{Loadable, load};
+use crate::util::load::{self, Loadable};
 
 /// A `<select>` of active users; loads the directory once and yields the chosen [`UserId`] via `on_select`.
 #[component]
@@ -19,7 +19,7 @@ pub fn UserPicker(
 ) -> impl IntoView {
     let placeholder = placeholder.unwrap_or_else(|| "Select a person…".to_owned());
     let users: Loadable<Vec<UserDto>> = RwSignal::new(None);
-    load(users, api::list(None));
+    load::load(users, api::list(None));
 
     let value = Signal::derive(move || selected.get().map(|u| u.0.to_string()).unwrap_or_default());
     let handle = Callback::new(move |s: String| {

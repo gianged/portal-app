@@ -4,7 +4,7 @@
 
 use leptos::prelude::*;
 
-use crate::theme::{class, color, typography};
+use crate::theme::{self, color, typography};
 
 /// SVG user-units; the chart scales to its container via `viewBox` + `width:100%`.
 const VB_W: f64 = 640.0;
@@ -81,19 +81,19 @@ pub fn LineChart(
         })
         .collect_view();
 
-    let legend_text = class(format!(
+    let legend_text = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
         c = color::TEXT_MUTED,
     ));
     let legend_item =
-        class("display: inline-flex; align-items: center; gap: 6px; margin-right: 14px;");
+        theme::class("display: inline-flex; align-items: center; gap: 6px; margin-right: 14px;");
     let legend = series
         .iter()
         .filter(|s| !s.label.is_empty())
         .map(|s| {
-            let dot = class(format!(
+            let dot = theme::class(format!(
                 "display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: {};",
                 s.color
             ));
@@ -109,8 +109,8 @@ pub fn LineChart(
         })
         .collect_view();
 
-    let svg_cls = class("width: 100%; height: auto; display: block;");
-    let legend_wrap = class("margin-top: 6px;");
+    let svg_cls = theme::class("width: 100%; height: auto; display: block;");
+    let legend_wrap = theme::class("margin-top: 6px;");
     let vb = format!("0 0 {VB_W} {h}");
     view! {
         <div>
@@ -158,7 +158,7 @@ pub fn BarChart(data: Vec<(String, f64)>, #[prop(optional)] height: Option<u32>)
         })
         .collect_view();
 
-    let svg_cls = class("width: 100%; height: auto; display: block;");
+    let svg_cls = theme::class("width: 100%; height: auto; display: block;");
     let vb = format!("0 0 {VB_W} {h}");
     view! {
         <svg class=svg_cls viewBox=vb preserveAspectRatio="xMidYMid meet">
@@ -171,7 +171,7 @@ pub fn BarChart(data: Vec<(String, f64)>, #[prop(optional)] height: Option<u32>)
 /// A slim 0-100 progress bar. Reactive on `value`.
 #[component]
 pub fn ProgressBar(#[prop(into)] value: Signal<u8>) -> impl IntoView {
-    let cls = class("width: 100%; height: 8px; display: block;");
+    let cls = theme::class("width: 100%; height: 8px; display: block;");
     let width = move || format!("{}", value.get().min(100));
     view! {
         <svg class=cls viewBox="0 0 100 8" preserveAspectRatio="none">

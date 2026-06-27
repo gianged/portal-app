@@ -19,6 +19,9 @@ mod request;
 mod ticket;
 mod user;
 
+use domain::ids;
+use shared::dto::ids as wire;
+
 pub use self::{
     audit::{audit_action_dto, audit_log_dto},
     chat::{
@@ -51,9 +54,6 @@ pub use self::{
         user_summary_dto,
     },
 };
-
-use domain::ids;
-use shared::dto::ids as wire;
 
 // --- id projections ---
 //

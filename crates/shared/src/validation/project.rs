@@ -1,6 +1,6 @@
 use crate::{
     errors::SharedError,
-    validation::common::{DESCRIPTION_MAX, NAME_MAX, NAME_MIN, len_range, max_len},
+    validation::common::{self, DESCRIPTION_MAX, NAME_MAX, NAME_MIN},
 };
 
 /// # Errors
@@ -8,7 +8,7 @@ use crate::{
 /// Returns [`SharedError::Validation`] when `name` is empty or longer than
 /// [`NAME_MAX`].
 pub fn validate_project_name(name: &str) -> Result<(), SharedError> {
-    len_range("Project name", name, NAME_MIN, NAME_MAX)
+    common::len_range("Project name", name, NAME_MIN, NAME_MAX)
 }
 
 /// Description may be empty.
@@ -18,7 +18,7 @@ pub fn validate_project_name(name: &str) -> Result<(), SharedError> {
 /// Returns [`SharedError::Validation`] when `description` exceeds
 /// [`DESCRIPTION_MAX`].
 pub fn validate_project_description(description: &str) -> Result<(), SharedError> {
-    max_len("Project description", description, DESCRIPTION_MAX)
+    common::max_len("Project description", description, DESCRIPTION_MAX)
 }
 
 /// # Errors

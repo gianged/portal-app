@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::theme::class;
+use crate::theme;
 
 /// Animated trailing ellipsis that cycles `.` -> `..` -> `...`. Renders only the
 /// dots, inheriting `currentColor`, so a caller pairs it with its own label:
@@ -8,7 +8,7 @@ use crate::theme::class;
 /// growing dots never shift surrounding (e.g. centered) text.
 #[component]
 pub fn Dots() -> impl IntoView {
-    let cls = class(
+    let cls = theme::class(
         "display: inline-block; width: 1.2em; text-align: left; \
          &::after { content: \".\"; animation: portal-ellipsis 1.4s linear infinite; } \
          @keyframes portal-ellipsis { \

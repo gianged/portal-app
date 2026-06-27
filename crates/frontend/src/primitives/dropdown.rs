@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::theme::{class, color, radius, space, typography};
+use crate::theme::{self, color, radius, space, typography};
 
 /// Click-to-toggle popover. The `trigger` is rendered inline; clicking it shows
 /// the menu (this component's children) anchored to the trigger's bottom-right.
@@ -8,8 +8,8 @@ use crate::theme::{class, color, radius, space, typography};
 pub fn Dropdown(trigger: AnyView, children: ChildrenFn) -> impl IntoView {
     let open = RwSignal::new(false);
 
-    let wrap = class("position: relative; display: inline-block;");
-    let menu_cls = class(format!(
+    let wrap = theme::class("position: relative; display: inline-block;");
+    let menu_cls = theme::class(format!(
         "position: absolute; top: calc(100% + {g}); right: 0; min-width: 200px; \
          background: {bg}; border: 1px solid {b}; border-radius: {r}; \
          box-shadow: {s}; padding: {p}; z-index: 50;",

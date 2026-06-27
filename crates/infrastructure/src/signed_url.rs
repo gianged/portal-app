@@ -3,8 +3,7 @@
 //! The signature binds storage key, expiry, and viewer, so a leaked link stops
 //! working after its TTL and is useless to anyone else.
 
-use std::fmt::Write as _;
-use std::time::Duration;
+use std::{fmt::Write as _, time::Duration};
 
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
@@ -104,7 +103,7 @@ mod tests {
     use super::*;
     use uuid::Uuid;
 
-    const TTL: Duration = Duration::from_secs(3600);
+    const TTL: Duration = Duration::from_hours(1);
 
     fn at(ts: i64) -> OffsetDateTime {
         OffsetDateTime::from_unix_timestamp(ts).expect("valid timestamp")

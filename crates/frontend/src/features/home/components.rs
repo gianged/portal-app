@@ -1,10 +1,7 @@
 #![allow(dead_code)] // TODO: UserCard unused, I will see it
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
-use leptos_router::NavigateOptions;
-use leptos_router::components::A;
-use leptos_router::hooks::{use_location, use_navigate};
+use leptos::{prelude::*, task::spawn_local};
+use leptos_router::{NavigateOptions, components::A, hooks::{use_location, use_navigate}};
 
 use crate::features::auth::api as auth_api;
 use crate::primitives::avatar::{Avatar, AvatarSize};
@@ -16,8 +13,8 @@ use crate::primitives::stack::Gap;
 use crate::state::auth::AuthState;
 use crate::state::notifications::NotificationsState;
 use crate::state::theme::ThemeState;
-use crate::theme::{class, color, radius, space, typography};
-use crate::util::format::tone_for;
+use crate::theme::{self, color, radius, space, typography};
+use crate::util::format;
 
 pub struct NavItem {
     pub label: &'static str,
@@ -147,7 +144,7 @@ pub fn sidebar_sections() -> Vec<NavSection> {
 
 #[component]
 pub fn Wordmark() -> impl IntoView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: inline-flex; align-items: center; gap: {g}; font-family: {ff}; \
          font-size: 16px; font-weight: {fw}; color: {c}; letter-spacing: -0.02em;",
         g = space::D2,
@@ -155,7 +152,7 @@ pub fn Wordmark() -> impl IntoView {
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let mark = class(format!(
+    let mark = theme::class(format!(
         "display: inline-flex; align-items: center; justify-content: center; \
          width: 22px; height: 22px; border-radius: {r}; background: {bg}; color: {fg};",
         r = radius::SM,
@@ -175,18 +172,18 @@ pub fn SidebarNav() -> impl IntoView {
     let pathname = use_location().pathname;
     let notifications = use_context::<NotificationsState>().expect("NotificationsState context");
 
-    let header_cls = class(format!(
+    let header_cls = theme::class(format!(
         "display: flex; align-items: center; justify-content: space-between; padding: {p2} {p3} {p4};",
         p2 = space::D2,
         p3 = space::D3,
         p4 = space::D4,
     ));
-    let nav_cls = class(format!(
+    let nav_cls = theme::class(format!(
         "display: flex; flex-direction: column; gap: {g}; padding: {p};",
         g = space::D5,
         p = space::D3,
     ));
-    let eyebrow_cls = class(format!(
+    let eyebrow_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; text-transform: uppercase; \
          letter-spacing: 0.08em; color: {c}; padding: 0 {p}; margin-bottom: {mb};",
         ff = typography::FONT_SANS,
@@ -196,7 +193,7 @@ pub fn SidebarNav() -> impl IntoView {
         p = space::D3,
         mb = space::D1,
     ));
-    let item_cls = class(format!(
+    let item_cls = theme::class(format!(
         "display: flex; align-items: center; gap: {g}; padding: 6px {p}; height: 32px; \
          border-radius: {r}; color: {c}; font-family: {ff}; font-size: {fs}; font-weight: {fw}; \
          text-decoration: none; transition: background 120ms ease, color 120ms ease; \
@@ -211,12 +208,12 @@ pub fn SidebarNav() -> impl IntoView {
         bh = color::BG_HOVER,
         ct = color::TEXT,
     ));
-    let active_cls = class(format!(
+    let active_cls = theme::class(format!(
         "background: {bg} !important; color: {c} !important;",
         bg = color::ACCENT_BG,
         c = color::ACCENT,
     ));
-    let disabled_cls = class(format!(
+    let disabled_cls = theme::class(format!(
         "display: flex; align-items: center; gap: {g}; padding: 6px {p}; height: 32px; \
          border-radius: {r}; color: {c}; font-family: {ff}; font-size: {fs}; font-weight: {fw}; \
          cursor: default;",
@@ -228,7 +225,7 @@ pub fn SidebarNav() -> impl IntoView {
         fs = typography::TEXT_SMALL,
         fw = typography::WEIGHT_MEDIUM,
     ));
-    let count_cls = class(format!(
+    let count_cls = theme::class(format!(
         "font-size: 11px; padding: 1px 6px; background: {bg}; color: {c}; border-radius: {r}; \
          font-weight: {fw}; min-width: 18px; text-align: center;",
         bg = color::BG_SUNKEN,
@@ -236,12 +233,12 @@ pub fn SidebarNav() -> impl IntoView {
         r = radius::PILL,
         fw = typography::WEIGHT_MEDIUM,
     ));
-    let soon_cls = class(format!(
+    let soon_cls = theme::class(format!(
         "font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: {c};",
         c = color::TEXT_FAINT,
     ));
-    let grow_cls = class("flex: 1; min-width: 0;");
-    let row_cls = class("display: flex; flex-direction: column; gap: 1px;");
+    let grow_cls = theme::class("flex: 1; min-width: 0;");
+    let row_cls = theme::class("display: flex; flex-direction: column; gap: 1px;");
 
     let sections = sidebar_sections();
 
@@ -317,7 +314,7 @@ pub fn SidebarNav() -> impl IntoView {
 
 #[component]
 pub fn Topbar(#[prop(into)] title: String) -> impl IntoView {
-    let bar = class(format!(
+    let bar = theme::class(format!(
         "height: {h}; flex-shrink: 0; display: flex; align-items: center; \
          justify-content: space-between; padding: 0 {p}; border-bottom: 1px solid {b}; \
          background: {bg}; position: sticky; top: 0; z-index: 10;",
@@ -326,7 +323,7 @@ pub fn Topbar(#[prop(into)] title: String) -> impl IntoView {
         b = color::BORDER,
         bg = color::BG,
     ));
-    let crumb = class(format!(
+    let crumb = theme::class(format!(
         "display: flex; align-items: center; gap: {g}; font-family: {ff}; \
          font-size: {fs}; color: {c};",
         g = space::D2,
@@ -334,12 +331,12 @@ pub fn Topbar(#[prop(into)] title: String) -> impl IntoView {
         fs = typography::TEXT_SMALL,
         c = color::TEXT_MUTED,
     ));
-    let strong = class(format!(
+    let strong = theme::class(format!(
         "color: {c}; font-weight: {fw};",
         c = color::TEXT_STRONG,
         fw = typography::WEIGHT_SEMIBOLD,
     ));
-    let divider = class(format!(
+    let divider = theme::class(format!(
         "width: 1px; height: 20px; background: {b};",
         b = color::BORDER,
     ));
@@ -379,7 +376,7 @@ fn ThemeToggle() -> impl IntoView {
 #[component]
 fn NotificationsBell() -> impl IntoView {
     let notifications = use_context::<NotificationsState>().expect("NotificationsState context");
-    let link = class(format!(
+    let link = theme::class(format!(
         "position: relative; display: inline-flex; align-items: center; justify-content: center; \
          width: {h}; height: {h}; border-radius: {r}; color: {c}; text-decoration: none; \
          transition: background 120ms ease, color 120ms ease; \
@@ -390,7 +387,7 @@ fn NotificationsBell() -> impl IntoView {
         bh = color::BG_HOVER,
         ct = color::TEXT,
     ));
-    let badge = class(format!(
+    let badge = theme::class(format!(
         "position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px; \
          padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; \
          background: {bg}; color: #fff; border-radius: {r}; font-size: 10px; font-weight: {fw}; \
@@ -415,43 +412,43 @@ fn UserMenu() -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");
     let navigate = use_navigate();
 
-    let trigger_cls = class(format!(
+    let trigger_cls = theme::class(format!(
         "display: inline-flex; align-items: center; gap: {g}; padding: 4px 6px; \
          border-radius: {r}; cursor: pointer; &:hover {{ background: {bh}; }}",
         g = space::D2,
         r = radius::SM,
         bh = color::BG_HOVER,
     ));
-    let name_cls = class(format!(
+    let name_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let role_cls = class(format!(
+    let role_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
         c = color::TEXT_MUTED,
     ));
-    let chevron_cls = class(format!(
+    let chevron_cls = theme::class(format!(
         "color: {c}; display: inline-flex;",
         c = color::TEXT_FAINT
     ));
-    let meta_cls = class(format!(
+    let meta_cls = theme::class(format!(
         "padding: {p}; border-bottom: 1px solid {b}; margin-bottom: {mb};",
         p = space::D2,
         b = color::BORDER,
         mb = space::D1,
     ));
-    let email_cls = class(format!(
+    let email_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; margin-top: 2px;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
         c = color::TEXT_FAINT,
     ));
-    let profile_link_cls = class(format!(
+    let profile_link_cls = theme::class(format!(
         "display: flex; align-items: center; gap: {g}; padding: 6px {p}; border-radius: {r}; \
          font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c}; text-decoration: none; \
          &:hover {{ background: {bh}; }}",
@@ -488,7 +485,7 @@ fn UserMenu() -> impl IntoView {
                     Some(user) => (user.name.clone(), user.role.label().to_owned()),
                     None => ("Account".to_owned(), String::new()),
                 });
-                let tone = tone_for(&name);
+                let tone = format::tone_for(&name);
                 let name_cls = name_cls.clone();
                 let role_cls = role_cls.clone();
                 view! {
@@ -527,13 +524,13 @@ fn UserMenu() -> impl IntoView {
 
 #[component]
 pub fn Hero(#[prop(into)] greeting: String, #[prop(into)] subtitle: String) -> impl IntoView {
-    let wrap = class(format!(
+    let wrap = theme::class(format!(
         "display: grid; grid-template-columns: 1fr auto; gap: {g}; \
          align-items: end; margin-bottom: {mb};",
         g = space::D6,
         mb = space::D6,
     ));
-    let eyebrow = class(format!(
+    let eyebrow = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; \
          text-transform: uppercase; letter-spacing: 0.08em; \
          color: {c}; margin-bottom: {mb};",
@@ -543,7 +540,7 @@ pub fn Hero(#[prop(into)] greeting: String, #[prop(into)] subtitle: String) -> i
         c = color::TEXT_FAINT,
         mb = space::D2,
     ));
-    let h1 = class(format!(
+    let h1 = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; \
          color: {c}; margin: 0; letter-spacing: -0.02em;",
         ff = typography::FONT_SANS,
@@ -551,7 +548,7 @@ pub fn Hero(#[prop(into)] greeting: String, #[prop(into)] subtitle: String) -> i
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let p = class(format!(
+    let p = theme::class(format!(
         "font-family: {ff}; font-size: 14.5px; color: {c}; \
          margin: 6px 0 0; max-width: 560px;",
         ff = typography::FONT_SANS,
@@ -571,14 +568,14 @@ pub fn Hero(#[prop(into)] greeting: String, #[prop(into)] subtitle: String) -> i
 
 #[component]
 pub fn UserCard(#[prop(into)] name: String, #[prop(into)] role: String) -> impl IntoView {
-    let name_cls = class(format!(
+    let name_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let role_cls = class(format!(
+    let role_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
@@ -587,7 +584,7 @@ pub fn UserCard(#[prop(into)] name: String, #[prop(into)] role: String) -> impl 
 
     view! {
         <Cluster gap=Gap::Sm>
-            <Avatar name=name.clone() size=AvatarSize::Md tone=tone_for(&name) />
+            <Avatar name=name.clone() size=AvatarSize::Md tone=format::tone_for(&name) />
             <div>
                 <div class=name_cls>{name}</div>
                 <div class=role_cls>{role}</div>

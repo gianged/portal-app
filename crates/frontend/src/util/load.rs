@@ -2,15 +2,12 @@
 //! one-shot fetch is in flight, then `Ok`/`Err`. [`load`] kicks off the fetch;
 //! [`note`] renders the loading / error / empty status lines pages share.
 
-use std::future::Future;
-
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 
 use crate::api::display::ErrorDisplay;
 use crate::api::error::FrontendError;
 use crate::primitives::error::ErrorCallout;
-use crate::theme::{class, color, space, typography};
+use crate::theme::{self, color, space, typography};
 
 /// A value fetched over the network: `None` while loading, then `Ok`/`Err`.
 pub type Loadable<T> = RwSignal<Option<Result<T, FrontendError>>>;
@@ -40,7 +37,7 @@ pub fn load_error(e: &FrontendError) -> AnyView {
 /// [`load_error`] instead.
 #[must_use]
 pub fn note(text: &str) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "padding: {p}; font-family: {ff}; font-size: {fs}; color: {c};",
         p = space::D5,
         ff = typography::FONT_SANS,

@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlInputElement;
 
-use crate::theme::{class, color, radius, space, typography};
+use crate::theme::{self, color, radius, space, typography};
 
 /// A single-line input wrapped with optional leading/trailing slots (icon,
 /// keyboard hint, inline button). The inner `<input>` is borderless; the group
@@ -20,7 +20,7 @@ pub fn InputGroup(
     let placeholder = placeholder.unwrap_or_default();
     let type_ = type_.unwrap_or_else(|| "text".to_string());
 
-    let group = class(format!(
+    let group = theme::class(format!(
         "display: flex; align-items: center; gap: {g}; height: {h}; padding: 0 {px}; \
          background: {bg}; border: 1px solid {bc}; border-radius: {r}; box-shadow: {s}; \
          transition: border-color 120ms ease, box-shadow 120ms ease; \
@@ -35,7 +35,7 @@ pub fn InputGroup(
         bfc = color::BORDER_FOCUS,
         ring = typography::RING,
     ));
-    let inner = class(format!(
+    let inner = theme::class(format!(
         "flex: 1; min-width: 0; border: none; background: transparent; outline: none; \
          font-family: {ff}; font-size: {fs}; color: {fg}; \
          &::placeholder {{ color: {phc}; }}",
@@ -44,7 +44,7 @@ pub fn InputGroup(
         fg = color::TEXT,
         phc = color::TEXT_FAINT,
     ));
-    let slot = class(format!(
+    let slot = theme::class(format!(
         "display: inline-flex; align-items: center; color: {c}; flex-shrink: 0;",
         c = color::TEXT_FAINT,
     ));
@@ -83,7 +83,7 @@ pub fn Input(
     let type_ = type_.unwrap_or_else(|| "text".to_string());
     let autocomplete = autocomplete.unwrap_or_else(|| "off".to_string());
 
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: block; width: 100%; height: {h}; padding: 0 {px}; \
          background: {bg}; color: {fg}; \
          border: 1px solid {bc}; border-radius: {r}; \
@@ -132,7 +132,7 @@ pub fn Input(
 
 #[component]
 pub fn FieldLabel(#[prop(into)] for_id: String, children: Children) -> impl IntoView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: block; font-family: {ff}; font-size: {fs}; font-weight: {fw}; \
          color: {c}; margin-bottom: {mb};",
         ff = typography::FONT_SANS,
@@ -146,7 +146,7 @@ pub fn FieldLabel(#[prop(into)] for_id: String, children: Children) -> impl Into
 
 #[component]
 pub fn FieldError(#[prop(into)] message: String) -> impl IntoView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "color: {c}; font-family: {ff}; font-size: {fs}; margin-top: {mt};",
         c = color::DANGER,
         ff = typography::FONT_SANS,

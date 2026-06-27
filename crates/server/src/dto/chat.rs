@@ -65,6 +65,10 @@ pub fn channel_summary_dto(
 
 /// Recovers a message's creation time from its time-ordered (v7) id, mirroring
 /// how the application layer derives it (the `Message` row stores no timestamp).
+///
+/// # Panics
+///
+/// Panics if `id` is not a UUIDv7 (no embedded timestamp); message ids always are.
 #[must_use]
 pub fn message_created_at(id: ids::MessageId) -> OffsetDateTime {
     let ts =

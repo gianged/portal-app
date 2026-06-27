@@ -1,13 +1,12 @@
 //! The people directory: a searchable index of users with an HR create-user dialog.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use leptos_router::components::A;
 
 use shared::dto::user::{CreateUserRequest, SystemRole, UserDto};
 use shared::validation::user::validate_create_user;
 
-use crate::features::ui::section_heading;
+use crate::features::ui;
 use crate::features::users::api;
 use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
@@ -20,10 +19,10 @@ use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::table::{Table, TableToolbar, TableWrap};
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, space, typography};
-use crate::util::debounce::debounced;
-use crate::util::format::tone_for;
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, space, typography};
+use crate::util::debounce;
+use crate::util::format;
+use crate::util::load::{self, Loadable};
 
 fn system_role_wire(r: Option<SystemRole>) -> &'static str {
     match r {
@@ -47,23 +46,23 @@ pub fn UsersIndex() -> impl IntoView {
     let reload = RwSignal::new(0u32);
     let create_open = RwSignal::new(false);
     let search = RwSignal::new(String::new());
-    let dq = debounced(search.into(), 300);
+    let dq = debounce::debounced(search.into(), 300);
 
     Effect::new(move |_| {
         let _ = reload.get();
         let term = dq.get().trim().to_owned();
-        load(users, api::list((!term.is_empty()).then_some(term)));
+        load::load(users, api::list((!term.is_empty()).then_some(term)));
     });
 
     let open_create = Callback::new(move |_| create_open.set(true));
     let created = Callback::new(move |()| reload.update(|n| *n += 1));
-    let search_wrap = class("width: 220px;");
+    let search_wrap = theme::class("width: 220px;");
 
     view! {
         <Stack gap=Gap::Lg>
             <TableWrap>
                 <TableToolbar>
-                    {section_heading("People")}
+                    {ui::section_heading("People")}
                     <Cluster gap=Gap::Sm>
                         <div class=search_wrap>
                             <Input value=search on_input=Callback::new(move |v| search.set(v)) placeholder="Search people…" />
@@ -74,8 +73,8 @@ pub fn UsersIndex() -> impl IntoView {
                     </Cluster>
                 </TableToolbar>
                 {move || match users.get() {
-                    None => note("Loading people…"),
-                    Some(Err(e)) => load_error(&e),
+                    None => load::note("Loading people…"),
+                    Some(Err(e)) => load::load_error(&e),
                     Some(Ok(list)) if list.is_empty() => view! {
                         <EmptyState icon=IconName::Building title="No people yet" description="Provision the first account." />
                     }.into_any(),
@@ -110,13 +109,13 @@ fn user_row(u: UserDto) -> impl IntoView {
     let email = u.email.clone();
     let role = u.role.label();
     let group = u.group_name.unwrap_or_default();
-    let link_cls = class(format!(
+    let link_cls = theme::class(format!(
         "color: {c}; font-weight: {fw}; text-decoration: none; &:hover {{ color: {a}; }}",
         c = color::TEXT_STRONG,
         fw = typography::WEIGHT_MEDIUM,
         a = color::ACCENT,
     ));
-    let wrap = class(format!(
+    let wrap = theme::class(format!(
         "display: inline-flex; align-items: center; gap: {g};",
         g = space::D2
     ));
@@ -124,7 +123,7 @@ fn user_row(u: UserDto) -> impl IntoView {
         <tr>
             <td>
                 <span class=wrap>
-                    <Avatar name=name.clone() size=AvatarSize::Sm tone=tone_for(&name) />
+                    <Avatar name=name.clone() size=AvatarSize::Sm tone=format::tone_for(&name) />
                     <A href=href attr:class=link_cls>{name}</A>
                 </span>
             </td>

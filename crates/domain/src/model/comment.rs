@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 
 use crate::{
     error::TransitionError,
@@ -32,7 +32,7 @@ impl Comment {
     #[must_use]
     pub fn within_edit_grace(&self, now: OffsetDateTime) -> bool {
         let delta = now - self.created_at;
-        delta >= time::Duration::ZERO && delta <= EDIT_GRACE
+        delta >= Duration::ZERO && delta <= EDIT_GRACE
     }
 
     pub fn edit(&mut self, body: String, now: OffsetDateTime) -> Result<(), TransitionError> {

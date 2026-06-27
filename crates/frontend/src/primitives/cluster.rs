@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 
 use crate::primitives::stack::Gap;
-use crate::theme::class;
+use crate::theme;
 
 #[component]
 pub fn Cluster(
@@ -12,7 +12,7 @@ pub fn Cluster(
 ) -> impl IntoView {
     let align = align.unwrap_or_else(|| "center".to_string());
     let justify = justify.unwrap_or_else(|| "flex-start".to_string());
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: flex; flex-wrap: wrap; gap: {g}; align-items: {a}; justify-content: {j};",
         g = gap.value(),
         a = align,

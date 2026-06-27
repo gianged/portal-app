@@ -7,7 +7,7 @@ use shared::dto::audit::{AuditAction, AuditLogDto};
 use shared::dto::user::UserRole;
 
 use crate::features::audit::api;
-use crate::features::ui::section_heading;
+use crate::features::ui;
 use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::primitives::badge::{Badge, BadgeVariant};
 use crate::primitives::card::Card;
@@ -15,9 +15,9 @@ use crate::primitives::empty_state::EmptyState;
 use crate::primitives::icon::IconName;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
-use crate::theme::{class, color, space, typography};
-use crate::util::format::{relative_time, tone_for};
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, space, typography};
+use crate::util::format;
+use crate::util::load::{self, Loadable};
 
 const PAGE: u32 = 100;
 const TRAIL_PAGE: u32 = 50;
@@ -36,15 +36,15 @@ fn action_variant(action: AuditAction) -> BadgeVariant {
 #[component]
 pub fn AuditLogIndex() -> impl IntoView {
     let items: Loadable<Vec<AuditLogDto>> = RwSignal::new(None);
-    load(items, api::feed(PAGE));
+    load::load(items, api::feed(PAGE));
 
     view! {
         <Card>
             <Stack gap=Gap::Sm>
-                {section_heading("Recent activity")}
+                {ui::section_heading("Recent activity")}
                 {move || match items.get() {
-                    None => note("Loading audit log…"),
-                    Some(Err(e)) => load_error(&e),
+                    None => load::note("Loading audit log…"),
+                    Some(Err(e)) => load::load_error(&e),
                     Some(Ok(list)) if list.is_empty() => view! {
                         <EmptyState
                             icon=IconName::Clock
@@ -94,9 +94,9 @@ pub fn AuditTrailPanel(
         }
         if let Some(eid) = id.get() {
             match kind {
-                TrailKind::Request => load(items, api::request_trail(eid, TRAIL_PAGE)),
-                TrailKind::Ticket => load(items, api::ticket_trail(eid, TRAIL_PAGE)),
-                TrailKind::Project => load(items, api::project_trail(eid, TRAIL_PAGE)),
+                TrailKind::Request => load::load(items, api::request_trail(eid, TRAIL_PAGE)),
+                TrailKind::Ticket => load::load(items, api::ticket_trail(eid, TRAIL_PAGE)),
+                TrailKind::Project => load::load(items, api::project_trail(eid, TRAIL_PAGE)),
             }
         }
     });
@@ -109,11 +109,11 @@ pub fn AuditTrailPanel(
             view! {
                 <Card>
                     <Stack gap=Gap::Sm>
-                        {section_heading("History")}
+                        {ui::section_heading("History")}
                         {move || match items.get() {
-                            None => note("Loading history…"),
-                            Some(Err(e)) => load_error(&e),
-                            Some(Ok(list)) if list.is_empty() => note("No recorded changes yet."),
+                            None => load::note("Loading history…"),
+                            Some(Err(e)) => load::load_error(&e),
+                            Some(Ok(list)) if list.is_empty() => load::note("No recorded changes yet."),
                             Some(Ok(list)) => {
                                 let rows = list.into_iter().map(audit_row).collect_view();
                                 view! { <div>{rows}</div> }.into_any()
@@ -133,34 +133,34 @@ fn audit_row(log: AuditLogDto) -> AnyView {
         .actor
         .as_ref()
         .map_or_else(|| "System".to_owned(), |a| a.full_name.clone());
-    let when = relative_time(log.occurred_at);
+    let when = format::relative_time(log.occurred_at);
     let entity = format!("{}.{}", log.entity_schema, log.entity_table);
     let short_id = short_uuid(&log.entity_id.to_string());
     let variant = action_variant(log.action);
     let action = log.action.label();
 
-    let row = class(format!(
+    let row = theme::class(format!(
         "display: flex; align-items: center; gap: {g}; padding: {p} 0; \
          border-bottom: 1px solid {b};",
         g = space::D3,
         p = space::D2,
         b = color::BORDER,
     ));
-    let body = class("flex: 1; min-width: 0;");
-    let actor_cls = class(format!(
+    let body = theme::class("flex: 1; min-width: 0;");
+    let actor_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let meta_cls = class(format!(
+    let meta_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
         c = color::TEXT_MUTED,
     ));
-    let when_cls = class(format!(
+    let when_cls = theme::class(format!(
         "font-family: {ff}; font-size: 11.5px; color: {c}; flex-shrink: 0;",
         ff = typography::FONT_SANS,
         c = color::TEXT_FAINT,
@@ -168,7 +168,7 @@ fn audit_row(log: AuditLogDto) -> AnyView {
 
     view! {
         <div class=row>
-            <Avatar name=actor.clone() size=AvatarSize::Sm tone=tone_for(&actor) />
+            <Avatar name=actor.clone() size=AvatarSize::Sm tone=format::tone_for(&actor) />
             <div class=body>
                 <div class=actor_cls>{actor}</div>
                 <div class=meta_cls>{format!("{entity} · {short_id}")}</div>

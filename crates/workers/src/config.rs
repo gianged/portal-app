@@ -1,5 +1,4 @@
-use std::path::PathBuf;
-use std::time::Duration as StdDuration;
+use std::{path::PathBuf, time::Duration as StdDuration};
 
 use anyhow::Context;
 use time::Duration;
@@ -45,8 +44,14 @@ pub struct Config {
     pub report_schedule_day: u8,
     /// How often the report scheduler wakes to check whether it should run.
     pub report_schedule_interval: StdDuration,
+    /// How often the health prober pings each backend to drive its breaker.
+    pub health_probe_interval: StdDuration,
 }
 
+/// Parses worker configuration from the process environment.
+///
+/// # Errors
+/// Returns an error if a required var is missing or any value fails to parse.
 pub fn from_env() -> anyhow::Result<Config> {
     let scylla_hosts = optional("SCYLLA_HOSTS", "127.0.0.1:9042")
         .split(',')
@@ -83,6 +88,9 @@ pub fn from_env() -> anyhow::Result<Config> {
     let report_schedule_interval_hours: u64 = optional("REPORT_SCHEDULE_INTERVAL_HOURS", "24")
         .parse()
         .context("invalid REPORT_SCHEDULE_INTERVAL_HOURS")?;
+    let health_probe_interval_secs: u64 = optional("HEALTH_PROBE_INTERVAL_SECS", "5")
+        .parse()
+        .context("invalid HEALTH_PROBE_INTERVAL_SECS")?;
 
     let email_enabled: bool = optional("EMAIL_ENABLED", "false")
         .parse()
@@ -133,6 +141,7 @@ pub fn from_env() -> anyhow::Result<Config> {
         report_enabled,
         report_schedule_day,
         report_schedule_interval: StdDuration::from_secs(report_schedule_interval_hours * 3600),
+        health_probe_interval: StdDuration::from_secs(health_probe_interval_secs),
     })
 }
 

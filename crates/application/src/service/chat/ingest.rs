@@ -1,17 +1,20 @@
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use domain::{ids::UserId, model::Message, repository::ChatRepository};
-use tokio::sync::{mpsc, oneshot};
-use tokio::time::MissedTickBehavior;
+use domain::{
+    error::RepositoryError, ids::UserId, model::Message, ports::spool::Spool,
+    repository::ChatRepository,
+};
+use tokio::{
+    sync::{mpsc, oneshot},
+    time::MissedTickBehavior,
+};
 
 use crate::{
     commands::chat::PostMessageCommand,
     error::{Error, Result},
     events::{DomainEvent, EventBus},
 };
-
-use super::{ChatService, uuid_v7_created_at};
+use super::ChatService;
 
 /// Tunables for the write-behind ingest buffer.
 #[derive(Debug, Clone, Copy)]
@@ -42,18 +45,25 @@ pub struct ChatIngest {
     chat: Arc<ChatService>,
     chats: Arc<dyn ChatRepository>,
     events: Arc<EventBus>,
+    // When set, a batch that fails to persist is spilled here (durable) instead
+    // of dropped, since optimistic ack already told senders it succeeded. The
+    // drainer replays the spool once the backend recovers.
+    spool: Option<Arc<dyn Spool>>,
     tx: mpsc::Sender<Message>,
     cfg: ChatIngestConfig,
 }
 
 impl ChatIngest {
     /// Builds the buffer and returns it with the receiver half. The caller owns
-    /// the `Receiver` and spawns [`ChatIngest::run`] with it.
+    /// the `Receiver` and spawns [`ChatIngest::run`] with it. Pass a `spool` to
+    /// make failed batches durable; `None` keeps the legacy drop-on-failure
+    /// behaviour (used by tests with no Redis).
     #[must_use]
     pub fn new(
         chat: Arc<ChatService>,
         chats: Arc<dyn ChatRepository>,
         events: Arc<EventBus>,
+        spool: Option<Arc<dyn Spool>>,
         cfg: ChatIngestConfig,
     ) -> (Arc<Self>, mpsc::Receiver<Message>) {
         let (tx, rx) = mpsc::channel(cfg.capacity);
@@ -61,6 +71,7 @@ impl ChatIngest {
             chat,
             chats,
             events,
+            spool,
             tx,
             cfg,
         });
@@ -136,18 +147,15 @@ impl ChatIngest {
     }
 
     /// Fans out a persisted batch off the WS task: a per-message broadcast pass then
-    /// the batch's notification jobs. On a persist failure the batch is logged and
-    /// dropped, since optimistic ack already told senders their posts succeeded.
+    /// the batch's notification jobs. On a persist failure the batch is spilled to
+    /// the durable spool (or dropped if none is configured), since optimistic ack
+    /// already told senders their posts succeeded.
     async fn flush(&self, buf: &mut Vec<Message>) {
         if buf.is_empty() {
             return;
         }
         if let Err(e) = self.chats.save_messages(buf).await {
-            tracing::error!(
-                error = %e,
-                count = buf.len(),
-                "chat ingest: batch persist failed, dropping"
-            );
+            self.spill(&e, buf).await;
             buf.clear();
             return;
         }
@@ -160,7 +168,7 @@ impl ChatIngest {
                 channel_id: message.channel_id,
                 sender: message.sender_user_id,
                 mentions: message.mentions.clone(),
-                at: uuid_v7_created_at(message.id.0),
+                at: super::uuid_v7_created_at(message.id.0),
                 after: message,
             })
             .collect();
@@ -184,6 +192,46 @@ impl ChatIngest {
             if mentioned && let Err(e) = self.events.enqueue_notification(event).await {
                 tracing::warn!(error = %e, "chat ingest: notification enqueue failed");
             }
+        }
+    }
+
+    /// Spills a batch that failed to persist to the durable spool so the
+    /// optimistic ack stays honoured; the drainer replays it once the backend
+    /// recovers. With no spool configured the batch is dropped (legacy
+    /// behaviour). Only the persist failure path reaches here.
+    async fn spill(&self, cause: &RepositoryError, buf: &[Message]) {
+        let Some(spool) = &self.spool else {
+            tracing::error!(
+                error = %cause,
+                count = buf.len(),
+                "chat ingest: batch persist failed, no spool configured, dropping"
+            );
+            return;
+        };
+        let bytes = match serde_json::to_vec(buf) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                tracing::error!(
+                    error = %cause,
+                    serialize_error = %e,
+                    count = buf.len(),
+                    "chat ingest: batch persist failed, serialize for spool failed, dropping"
+                );
+                return;
+            }
+        };
+        match spool.push(&bytes).await {
+            Ok(()) => tracing::warn!(
+                error = %cause,
+                spilled = buf.len(),
+                "chat ingest: batch persist failed, spilled to spool"
+            ),
+            Err(e) => tracing::error!(
+                error = %cause,
+                spool_error = %e,
+                count = buf.len(),
+                "chat ingest: batch persist failed AND spool push failed, dropping"
+            ),
         }
     }
 }

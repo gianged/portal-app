@@ -57,6 +57,11 @@ impl Realtime {
     }
 
     /// Publishes an ephemeral signal to the WS topic.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `signal` fails to serialize, which cannot happen for `WsSignal`
+    /// (all variants are plain serde-derivable types).
     pub async fn publish_signal(&self, signal: &WsSignal) -> Result<(), EventError> {
         let payload =
             serde_json::to_vec(signal).expect("WsSignal is composed of serde-derivable types");

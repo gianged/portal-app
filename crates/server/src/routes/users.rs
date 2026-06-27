@@ -10,12 +10,12 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use domain::ids::UserId;
-use shared::dto::user::{
-    CreateUserRequest, ResetPasswordRequest, UpdateProfileRequest, UserDto, UserProfileDto,
-    UserRole,
-};
-use shared::validation::user::{
-    validate_create_user, validate_reset_password, validate_update_profile,
+use shared::{
+    dto::user::{
+        CreateUserRequest, ResetPasswordRequest, UpdateProfileRequest, UserDto, UserProfileDto,
+        UserRole,
+    },
+    validation::user::{validate_create_user, validate_reset_password, validate_update_profile},
 };
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};

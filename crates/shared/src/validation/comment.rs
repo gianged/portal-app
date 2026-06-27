@@ -1,6 +1,6 @@
 use crate::{
     errors::SharedError,
-    validation::common::{COMMENT_BODY_MAX, len_range},
+    validation::common::{self, COMMENT_BODY_MAX},
 };
 
 /// A comment must be non-empty and within [`COMMENT_BODY_MAX`].
@@ -10,5 +10,5 @@ use crate::{
 /// Returns [`SharedError::Validation`] when `body` is empty/whitespace-only or
 /// longer than [`COMMENT_BODY_MAX`].
 pub fn validate_comment_body(body: &str) -> Result<(), SharedError> {
-    len_range("Comment", body, 1, COMMENT_BODY_MAX)
+    common::len_range("Comment", body, 1, COMMENT_BODY_MAX)
 }

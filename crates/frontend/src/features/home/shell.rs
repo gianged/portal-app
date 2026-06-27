@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use crate::features::auth::components::RequireAuth;
 use crate::features::home::components::{SidebarNav, Topbar};
 use crate::primitives::sidebar::SidebarLayout;
-use crate::theme::{class, space};
+use crate::theme::{self, space};
 
 /// Signed-in page: the auth guard wrapping [`AppShell`], so the guard and frame aren't repeated per page.
 #[component]
@@ -22,7 +22,7 @@ pub fn AuthedPage(#[prop(into)] title: String, children: ChildrenFn) -> impl Int
 /// Authenticated app frame: fixed sidebar, sticky topbar, and a centered padded content column.
 #[component]
 pub fn AppShell(#[prop(into)] title: String, children: Children) -> impl IntoView {
-    let main_cls = class(format!(
+    let main_cls = theme::class(format!(
         "padding: {p1} {p2} {p3}; max-width: {mw}; width: 100%; margin: 0 auto;",
         p1 = space::D6,
         p2 = space::D7,

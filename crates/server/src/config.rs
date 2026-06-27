@@ -1,5 +1,4 @@
-use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::{net::SocketAddr, path::PathBuf};
 
 use anyhow::Context;
 
@@ -38,6 +37,9 @@ pub struct Config {
     /// Origins allowed to call the API with credentials (the WASM frontend).
     /// Credentialed CORS forbids a wildcard, so these are enumerated.
     pub cors_allowed_origins: Vec<String>,
+    /// How often the health prober pings each backend to drive its breaker and
+    /// the `/readyz` snapshot.
+    pub health_probe_interval: std::time::Duration,
 }
 
 pub fn from_env() -> anyhow::Result<Config> {
@@ -116,6 +118,11 @@ pub fn from_env() -> anyhow::Result<Config> {
             .parse()
             .context("invalid RATE_LIMIT_WINDOW_SECS")?,
         cors_allowed_origins,
+        health_probe_interval: std::time::Duration::from_secs(
+            optional("HEALTH_PROBE_INTERVAL_SECS", "5")
+                .parse()
+                .context("invalid HEALTH_PROBE_INTERVAL_SECS")?,
+        ),
     })
 }
 

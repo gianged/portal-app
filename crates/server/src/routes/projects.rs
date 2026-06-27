@@ -16,13 +16,15 @@ use domain::{
     ids::{GroupId, ProjectId, ProjectInviteId, UserId},
     model::{Project, ProjectInvite, ProjectStatus},
 };
-use shared::dto::project::{
-    ChangeProjectStatusRequest, CreateProjectRequest, InviteGroupRequest, ProjectDetailDto,
-    ProjectDto, ProjectInviteDto, ProjectStatus as WireProjectStatus, RespondInviteRequest,
-    SetProjectProgressRequest, UpdateProjectMetadataRequest,
-};
-use shared::validation::project::{
-    validate_project_description, validate_project_name, validate_project_progress,
+use shared::{
+    dto::project::{
+        ChangeProjectStatusRequest, CreateProjectRequest, InviteGroupRequest, ProjectDetailDto,
+        ProjectDto, ProjectInviteDto, ProjectStatus as WireProjectStatus, RespondInviteRequest,
+        SetProjectProgressRequest, UpdateProjectMetadataRequest,
+    },
+    validation::project::{
+        validate_project_description, validate_project_name, validate_project_progress,
+    },
 };
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};

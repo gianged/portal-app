@@ -237,6 +237,7 @@ impl ProjectInvite {
 mod tests {
     use super::*;
     use time::Duration;
+    use uuid::Uuid;
 
     #[test]
     fn activate_only_from_planning() {
@@ -291,9 +292,9 @@ mod tests {
         let t0 = OffsetDateTime::UNIX_EPOCH;
         let t1 = t0 + Duration::hours(3);
         let mut p = Project {
-            id: ProjectId(uuid::Uuid::nil()),
-            owner_group_id: GroupId(uuid::Uuid::nil()),
-            created_by_user_id: UserId(uuid::Uuid::nil()),
+            id: ProjectId(Uuid::nil()),
+            owner_group_id: GroupId(Uuid::nil()),
+            created_by_user_id: UserId(Uuid::nil()),
             name: "Helios".to_owned(),
             description: String::new(),
             status: ProjectStatus::Planning,
@@ -312,9 +313,9 @@ mod tests {
         let t0 = OffsetDateTime::UNIX_EPOCH;
         let t1 = t0 + Duration::hours(5);
         let mut p = Project {
-            id: ProjectId(uuid::Uuid::nil()),
-            owner_group_id: GroupId(uuid::Uuid::nil()),
-            created_by_user_id: UserId(uuid::Uuid::nil()),
+            id: ProjectId(Uuid::nil()),
+            owner_group_id: GroupId(Uuid::nil()),
+            created_by_user_id: UserId(Uuid::nil()),
             name: "Helios".to_owned(),
             description: String::new(),
             status: ProjectStatus::Active,
@@ -351,12 +352,12 @@ mod tests {
     #[test]
     fn invite_accept_records_responder() {
         let t0 = OffsetDateTime::UNIX_EPOCH;
-        let responder = UserId(uuid::Uuid::nil());
+        let responder = UserId(Uuid::nil());
         let mut invite = ProjectInvite {
-            id: ProjectInviteId(uuid::Uuid::nil()),
-            project_id: ProjectId(uuid::Uuid::nil()),
-            invited_by_user_id: UserId(uuid::Uuid::nil()),
-            invited_group_id: GroupId(uuid::Uuid::nil()),
+            id: ProjectInviteId(Uuid::nil()),
+            project_id: ProjectId(Uuid::nil()),
+            invited_by_user_id: UserId(Uuid::nil()),
+            invited_group_id: GroupId(Uuid::nil()),
             responded_by_user_id: None,
             status: ProjectInviteStatus::Pending,
             responded_at: None,

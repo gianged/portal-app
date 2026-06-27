@@ -1,7 +1,6 @@
-use leptos::ev::Event;
-use leptos::prelude::*;
+use leptos::{ev::Event, prelude::*};
 
-use crate::theme::{class, color, radius, space, typography};
+use crate::theme::{self, color, radius, space, typography};
 
 /// Multi-line text input (request/ticket descriptions, message composer).
 /// Vertically resizable; `on_input` yields the current value on every keystroke.
@@ -14,7 +13,7 @@ pub fn Textarea(
     #[prop(optional)] disabled: bool,
 ) -> impl IntoView {
     let placeholder = placeholder.unwrap_or_default();
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: block; width: 100%; padding: {p}; background: {bg}; color: {fg}; \
          border: 1px solid {bc}; border-radius: {r}; font-family: {ff}; font-size: {fs}; \
          line-height: 1.5; min-height: 80px; resize: vertical; box-shadow: {s}; \

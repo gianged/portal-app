@@ -1,7 +1,5 @@
-use leptos::prelude::*;
-use leptos::task::spawn_local;
-use leptos_router::components::{Route, Router, Routes};
-use leptos_router::path;
+use leptos::{prelude::*, task::spawn_local};
+use leptos_router::{components::{Route, Router, Routes}, path};
 
 use crate::api::ws::WsClient;
 use crate::features::announcements::routes::AnnouncementsPage;
@@ -10,7 +8,7 @@ use crate::features::auth::{self, routes::LoginPage};
 use crate::features::chat::routes::ChatPage;
 use crate::features::groups::routes::{GroupDetailPage, GroupsPage};
 use crate::features::home::routes::{DashboardPage, FilesPage, LandingPage, PermissionsPage};
-use crate::features::notifications::api::unread_count;
+use crate::features::notifications::api;
 use crate::features::notifications::routes::InboxPage;
 use crate::features::projects::routes::{ProjectDetailPage, ProjectsPage};
 use crate::features::reports::routes::ReportsPage;
@@ -22,7 +20,7 @@ use crate::state::auth::AuthState;
 use crate::state::notifications::NotificationsState;
 use crate::state::theme::{ThemeState, apply_theme};
 use crate::state::toast::ToastState;
-use crate::theme::{class, global_stylesheet};
+use crate::theme;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -53,7 +51,7 @@ pub fn App() -> impl IntoView {
     spawn_local(async move {
         if let Ok(user) = auth::api::me().await {
             auth.set_user(user);
-            if let Ok(count) = unread_count().await {
+            if let Ok(count) = api::unread_count().await {
                 notifications.set_unread(count);
             }
         }
@@ -61,7 +59,7 @@ pub fn App() -> impl IntoView {
     });
 
     view! {
-        <style>{global_stylesheet()}</style>
+        <style>{theme::global_stylesheet()}</style>
         <Router>
             <Routes fallback=NotFound>
                 <Route path=path!("/") view=LandingPage />
@@ -92,7 +90,7 @@ pub fn App() -> impl IntoView {
 
 #[component]
 fn NotFound() -> impl IntoView {
-    let cls = class("padding: 48px; text-align: center;");
+    let cls = theme::class("padding: 48px; text-align: center;");
     view! {
         <div class=cls>
             <h1>"404"</h1>

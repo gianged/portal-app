@@ -3,6 +3,7 @@ pub mod commands;
 pub mod error;
 pub mod events;
 pub mod permissions;
+pub mod resilience;
 pub mod service;
 
 pub use error::{Error, Result};

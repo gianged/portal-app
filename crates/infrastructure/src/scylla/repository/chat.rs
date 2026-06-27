@@ -4,6 +4,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use futures::{StreamExt, TryStreamExt, stream};
 // `::scylla` names the driver crate, not this crate's own `scylla` module.
 use ::scylla::{
     client::session::Session,
@@ -12,7 +13,6 @@ use ::scylla::{
         prepared::PreparedStatement,
     },
 };
-use futures::{StreamExt, TryStreamExt, stream};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -524,13 +524,13 @@ impl ChatRepository for ScyllaChatRepo {
     }
 
     async fn save_messages(&self, messages: &[Message]) -> Result<(), RepositoryError> {
-        if messages.is_empty() {
-            return Ok(());
-        }
-
         // Scylla batches are only efficient within one partition, so group by channel_id then chunk under the per-batch statement limit.
         const MAX_BATCH_STATEMENTS: usize = 100;
         const MAX_CONCURRENT_BATCHES: usize = 16;
+
+        if messages.is_empty() {
+            return Ok(());
+        }
 
         let mut by_channel: HashMap<ChannelId, Vec<&Message>> = HashMap::new();
         for message in messages {

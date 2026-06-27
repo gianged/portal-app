@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::theme::{class, color, radius, typography};
+use crate::theme::{self, color, radius, typography};
 
 /// Status / category pill. Variants map to the semantic color tokens, so a badge
 /// reskins correctly in dark mode. Use [`crate::util::format`] mappers to derive a
@@ -35,7 +35,7 @@ pub fn Badge(
     children: Children,
 ) -> impl IntoView {
     let (bg, fg, border) = variant.colors();
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: inline-flex; align-items: center; gap: 4px; height: 22px; \
          padding: 0 8px; font-family: {ff}; font-size: 12px; font-weight: {fw}; \
          border-radius: {r}; background: {bg}; color: {fg}; border: 1px solid {border}; \
@@ -44,7 +44,7 @@ pub fn Badge(
         fw = typography::WEIGHT_MEDIUM,
         r = radius::PILL,
     ));
-    let dot_cls = class(
+    let dot_cls = theme::class(
         "width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0;",
     );
     view! {

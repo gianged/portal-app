@@ -1,8 +1,7 @@
 //! Periodic notification-retention sweep: prunes read notifications older than
 //! the configured retention window. Idempotent, so safe to abort at shutdown.
 
-use std::sync::Arc;
-use std::time::Duration as StdDuration;
+use std::{sync::Arc, time::Duration as StdDuration};
 
 use time::{Duration, OffsetDateTime};
 

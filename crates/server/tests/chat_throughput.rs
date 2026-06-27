@@ -25,9 +25,11 @@
 #![cfg(feature = "integration")]
 #![allow(clippy::cast_precision_loss)]
 
-use std::collections::HashSet;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashSet,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -125,6 +127,7 @@ async fn chat_ingest_throughput_and_no_loss() {
         h.chat.clone(),
         h.chats.clone(),
         h.events.clone(),
+        None,
         ChatIngestConfig::default(),
     );
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();

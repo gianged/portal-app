@@ -1,13 +1,13 @@
 use leptos::ev::MouseEvent;
 use leptos::prelude::*;
 
-use crate::theme::{class, color, radius, typography};
+use crate::theme::{self, color, radius, typography};
 
 /// Pill-style segmented control (e.g. ticket scope: Triage / Assigned / Mine).
 /// Wrap a row of [`SegmentedItem`]s; the parent owns the active-segment state.
 #[component]
 pub fn Segmented(children: Children) -> impl IntoView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: inline-flex; background: {bg}; border: 1px solid {b}; \
          border-radius: {r}; padding: 2px; gap: 2px;",
         bg = color::BG_SUNKEN,
@@ -23,7 +23,7 @@ pub fn SegmentedItem(
     #[prop(optional)] on_click: Option<Callback<MouseEvent>>,
     children: Children,
 ) -> impl IntoView {
-    let base = class(format!(
+    let base = theme::class(format!(
         "padding: 4px 10px; font-family: {ff}; font-size: {fs}; font-weight: {fw}; \
          background: transparent; border: none; border-radius: {r}; color: {c}; \
          cursor: pointer; transition: all 120ms ease; \
@@ -35,7 +35,7 @@ pub fn SegmentedItem(
         c = color::TEXT_MUTED,
         ch = color::TEXT,
     ));
-    let active_cls = class(format!(
+    let active_cls = theme::class(format!(
         "background: {bg} !important; color: {c} !important; box-shadow: {s};",
         bg = color::BG_ELEVATED,
         c = color::TEXT_STRONG,

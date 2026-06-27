@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::theme::{class, color, typography};
+use crate::theme::{self, color, typography};
 
 #[derive(Clone, Copy, Default)]
 pub enum AvatarSize {
@@ -46,7 +46,7 @@ pub fn Avatar(
     let initials = initials(&name);
     let dim = size.dimension();
     let fs = size.font_size();
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: inline-flex; align-items: center; justify-content: center; \
          width: {dim}; height: {dim}; border-radius: 50%; \
          background: {bg}; color: {fg}; \

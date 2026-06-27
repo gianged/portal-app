@@ -1,7 +1,6 @@
 //! Project detail: status transitions, collaborator management, group invitations, and the project's requests.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use leptos_router::components::A;
 use uuid::Uuid;
 
@@ -17,7 +16,7 @@ use crate::features::audit::components::{AuditTrailPanel, TrailKind};
 use crate::features::groups::api as groups_api;
 use crate::features::projects::api;
 use crate::features::requests::api as requests_api;
-use crate::features::ui::{back_link, page_title, section_heading, subtle};
+use crate::features::ui;
 use crate::primitives::badge::Badge;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
@@ -30,9 +29,9 @@ use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, space, typography};
-use crate::util::format::project_status_variant;
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, space, typography};
+use crate::util::format;
+use crate::util::load::{self, Loadable};
 
 #[derive(Clone, Copy)]
 enum StatusTarget {
@@ -66,8 +65,8 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
     Effect::new(move |_| {
         let _ = reload.get();
         if let Some(pid) = id.get() {
-            load(detail, api::get(pid));
-            load(requests, requests_api::list_for_project(pid, None));
+            load::load(detail, api::get(pid));
+            load::load(requests, requests_api::list_for_project(pid, None));
         }
     });
 
@@ -121,14 +120,14 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
 
     view! {
         <Stack gap=Gap::Lg>
-            {back_link("/projects", "Back to projects")}
+            {ui::back_link("/projects", "Back to projects")}
             {move || match detail.get() {
-                None => note("Loading project…"),
-                Some(Err(e)) => load_error(&e),
+                None => load::note("Loading project…"),
+                Some(Err(e)) => load::load_error(&e),
                 Some(Ok(d)) => {
                     let status = d.project.status;
                     let progress = d.project.progress;
-                    let title_v = page_title(&d.project.name);
+                    let title_v = ui::page_title(&d.project.name);
                     let owner = d.project.owner_group.name.clone();
                     let desc_v = desc_block(&d.project.description);
                     let actions_v = status_bar(status, run);
@@ -155,9 +154,9 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                                 <Stack gap=Gap::Md>
                                     <Cluster gap=Gap::Sm justify="space-between".to_string()>
                                         {title_v}
-                                        <Badge variant=project_status_variant(status)>{status.label()}</Badge>
+                                        <Badge variant=format::project_status_variant(status)>{status.label()}</Badge>
                                     </Cluster>
-                                    {subtle(&format!("Owned by {owner}"))}
+                                    {ui::subtle(&format!("Owned by {owner}"))}
                                     {progress_row(progress)}
                                     {desc_v}
                                 </Stack>
@@ -228,11 +227,11 @@ fn collaborators_card(
             let gid = c.group.id;
             let name = c.group.name.clone();
             let remove_cb = Callback::new(move |_| remove(gid));
-            let row = class(format!(
+            let row = theme::class(format!(
                 "display: flex; align-items: center; gap: {g}; padding: {p} 0; border-bottom: 1px solid {b};",
                 g = space::D2, p = space::D2, b = color::BORDER,
             ));
-            let grow = class(format!(
+            let grow = theme::class(format!(
                 "flex: 1; min-width: 0; font-family: {ff}; font-size: {fs}; color: {c};",
                 ff = typography::FONT_SANS, fs = typography::TEXT_SMALL, c = color::TEXT,
             ));
@@ -250,12 +249,12 @@ fn collaborators_card(
         <Card>
             <Stack gap=Gap::Md>
                 <Cluster gap=Gap::Sm justify="space-between".to_string()>
-                    {section_heading("Collaborating groups")}
+                    {ui::section_heading("Collaborating groups")}
                     <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_invite>
                         <Icon name=IconName::Plus size=14 /> " Invite group"
                     </Button>
                 </Cluster>
-                {if has { view! { <div>{rows}</div> }.into_any() } else { subtle("No collaborating groups yet.") }}
+                {if has { view! { <div>{rows}</div> }.into_any() } else { ui::subtle("No collaborating groups yet.") }}
             </Stack>
         </Card>
     }
@@ -276,11 +275,11 @@ fn pending_invites_card(
             let iid = inv.id;
             let name = inv.invited_group.name.clone();
             let revoke_cb = Callback::new(move |_| revoke(iid));
-            let row = class(format!(
+            let row = theme::class(format!(
                 "display: flex; align-items: center; gap: {g}; padding: {p} 0; border-bottom: 1px solid {b};",
                 g = space::D2, p = space::D2, b = color::BORDER,
             ));
-            let grow = class(format!(
+            let grow = theme::class(format!(
                 "flex: 1; min-width: 0; font-family: {ff}; font-size: {fs}; color: {c};",
                 ff = typography::FONT_SANS, fs = typography::TEXT_SMALL, c = color::TEXT,
             ));
@@ -294,7 +293,7 @@ fn pending_invites_card(
             }
         })
         .collect_view();
-    view! { <Card><Stack gap=Gap::Md>{section_heading("Pending invites")}<div>{rows}</div></Stack></Card> }
+    view! { <Card><Stack gap=Gap::Md>{ui::section_heading("Pending invites")}<div>{rows}</div></Stack></Card> }
         .into_any()
 }
 
@@ -303,21 +302,21 @@ fn ProjectRequests(requests: Loadable<Vec<RequestDto>>) -> impl IntoView {
     view! {
         <Card>
             <Stack gap=Gap::Md>
-                {section_heading("Requests")}
+                {ui::section_heading("Requests")}
                 {move || match requests.get() {
-                    None => note("Loading…"),
-                    Some(Err(e)) => load_error(&e),
-                    Some(Ok(list)) if list.is_empty() => subtle("No requests against this project yet."),
+                    None => load::note("Loading…"),
+                    Some(Err(e)) => load::load_error(&e),
+                    Some(Ok(list)) if list.is_empty() => ui::subtle("No requests against this project yet."),
                     Some(Ok(list)) => {
                         let rows = list.into_iter().map(|r| {
                             let href = format!("/requests/{}", r.id.0);
                             let title = r.title.clone();
                             let status = r.status;
-                            let row = class(format!(
+                            let row = theme::class(format!(
                                 "display: flex; align-items: center; gap: {g}; padding: {p} 0; border-bottom: 1px solid {b};",
                                 g = space::D2, p = space::D2, b = color::BORDER,
                             ));
-                            let link = class(format!(
+                            let link = theme::class(format!(
                                 "flex: 1; min-width: 0; color: {c}; text-decoration: none; font-family: {ff}; \
                                  font-size: {fs}; &:hover {{ color: {a}; }}",
                                 c = color::TEXT, ff = typography::FONT_SANS, fs = typography::TEXT_SMALL, a = color::ACCENT,
@@ -345,7 +344,7 @@ fn InviteGroupDialog(
 ) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
     let groups: Loadable<Vec<GroupDto>> = RwSignal::new(None);
-    load(groups, groups_api::list());
+    load::load(groups, groups_api::list());
     let group = RwSignal::new(None::<GroupId>);
 
     let on_close = Callback::new(move |()| open.set(false));
@@ -398,14 +397,14 @@ fn InviteGroupDialog(
 }
 
 fn progress_row(progress: u8) -> AnyView {
-    let wrap = class("display: flex; align-items: center; gap: 12px;");
-    let label = class(format!(
+    let wrap = theme::class("display: flex; align-items: center; gap: 12px;");
+    let label = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; white-space: nowrap;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
         c = color::TEXT_MUTED,
     ));
-    let bar = class("flex: 1; max-width: 260px;");
+    let bar = theme::class("flex: 1; max-width: 260px;");
     view! {
         <div class=wrap>
             <span class=label>{format!("Progress {progress}%")}</span>
@@ -448,11 +447,11 @@ fn ProgressEditor(id: ProjectId, initial: u8, reload: RwSignal<u32>) -> impl Int
             saving.set(false);
         });
     });
-    let input_wrap = class("width: 110px;");
+    let input_wrap = theme::class("width: 110px;");
     view! {
         <Card>
             <Stack gap=Gap::Sm>
-                {section_heading("Set progress")}
+                {ui::section_heading("Set progress")}
                 <Cluster gap=Gap::Sm>
                     <div class=input_wrap>
                         <Input value=value on_input=on_input placeholder="0-100" />
@@ -472,7 +471,7 @@ fn ProgressEditor(id: ProjectId, initial: u8, reload: RwSignal<u32>) -> impl Int
 }
 
 fn desc_block(description: &str) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; line-height: 1.55; white-space: pre-wrap;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,

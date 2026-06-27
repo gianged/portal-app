@@ -19,9 +19,7 @@
 //! (never cached at connect), so newly created channels work immediately and
 //! revoked ones stop working immediately.
 
-use std::collections::HashSet;
-use std::pin::Pin;
-use std::time::Duration;
+use std::{collections::HashSet, pin::Pin, time::Duration};
 
 use axum::{
     Router,

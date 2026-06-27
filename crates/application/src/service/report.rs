@@ -1,8 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
 
-use time::{Date, Month, OffsetDateTime};
-use uuid::Uuid;
-
 use domain::{
     error::RenderError,
     ids::{ReportId, UserId},
@@ -13,6 +10,8 @@ use domain::{
     ports::{file_storage::FileStorage, report_renderer::ReportRenderer},
     repository::{ReportArchiveRepository, ReportStatsRepository, UserRepository},
 };
+use time::{Date, Month, OffsetDateTime};
+use uuid::Uuid;
 
 use crate::error::{Error, Result};
 

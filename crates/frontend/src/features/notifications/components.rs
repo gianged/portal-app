@@ -1,14 +1,12 @@
 //! Inbox UI: the notification list with an unread filter, mark-read on click, mark-all, and navigation to the referenced item.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
-use leptos_router::NavigateOptions;
-use leptos_router::hooks::use_navigate;
+use leptos::{prelude::*, task::spawn_local};
+use leptos_router::{NavigateOptions, hooks::use_navigate};
 
 use shared::dto::notification::{NotificationDto, NotificationPayloadDto};
 
 use crate::features::notifications::api;
-use crate::features::ui::{section_heading, subtle};
+use crate::features::ui;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
 use crate::primitives::cluster::Cluster;
@@ -18,9 +16,9 @@ use crate::primitives::segmented::{Segmented, SegmentedItem};
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::notifications::NotificationsState;
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, radius, space, typography};
-use crate::util::format::relative_time;
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, radius, space, typography};
+use crate::util::format;
+use crate::util::load::{self, Loadable};
 
 fn payload_icon(p: &NotificationPayloadDto) -> IconName {
     match p {
@@ -29,11 +27,11 @@ fn payload_icon(p: &NotificationPayloadDto) -> IconName {
         NotificationPayloadDto::TicketUrgent { .. }
         | NotificationPayloadDto::TicketAssigned { .. }
         | NotificationPayloadDto::TicketStatusChange { .. }
-        | NotificationPayloadDto::TicketRaised { .. } => IconName::Ticket,
+        | NotificationPayloadDto::TicketRaised { .. }
+        | NotificationPayloadDto::TicketComment { .. } => IconName::Ticket,
         NotificationPayloadDto::RequestAssigned { .. }
         | NotificationPayloadDto::RequestStatusChange { .. }
         | NotificationPayloadDto::RequestComment { .. } => IconName::Doc,
-        NotificationPayloadDto::TicketComment { .. } => IconName::Ticket,
         NotificationPayloadDto::ProjectInvite { .. }
         | NotificationPayloadDto::ProjectInviteResponse { .. } => IconName::Folder,
         NotificationPayloadDto::System { .. } => IconName::AlertCircle,
@@ -47,16 +45,14 @@ fn payload_href(p: &NotificationPayloadDto) -> Option<String> {
         NotificationPayloadDto::TicketUrgent { ticket_id }
         | NotificationPayloadDto::TicketAssigned { ticket_id }
         | NotificationPayloadDto::TicketStatusChange { ticket_id, .. }
-        | NotificationPayloadDto::TicketRaised { ticket_id } => {
+        | NotificationPayloadDto::TicketRaised { ticket_id }
+        | NotificationPayloadDto::TicketComment { ticket_id, .. } => {
             Some(format!("/tickets/{}", ticket_id.0))
         }
         NotificationPayloadDto::RequestAssigned { request_id }
         | NotificationPayloadDto::RequestStatusChange { request_id, .. }
         | NotificationPayloadDto::RequestComment { request_id, .. } => {
             Some(format!("/requests/{}", request_id.0))
-        }
-        NotificationPayloadDto::TicketComment { ticket_id, .. } => {
-            Some(format!("/tickets/{}", ticket_id.0))
         }
         NotificationPayloadDto::ProjectInvite { project_id, .. }
         | NotificationPayloadDto::ProjectInviteResponse { project_id, .. } => {
@@ -108,7 +104,7 @@ pub fn InboxIndex() -> impl IntoView {
 
     Effect::new(move |_| {
         let _ = reload.get();
-        load(items, api::list(unread_only.get(), 50));
+        load::load(items, api::list(unread_only.get(), 50));
     });
 
     // Pull a fresh unread count into the topbar badge after a mutation.
@@ -152,10 +148,10 @@ pub fn InboxIndex() -> impl IntoView {
             </Cluster>
             <Card>
                 <Stack gap=Gap::Sm>
-                    {section_heading("Inbox")}
+                    {ui::section_heading("Inbox")}
                     {move || match items.get() {
-                        None => note("Loading…"),
-                        Some(Err(e)) => load_error(&e),
+                        None => load::note("Loading…"),
+                        Some(Err(e)) => load::load_error(&e),
                         Some(Ok(list)) if list.is_empty() => view! {
                             <EmptyState icon=IconName::Inbox title="Inbox zero" description="You have no notifications." />
                         }.into_any(),
@@ -181,11 +177,11 @@ fn notification_row(
     let icon = payload_icon(&n.payload);
     let summary = payload_summary(&n.payload);
     let href = payload_href(&n.payload);
-    let when = relative_time(n.created_at);
+    let when = format::relative_time(n.created_at);
     let read = n.read;
     let id = n.id;
 
-    let row = class(format!(
+    let row = theme::class(format!(
         "display: flex; align-items: center; gap: {g}; padding: {p}; border-radius: {r}; \
          cursor: pointer; transition: background 120ms ease; &:hover {{ background: {bh}; }}",
         g = space::D3,
@@ -193,14 +189,14 @@ fn notification_row(
         r = radius::SM,
         bh = color::BG_HOVER,
     ));
-    let icon_wrap = class(format!(
+    let icon_wrap = theme::class(format!(
         "display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; \
          border-radius: 50%; background: {bg}; color: {c}; flex-shrink: 0;",
         bg = color::BG_SUNKEN,
         c = color::TEXT_MUTED,
     ));
-    let body = class("flex: 1; min-width: 0;");
-    let summary_cls = class(format!(
+    let body = theme::class("flex: 1; min-width: 0;");
+    let summary_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
@@ -211,11 +207,11 @@ fn notification_row(
         },
         c = color::TEXT,
     ));
-    let dot = class(format!(
+    let dot = theme::class(format!(
         "width: 8px; height: 8px; border-radius: 50%; background: {a}; flex-shrink: 0;",
         a = color::ACCENT,
     ));
-    let spacer = class("width: 8px; flex-shrink: 0;");
+    let spacer = theme::class("width: 8px; flex-shrink: 0;");
 
     let on_click = move |_| {
         let navigate = navigate.clone();
@@ -242,7 +238,7 @@ fn notification_row(
             <span class=icon_wrap><Icon name=icon size=16 /></span>
             <div class=body>
                 <div class=summary_cls>{summary}</div>
-                {subtle(&when)}
+                {ui::subtle(&when)}
             </div>
         </div>
     }

@@ -1,12 +1,12 @@
 use leptos::prelude::*;
 
-use crate::theme::{class, color, radius, space, typography};
+use crate::theme::{self, color, radius, space, typography};
 
 /// Bordered, rounded container for a [`Table`] (and optional [`TableToolbar`] /
 /// footer). Clips the table's corners via `overflow: hidden`.
 #[component]
 pub fn TableWrap(children: Children) -> impl IntoView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "background: {bg}; border: 1px solid {b}; border-radius: {r}; \
          overflow: hidden; box-shadow: {s};",
         bg = color::BG_ELEVATED,
@@ -20,7 +20,7 @@ pub fn TableWrap(children: Children) -> impl IntoView {
 /// Header strip above a table: title/filters on the left, actions on the right.
 #[component]
 pub fn TableToolbar(children: Children) -> impl IntoView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: flex; align-items: center; justify-content: space-between; gap: {g}; \
          padding: {py} {px}; border-bottom: 1px solid {b}; background: {bg};",
         g = space::D3,
@@ -37,7 +37,7 @@ pub fn TableToolbar(children: Children) -> impl IntoView {
 /// classes are available on descendants: `cell-strong`, `cell-muted`, `mono`.
 #[component]
 pub fn Table(children: Children) -> impl IntoView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "width: 100%; border-collapse: collapse; \
          & thead th {{ text-align: left; font-family: {ff}; font-weight: {fw}; font-size: 12px; \
             color: {tm}; text-transform: uppercase; letter-spacing: 0.04em; padding: {py} {px}; \

@@ -1,7 +1,7 @@
 use leptos::ev::KeyboardEvent;
 use leptos::prelude::*;
 
-use crate::theme::{class, color, radius, space, typography};
+use crate::theme::{self, color, radius, space, typography};
 
 /// Modal dialog. The parent owns the `open` signal; `on_close` fires on backdrop
 /// click and on `Escape`. Compose the body from [`DialogHeader`] / [`DialogBody`]
@@ -12,13 +12,13 @@ pub fn Dialog(
     #[prop(optional)] on_close: Option<Callback<()>>,
     children: ChildrenFn,
 ) -> impl IntoView {
-    let backdrop = class(format!(
+    let backdrop = theme::class(format!(
         "position: fixed; inset: 0; background: rgba(13, 27, 62, 0.45); \
          display: flex; align-items: center; justify-content: center; z-index: 100; \
          padding: {p};",
         p = space::D5,
     ));
-    let dialog = class(format!(
+    let dialog = theme::class(format!(
         "background: {bg}; border: 1px solid {b}; border-radius: {r}; \
          box-shadow: {s}; width: 100%; max-width: 480px; padding: {p}; \
          max-height: calc(100vh - 2 * {p}); overflow-y: auto;",
@@ -61,20 +61,20 @@ pub fn DialogHeader(
     #[prop(into)] title: String,
     #[prop(optional, into)] subtitle: Option<String>,
 ) -> impl IntoView {
-    let title_cls = class(format!(
+    let title_cls = theme::class(format!(
         "font-family: {ff}; font-size: 16px; font-weight: {fw}; color: {c}; \
          margin: 0; letter-spacing: -0.015em;",
         ff = typography::FONT_SANS,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let sub_cls = class(format!(
+    let sub_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; margin: 4px 0 0;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         c = color::TEXT_MUTED,
     ));
-    let wrap = class(format!("margin-bottom: {mb};", mb = space::D4));
+    let wrap = theme::class(format!("margin-bottom: {mb};", mb = space::D4));
     view! {
         <div class=wrap>
             <h3 class=title_cls>{title}</h3>
@@ -92,7 +92,7 @@ pub fn DialogBody(children: Children) -> impl IntoView {
 /// Right-aligned action row for a [`Dialog`], separated by a top border.
 #[component]
 pub fn DialogFooter(children: Children) -> impl IntoView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: flex; align-items: center; justify-content: flex-end; gap: {g}; \
          padding-top: {p}; border-top: 1px solid {b}; margin-top: {p};",
         g = space::D2,

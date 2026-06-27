@@ -19,15 +19,19 @@ use domain::{
     model::{CommentEntity, Request},
     ports::file_storage::FileStorage,
 };
-use shared::dto::comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest};
-use shared::dto::request::{
-    AssignRequestRequest, CreateRequestRequest, RequestAttachmentDto, RequestDetailDto, RequestDto,
-    RequestStatus as WireRequestStatus, UpdateRequestRequest,
-};
-use shared::validation::{
-    comment::validate_comment_body,
-    file::sanitize_filename,
-    request::{validate_request_description, validate_request_title},
+use shared::{
+    dto::{
+        comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest},
+        request::{
+            AssignRequestRequest, CreateRequestRequest, RequestAttachmentDto, RequestDetailDto,
+            RequestDto, RequestStatus as WireRequestStatus, UpdateRequestRequest,
+        },
+    },
+    validation::{
+        comment::validate_comment_body,
+        file::sanitize_filename,
+        request::{validate_request_description, validate_request_title},
+    },
 };
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};

@@ -1,7 +1,6 @@
 //! Project index: an owner-group selector with the group's project cards, an incoming-invites inbox, and a create dialog.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use leptos_router::components::A;
 use uuid::Uuid;
 
@@ -14,7 +13,7 @@ use shared::validation::project::{validate_project_description, validate_project
 
 use crate::features::groups::api as groups_api;
 use crate::features::projects::api;
-use crate::features::ui::{section_heading, subtle};
+use crate::features::ui;
 use crate::primitives::badge::Badge;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
@@ -29,23 +28,23 @@ use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::textarea::Textarea;
 use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, space, typography};
-use crate::util::debounce::debounced;
-use crate::util::format::project_status_variant;
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, space, typography};
+use crate::util::debounce;
+use crate::util::format;
+use crate::util::load::{self, Loadable};
 
 #[component]
 pub fn ProjectsIndex() -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");
     let groups: Loadable<Vec<GroupDto>> = RwSignal::new(None);
-    load(groups, groups_api::list());
+    load::load(groups, groups_api::list());
     let group = RwSignal::new(None::<GroupId>);
     let projects: Loadable<Vec<ProjectDto>> = RwSignal::new(None);
     let invites: Loadable<Vec<ProjectInviteDto>> = RwSignal::new(None);
     let reload = RwSignal::new(0u32);
     let create_open = RwSignal::new(false);
     let search = RwSignal::new(String::new());
-    let dq = debounced(search.into(), 300);
+    let dq = debounce::debounced(search.into(), 300);
 
     // Auto-select the caller's own group once the directory loads.
     Effect::new(move |_| {
@@ -68,11 +67,11 @@ pub fn ProjectsIndex() -> impl IntoView {
         let _ = reload.get();
         let term = dq.get().trim().to_owned();
         if let Some(g) = group.get() {
-            load(
+            load::load(
                 projects,
                 api::list_for_owner_group(g, (!term.is_empty()).then_some(term)),
             );
-            load(invites, api::list_invites_for_group(g));
+            load::load(invites, api::list_invites_for_group(g));
         }
     });
 
@@ -82,8 +81,8 @@ pub fn ProjectsIndex() -> impl IntoView {
     let open_create = Callback::new(move |_| create_open.set(true));
     let created = Callback::new(move |()| reload.update(|n| *n += 1));
     let responded = Callback::new(move |()| reload.update(|n| *n += 1));
-    let select_wrap = class("width: 260px;");
-    let search_wrap = class("width: 220px;");
+    let select_wrap = theme::class("width: 260px;");
+    let search_wrap = theme::class("width: 220px;");
 
     view! {
         <Stack gap=Gap::Lg>
@@ -122,8 +121,8 @@ pub fn ProjectsIndex() -> impl IntoView {
                     }.into_any();
                 }
                 match projects.get() {
-                    None => note("Loading projects…"),
-                    Some(Err(e)) => load_error(&e),
+                    None => load::note("Loading projects…"),
+                    Some(Err(e)) => load::load_error(&e),
                     Some(Ok(list)) if list.is_empty() => view! {
                         <EmptyState
                             icon=IconName::Folder
@@ -132,7 +131,7 @@ pub fn ProjectsIndex() -> impl IntoView {
                         />
                     }.into_any(),
                     Some(Ok(list)) => {
-                        let grid = class(format!(
+                        let grid = theme::class(format!(
                             "display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: {g};",
                             g = space::D4,
                         ));
@@ -152,15 +151,15 @@ fn project_card(p: ProjectDto) -> impl IntoView {
     let status = p.status;
     let owner = p.owner_group.name.clone();
     let progress = p.progress;
-    let card_link = class("text-decoration: none; display: block;");
-    let name_cls = class(format!(
+    let card_link = theme::class("text-decoration: none; display: block;");
+    let name_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c}; margin: 0;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_H3,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let desc_cls = class(format!(
+    let desc_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; margin: 0; \
          display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;",
         ff = typography::FONT_SANS,
@@ -173,11 +172,11 @@ fn project_card(p: ProjectDto) -> impl IntoView {
                 <Stack gap=Gap::Sm>
                     <Cluster gap=Gap::Sm justify="space-between".to_string()>
                         <h3 class=name_cls>{name}</h3>
-                        <Badge variant=project_status_variant(status)>{status.label()}</Badge>
+                        <Badge variant=format::project_status_variant(status)>{status.label()}</Badge>
                     </Cluster>
                     <p class=desc_cls>{desc}</p>
                     <ProgressBar value=Signal::derive(move || progress) />
-                    {subtle(&format!("Owned by {owner}"))}
+                    {ui::subtle(&format!("Owned by {owner}"))}
                 </Stack>
             </Card>
         </A>
@@ -215,22 +214,22 @@ fn InvitesInbox(
                     let iid = inv.id;
                     let accept = Callback::new(move |_| respond(iid, true));
                     let decline = Callback::new(move |_| respond(iid, false));
-                    let row = class(format!(
+                    let row = theme::class(format!(
                         "display: flex; align-items: center; gap: {g}; padding: {p} 0; \
                          border-bottom: 1px solid {b};",
                         g = space::D2, p = space::D2, b = color::BORDER,
                     ));
-                    let grow = class("flex: 1; min-width: 0;");
+                    let grow = theme::class("flex: 1; min-width: 0;");
                     view! {
                         <div class=row>
                             <Icon name=IconName::Folder size=14 />
-                            <span class=grow>{subtle(&format!("Invited by {invited_by}"))}</span>
+                            <span class=grow>{ui::subtle(&format!("Invited by {invited_by}"))}</span>
                             <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=accept>"Accept"</Button>
                             <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm on_click=decline>"Decline"</Button>
                         </div>
                     }
                 }).collect_view();
-                view! { <Card><Stack gap=Gap::Sm>{section_heading("Incoming invites")}{rows}</Stack></Card> }.into_any()
+                view! { <Card><Stack gap=Gap::Sm>{ui::section_heading("Incoming invites")}{rows}</Stack></Card> }.into_any()
             }
             _ => ().into_any(),
         }}

@@ -1,14 +1,13 @@
 //! Group index: the org directory of group cards with a create dialog.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use leptos_router::components::A;
 
 use shared::dto::group::{CreateGroupRequest, GroupDto, GroupKind};
 use shared::validation::group::{validate_group_description, validate_group_name};
 
 use crate::features::groups::api;
-use crate::features::ui::{section_heading, subtle};
+use crate::features::ui;
 use crate::primitives::badge::{Badge, BadgeVariant};
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
@@ -21,8 +20,8 @@ use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::textarea::Textarea;
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, space, typography};
-use crate::util::load::{Loadable, load, load_error, note};
+use crate::theme::{self, color, space, typography};
+use crate::util::load::{self, Loadable};
 
 fn kind_wire(k: GroupKind) -> &'static str {
     match k {
@@ -39,7 +38,7 @@ pub fn GroupsIndex() -> impl IntoView {
 
     Effect::new(move |_| {
         let _ = reload.get();
-        load(groups, api::list());
+        load::load(groups, api::list());
     });
 
     let open_create = Callback::new(move |_| create_open.set(true));
@@ -48,19 +47,19 @@ pub fn GroupsIndex() -> impl IntoView {
     view! {
         <Stack gap=Gap::Lg>
             <Cluster gap=Gap::Sm justify="space-between".to_string()>
-                {section_heading("Groups")}
+                {ui::section_heading("Groups")}
                 <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_create>
                     <Icon name=IconName::Plus size=14 /> " New group"
                 </Button>
             </Cluster>
             {move || match groups.get() {
-                None => note("Loading groups…"),
-                Some(Err(e)) => load_error(&e),
+                None => load::note("Loading groups…"),
+                Some(Err(e)) => load::load_error(&e),
                 Some(Ok(list)) if list.is_empty() => view! {
                     <EmptyState icon=IconName::Users title="No groups yet" description="Create the first group to get started." />
                 }.into_any(),
                 Some(Ok(list)) => {
-                    let grid = class(format!(
+                    let grid = theme::class(format!(
                         "display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: {g};",
                         g = space::D4,
                     ));
@@ -78,15 +77,15 @@ fn group_card(g: GroupDto) -> impl IntoView {
     let desc = g.description.clone();
     let count = g.member_count;
     let kind = g.kind;
-    let link = class("text-decoration: none; display: block;");
-    let name_cls = class(format!(
+    let link = theme::class("text-decoration: none; display: block;");
+    let name_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c}; margin: 0;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_H3,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let desc_cls = class(format!(
+    let desc_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; margin: 0; \
          display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;",
         ff = typography::FONT_SANS,
@@ -105,7 +104,7 @@ fn group_card(g: GroupDto) -> impl IntoView {
                         }}
                     </Cluster>
                     <p class=desc_cls>{desc}</p>
-                    {subtle(&format!("{count} members"))}
+                    {ui::subtle(&format!("{count} members"))}
                 </Stack>
             </Card>
         </A>

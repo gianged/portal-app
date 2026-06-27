@@ -2,10 +2,10 @@
 
 use leptos::prelude::*;
 
-use crate::theme::{class, color, typography};
+use crate::theme::{self, color, typography};
 
 pub(crate) fn heading(text: &str) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c}; margin: 0;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_BODY,
@@ -16,7 +16,7 @@ pub(crate) fn heading(text: &str) -> AnyView {
 }
 
 pub(crate) fn subtle(text: &str) -> AnyView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,

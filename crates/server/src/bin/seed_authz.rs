@@ -7,7 +7,7 @@
 //! via `cargo make seed` (after the SQL). `OpenFGA` rejects re-writing an existing
 //! tuple, so a re-run logs per-tuple warnings and is otherwise a no-op.
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use anyhow::{Context, Result};
 use application::permissions::Permissions;
@@ -20,7 +20,6 @@ use infrastructure::{
     openfga::{self, OpenFgaAuthzClient},
     postgres::{PgGroupRepo, PgProjectRepo, PgTicketRepo, PgUserRepo, build_pool},
 };
-use std::collections::HashSet;
 
 /// Tallies successful vs. rejected tuple writes (rejections are mostly
 /// "already exists" on a re-run).

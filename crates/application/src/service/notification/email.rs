@@ -132,14 +132,18 @@ impl EmailNotifier {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use async_trait::async_trait;
-    use domain::error::{JobError, RepositoryError};
-    use domain::ids::TicketId;
-    use domain::model::User;
     use std::sync::Mutex;
+
+    use async_trait::async_trait;
+    use domain::{
+        error::{JobError, RepositoryError},
+        ids::TicketId,
+        model::User,
+    };
     use time::OffsetDateTime;
     use uuid::Uuid;
+
+    use super::*;
 
     struct FakeUsers {
         user: User,

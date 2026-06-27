@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 
 use crate::theme::{
-    class,
+    self,
     space::{D1, D2, D3, D5, D7},
 };
 
@@ -34,7 +34,7 @@ pub fn Stack(
     children: Children,
 ) -> impl IntoView {
     let align = align.unwrap_or_else(|| "stretch".to_string());
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: flex; flex-direction: column; gap: {g}; align-items: {a}; min-width: 0;",
         g = gap.value(),
         a = align,

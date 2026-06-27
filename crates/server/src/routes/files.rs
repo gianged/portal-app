@@ -19,8 +19,7 @@ use axum::{
 use serde::Deserialize;
 use time::OffsetDateTime;
 
-use domain::error::StorageError;
-use domain::ports::file_storage::FileStorage;
+use domain::{error::StorageError, ports::file_storage::FileStorage};
 
 use crate::{
     app::AppState,

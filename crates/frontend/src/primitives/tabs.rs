@@ -3,13 +3,13 @@
 use leptos::ev::MouseEvent;
 use leptos::prelude::*;
 
-use crate::theme::{class, color, radius, space, typography};
+use crate::theme::{self, color, radius, space, typography};
 
 /// Underline tab bar. Wrap a row of [`Tab`]s; each `Tab` takes a reactive `active`
 /// signal and an `on_click`, so the parent owns the selected-tab state.
 #[component]
 pub fn Tabs(children: Children) -> impl IntoView {
-    let cls = class(format!(
+    let cls = theme::class(format!(
         "display: flex; align-items: center; gap: 2px; border-bottom: 1px solid {b};",
         b = color::BORDER,
     ));
@@ -23,7 +23,7 @@ pub fn Tab(
     #[prop(optional)] on_click: Option<Callback<MouseEvent>>,
     children: Children,
 ) -> impl IntoView {
-    let base = class(format!(
+    let base = theme::class(format!(
         "display: inline-flex; align-items: center; gap: 6px; padding: {py} {px}; \
          font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c}; \
          background: transparent; border: none; border-bottom: 2px solid transparent; \
@@ -38,11 +38,11 @@ pub fn Tab(
         c = color::TEXT_MUTED,
         ch = color::TEXT,
     ));
-    let active_cls = class(format!(
+    let active_cls = theme::class(format!(
         "color: {c} !important; border-bottom-color: {c} !important;",
         c = color::ACCENT,
     ));
-    let count_cls = class(format!(
+    let count_cls = theme::class(format!(
         "font-size: 11px; padding: 1px 6px; border-radius: {r}; \
          background: {bg}; color: {c}; font-weight: {fw};",
         r = radius::PILL,

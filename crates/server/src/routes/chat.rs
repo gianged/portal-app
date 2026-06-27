@@ -2,8 +2,7 @@
 //! markers. Live delivery is over the WebSocket (`chat_ws`); senders edit their
 //! own messages within the grace window, announcements via the announcements routes.
 
-use std::collections::HashMap;
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use axum::{
     Json, Router,
@@ -20,13 +19,15 @@ use domain::{
     model::{Channel, ChannelMembership, Message},
     ports::file_storage::FileStorage,
 };
-use shared::dto::chat::{
-    ChannelDto, ChannelSummaryDto, ChatAttachmentDto, EditMessageRequest, MessageDto,
-    SendMessageRequest,
-};
-use shared::validation::{
-    chat::{validate_message_body, validate_message_extras},
-    file::sanitize_filename,
+use shared::{
+    dto::chat::{
+        ChannelDto, ChannelSummaryDto, ChatAttachmentDto, EditMessageRequest, MessageDto,
+        SendMessageRequest,
+    },
+    validation::{
+        chat::{validate_message_body, validate_message_extras},
+        file::sanitize_filename,
+    },
 };
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};

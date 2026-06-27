@@ -1,5 +1,4 @@
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use leptos_router::components::A;
 use shared::dto::{
     chat::ChannelSummaryDto, group::GroupDto, request::RequestDto, ticket::TicketDto,
@@ -18,12 +17,12 @@ use crate::primitives::empty_state::EmptyState;
 use crate::primitives::icon::IconName;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
-use crate::theme::{class, color, space, typography};
+use crate::theme::{self, color, space, typography};
 
 #[component]
 pub fn LandingPage() -> impl IntoView {
-    let wrap = class("width: 100%; max-width: 420px;");
-    let title = class(format!(
+    let wrap = theme::class("width: 100%; max-width: 420px;");
+    let title = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; \
          color: {c}; margin: 0; letter-spacing: -0.02em;",
         ff = typography::FONT_SANS,
@@ -31,12 +30,12 @@ pub fn LandingPage() -> impl IntoView {
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let subtitle = class(format!(
+    let subtitle = theme::class(format!(
         "font-family: {ff}; font-size: 14.5px; color: {c}; margin: 0;",
         ff = typography::FONT_SANS,
         c = color::TEXT_MUTED,
     ));
-    let cta = class(format!(
+    let cta = theme::class(format!(
         "display: inline-flex; align-items: center; justify-content: center; \
          height: {h}; padding: 0 {p}; background: {bg}; color: {fg}; \
          border-radius: 8px; text-decoration: none; \
@@ -102,7 +101,7 @@ fn DashboardContent() -> impl IntoView {
         )
     });
 
-    let grid = class(format!(
+    let grid = theme::class(format!(
         "display: grid; grid-template-columns: minmax(0, 1fr) 360px; \
          gap: {g}; align-items: start;",
         g = space::D5,

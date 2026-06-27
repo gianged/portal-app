@@ -1,8 +1,7 @@
 //! Periodic orphan-upload sweep: deletes stored files no attachment or avatar
 //! references that are older than the grace window. Grace protects in-flight uploads.
 
-use std::sync::Arc;
-use std::time::Duration as StdDuration;
+use std::{sync::Arc, time::Duration as StdDuration};
 
 use time::{Duration, OffsetDateTime};
 

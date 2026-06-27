@@ -1,7 +1,6 @@
 //! The open channel's transcript: REST history merged with live [`ServerFrame`]s from the WebSocket, plus a typing indicator.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 
 use shared::dto::chat::{EditMessageRequest, MessageDto};
 use shared::dto::ids::{ChannelId, MessageId, UserId};
@@ -10,7 +9,7 @@ use shared::validation::chat::validate_message_body;
 
 use crate::api::ws::WsClient;
 use crate::features::chat::api;
-use crate::features::chat::ws::apply_server_frame;
+use crate::features::chat::ws;
 use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::cluster::Cluster;
@@ -21,8 +20,8 @@ use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::textarea::Textarea;
 use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
-use crate::theme::{class, color, space, typography};
-use crate::util::format::{relative_time, tone_for};
+use crate::theme::{self, color, space, typography};
+use crate::util::format;
 
 const PAGE: u32 = 50;
 
@@ -80,7 +79,7 @@ pub fn MessageThread(
         if let Some(frame) = ws.last_frame.get()
             && let Some(cid) = channel.get_untracked()
         {
-            apply_server_frame(&frame, cid, messages, typing);
+            ws::apply_server_frame(&frame, cid, messages, typing);
         }
     });
 
@@ -110,11 +109,11 @@ pub fn MessageThread(
         });
     });
 
-    let scroll = class(format!(
+    let scroll = theme::class(format!(
         "flex: 1; min-height: 0; overflow-y: auto; padding: {p} 0; display: flex; flex-direction: column;",
         p = space::D2,
     ));
-    let typing_cls = class(format!(
+    let typing_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; padding: {p};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_CAPTION,
@@ -158,7 +157,7 @@ fn message_row(
     do_delete: impl Fn(ChannelId, MessageId) + Copy + Send + Sync + 'static,
 ) -> impl IntoView {
     let author = m.sender.full_name.clone();
-    let when = relative_time(m.created_at);
+    let when = format::relative_time(m.created_at);
     let deleted = m.deleted_at.is_some();
     let edited = m.edited_at.is_some();
     let is_mine = me.is_some() && me == Some(m.sender.id);
@@ -167,7 +166,7 @@ fn message_row(
     let body = m.body.clone();
     let attachments = m.attachments.clone();
 
-    let row = class(format!(
+    let row = theme::class(format!(
         "display: flex; gap: {g}; padding: {py} {px}; border-radius: {r}; \
          &:hover {{ background: {bh}; }}",
         g = space::D3,
@@ -176,28 +175,28 @@ fn message_row(
         r = "6px",
         bh = color::BG_SUBTLE,
     ));
-    let bodywrap = class("min-width: 0; flex: 1;");
-    let meta = class("display: flex; align-items: center; gap: 8px; margin-bottom: 2px;");
-    let author_cls = class(format!(
+    let bodywrap = theme::class("min-width: 0; flex: 1;");
+    let meta = theme::class("display: flex; align-items: center; gap: 8px; margin-bottom: 2px;");
+    let author_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
-    let time_cls = class(format!(
+    let time_cls = theme::class(format!(
         "font-family: {ff}; font-size: 11.5px; color: {c};",
         ff = typography::FONT_SANS,
         c = color::TEXT_FAINT,
     ));
-    let text_cls = class(format!(
+    let text_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; line-height: 1.5; word-wrap: break-word; \
          white-space: pre-wrap;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         c = color::TEXT,
     ));
-    let deleted_cls = class(format!(
+    let deleted_cls = theme::class(format!(
         "font-family: {ff}; font-size: {fs}; color: {c}; font-style: italic;",
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
@@ -212,7 +211,7 @@ fn message_row(
     // Edit/Delete only on your own, still-present messages; the server stays authority and failures surface as toasts.
     let controls = match (is_mine && !deleted).then_some(channel).flatten() {
         Some(cid) => {
-            let actions_cls = class("margin-left: auto;");
+            let actions_cls = theme::class("margin-left: auto;");
             let edit_cb = Callback::new(move |_| begin_edit(mid, edit_seed.clone()));
             let delete_cb = Callback::new(move |_| do_delete(cid, mid));
             view! {
@@ -230,7 +229,7 @@ fn message_row(
 
     view! {
         <div class=row>
-            <Avatar name=author.clone() size=AvatarSize::Sm tone=tone_for(&author) />
+            <Avatar name=author.clone() size=AvatarSize::Sm tone=format::tone_for(&author) />
             <div class=bodywrap>
                 <div class=meta>
                     <span class=author_cls>{author}</span>
@@ -254,12 +253,12 @@ fn message_row(
 
 /// Renders attachments: images inline, everything else as a paperclip file row; URLs are presigned per viewer.
 fn attachment_views(attachments: Vec<shared::dto::chat::ChatAttachmentDto>) -> AnyView {
-    let img_cls = class(format!(
+    let img_cls = theme::class(format!(
         "max-width: 320px; max-height: 240px; border-radius: 6px; border: 1px solid {b}; \
          display: block;",
         b = color::BORDER,
     ));
-    let file_cls = class(format!(
+    let file_cls = theme::class(format!(
         "display: inline-flex; align-items: center; gap: 6px; font-family: {ff}; \
          font-size: {fs}; color: {c}; text-decoration: none; &:hover {{ color: {a}; }}",
         ff = typography::FONT_SANS,

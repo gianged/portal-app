@@ -213,7 +213,6 @@ impl Ticket {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::{TicketId, UserId};
     use time::Duration;
     use uuid::Uuid;
 

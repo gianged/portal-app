@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use domain::{
     ids::{AuditLogId, UserId},
-    model::{AuditAction, AuditLog},
+    model::{AuditAction, AuditLog, CommentEntity},
     repository::AuditRepository,
 };
 use time::OffsetDateTime;
@@ -341,15 +341,15 @@ impl AuditProjector {
 
 /// [`row`] with the schema/table derived from the comment's parent entity.
 fn comment_row(
-    entity: domain::model::CommentEntity,
+    entity: CommentEntity,
     actor: Option<UserId>,
     action: AuditAction,
     entity_id: Uuid,
     occurred_at: OffsetDateTime,
 ) -> AuditLog {
     let (schema, table) = match entity {
-        domain::model::CommentEntity::Request { .. } => ("project", "request_comments"),
-        domain::model::CommentEntity::Ticket { .. } => ("ticket", "ticket_comments"),
+        CommentEntity::Request { .. } => ("project", "request_comments"),
+        CommentEntity::Ticket { .. } => ("ticket", "ticket_comments"),
     };
     row(actor, action, schema, table, entity_id, occurred_at)
 }

@@ -4,6 +4,7 @@ pub mod chat;
 pub mod comment;
 pub mod common;
 pub mod group;
+pub mod health;
 pub mod ids;
 pub mod notification;
 pub mod project;

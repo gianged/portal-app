@@ -82,9 +82,9 @@ pub enum ServerFrame {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::dto::ids::ChannelId;
     use uuid::Uuid;
+
+    use super::*;
 
     #[test]
     fn client_frame_tagged_by_type() {
