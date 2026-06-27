@@ -1,26 +1,42 @@
 # Portal
 
-Internal company portal for a single organization (100–1000 users). Project tracking, work requests, IT ticketing, real-time chat, and company-wide announcements — all behind relationship-based access control. Full-stack Rust: Axum backend, Leptos WebAssembly frontend.
+Internal company portal for a single organization (100–1000 users): project tracking, work requests, IT ticketing, real-time chat, and company-wide announcements — all behind relationship-based access control.
 
-## Features
+Full-stack Rust — an Axum HTTP/WebSocket backend, a Leptos WebAssembly frontend, and ReBAC authorization via OpenFGA, backed by PostgreSQL, ScyllaDB, and Redis. This README is written for operators running and deploying the stack.
 
-- Hierarchical org model: groups with one leader, multiple sub-leaders, and members. HR owns the user lifecycle.
-- Project ownership at the group level; cross-group collaboration via group invites rather than per-user grants.
-- Request workflows scoped to projects, with assignment, review, and approval states.
-- IT ticket system with triage, priority, resolution, and a bounded reopen window.
-- Real-time chat over WebSocket: group channels, an HR-broadcast general channel, and direct messages.
-- Announcements with a 15-minute edit grace period and broadcast notifications.
-- ReBAC authorization via OpenFGA — permissions derived from the org graph, not stored as flat ACLs.
-- File uploads stored on the host machine, configurable via `STORAGE_ROOT`.
+## Contents
+
+- [What it does](#what-it-does)
+- [Tech stack](#tech-stack)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Quick start (local)](#quick-start-local)
+- [Configuration](#configuration)
+- [Deployment](#deployment)
+- [Ports](#ports)
+- [Operations](#operations)
+- [Database schema](#database-schema)
+- [Testing](#testing)
+- [License](#license)
+
+## What it does
+
+- **Org model** — groups with one leader, multiple sub-leaders, and members; HR owns the user lifecycle.
+- **Projects** — owned at the group level, with cross-group collaboration via group invites.
+- **Requests** — work-request workflows scoped to projects, with assignment, review, and approval states.
+- **Tickets** — IT ticketing with triage, priority, resolution, and a bounded reopen window.
+- **Chat** — real-time over WebSocket: group channels, an HR-broadcast general channel, and direct messages.
+- **Announcements** — company-wide, with a 15-minute edit grace period and broadcast notifications.
+- **Authorization** — ReBAC via OpenFGA; permissions are derived from the org graph, not stored as flat ACLs.
+- **File uploads** — stored on the host filesystem under `STORAGE_ROOT`, served via signed URLs.
 
 ## Tech stack
 
 | Layer | Choice |
 | --- | --- |
-| Language | Rust (edition 2024) |
+| Language | Rust (edition 2024, MSRV 1.94) |
 | HTTP / WebSocket | Axum + Tokio |
-| Frontend | Leptos (CSR) compiled to WebAssembly |
-| Frontend build | Trunk |
+| Frontend | Leptos (CSR) compiled to WebAssembly, built with Trunk |
 | Primary database | PostgreSQL via SQLx |
 | Chat history | ScyllaDB (Cassandra-compatible) |
 | Sessions, pub-sub, presence, rate limit | Redis |
@@ -30,7 +46,7 @@ Internal company portal for a single organization (100–1000 users). Project tr
 | Observability | tracing + tracing-subscriber |
 | TLS | rustls |
 
-## Project layout
+## Architecture
 
 ```
 portal-app/
@@ -42,124 +58,183 @@ portal-app/
 │   ├── workers/         Apalis background-job binary.
 │   ├── shared/          DTOs + validation shared by backend and frontend (native + WASM).
 │   └── frontend/        Leptos SPA, built with Trunk to WebAssembly.
-├── infra/               Docker Compose stack, schema files (infra/postgres/10-init.sql), OpenFGA model.
+├── infra/               Docker Compose stack, schema files, OpenFGA model, nginx, scripts.
 ├── storage/uploads/     Local file uploads (gitignored).
-├── scripts/             Dev helpers.
 └── e2e/                 Full-stack end-to-end browser tests.
 ```
 
-The dependency graph points inward toward `domain` on the backend; `shared` is the bridge across the WASM boundary. The compiler enforces architectural layering through crate dependency declarations.
+Two runtime processes — **server** (HTTP/WebSocket) and **workers** (background jobs) — share the application and infrastructure crates and connect to the same backing stores.
 
 ## Prerequisites
 
-- Rust 1.94 or newer (toolchain pinned in `rust-toolchain.toml` — `rustup` will install it automatically)
+- Rust 1.94+ (pinned in `rust-toolchain.toml` — `rustup` installs it automatically)
 - Docker + Docker Compose
 - [cargo-make](https://github.com/sagiegurari/cargo-make): `cargo install cargo-make --locked`
-- [Trunk](https://trunkrs.dev): `cargo install trunk`
-- [sqlx-cli](https://crates.io/crates/sqlx-cli): `cargo install sqlx-cli --no-default-features --features rustls,postgres`
+- [Trunk](https://trunkrs.dev): `cargo install trunk` *(only for host-run frontend)*
+- [sqlx-cli](https://crates.io/crates/sqlx-cli): `cargo install sqlx-cli --no-default-features --features rustls,postgres` *(only for schema changes)*
 
-## Getting started
+## Quick start (local)
+
+Run the dependency stack in containers, the app on the host (best for development — breakpoints, hot reload):
 
 ```bash
 # 1. Configure environment
 cp .env.example .env
 
-# 2. Bring up the dependency stack and apply schemas — idempotent, safe to re-run
-#    (Postgres, Redis, ScyllaDB, OpenFGA). Wraps infra/scripts/init.sh.
+# 2. Bring up the dependency stack and apply schemas (idempotent, safe to re-run)
 cargo make bootstrap
 
-# 3. Run the backend, workers, and frontend dev server together
+# 3. Run server + workers + frontend dev server together
 cargo make run-all
 ```
 
-`cargo make run-all` runs the server, workers, and the Trunk dev server in parallel; use `cargo make run-server` / `run-workers` / `run-frontend` to run them individually, and `cargo make up` / `cargo make down` to start and stop just the dependency stack (no re-bootstrap). The Trunk dev server proxies HTTP and WebSocket calls to the backend; see `crates/frontend/Trunk.toml`.
+The frontend dev server (Trunk) serves on **8081** and proxies API/WebSocket calls to the backend (see `crates/frontend/Trunk.toml`). Run pieces individually with `cargo make run-server` / `run-workers` / `run-frontend`, and start/stop just the dependency stack with `cargo make infra-up` / `cargo make infra-down` (no re-bootstrap).
 
-## Development
-
-```bash
-cargo build --workspace                       # build all native crates
-cargo clippy --workspace --all-targets        # lint
-cargo fmt --all                               # format
-cd crates/frontend && trunk build             # build frontend WASM
-```
-
-Background workers run as a separate binary:
+Optionally load demo data (~100 employees + org + sample activity, re-runnable):
 
 ```bash
-cargo run --bin workers
+cargo make seed
 ```
+
+## Configuration
+
+All runtime config is via environment variables; `.env.example` is the full, commented list. Copy it to `.env` and edit. The defaults are wired for local dev — the items below **must change for production**.
+
+### Secrets (regenerate for production)
+
+Generate each with `openssl rand -hex 32`. These are placeholders in `.env.example` and must not ship as-is.
+
+| Variable | Purpose |
+| --- | --- |
+| `JWT_SECRET` | Signs session tokens (min 32 bytes). |
+| `STORAGE_SIGNING_SECRET` | Signs presigned file-download URLs (distinct from `JWT_SECRET`). |
+| `REDIS_PASSWORD` | Redis auth — also embedded in `REDIS_URL`. Never expose Redis unauthenticated. |
+| `OPENFGA_BEARER_TOKEN` | OpenFGA API auth — required in production (see below). |
+| `POSTGRES_PASSWORD` | Database password (containerized Postgres). |
+
+### Core connection settings
+
+| Variable | Example | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | `postgres://portal:portal@localhost:5432/portal` | PostgreSQL connection string. |
+| `REDIS_URL` | `redis://:<pw>@localhost:6379` | Redis connection (sessions, pub-sub, presence, rate limit). |
+| `SCYLLA_HOSTS`, `SCYLLA_KEYSPACE` | `localhost:9042`, `portal_chat` | Chat-history backend. |
+| `OPENFGA_API_URL`, `OPENFGA_STORE_ID` | `http://localhost:8088` | Authorization service. `STORE_ID` is populated by bootstrap. |
+| `SERVER_HOST`, `SERVER_PORT` | `0.0.0.0`, `8080` | Backend bind address. |
+
+### Storage, auth, and behavior
+
+| Variable | Example | Purpose |
+| --- | --- | --- |
+| `STORAGE_ROOT` | `./storage/uploads` | Directory where uploads are written — use an absolute path on a persistent volume in production. |
+| `STORAGE_PUBLIC_BASE` | `http://localhost:8080/api/v1` | Public base for signed URLs — **must include `/api/v1`**. |
+| `SESSION_TTL_HOURS` | `24` | Session lifetime. |
+| `HEALTH_PROBE_INTERVAL_SECS` | `5` | How often backends are probed (drives circuit breakers and `/readyz`). |
+| `RUST_LOG` | `info,portal=debug` | Log filter. |
+
+### Production-only authorization hardening
+
+The dev defaults let OpenFGA run without auth. In production:
+
+- Set `OPENFGA_ALLOW_NO_AUTH=false` and provide `OPENFGA_BEARER_TOKEN`.
+- Set `OPENFGA_DATASTORE_SSLMODE=require` (TLS to its Postgres datastore).
+
+### Email (workers, optional)
+
+In-app notifications are always on; email is opt-in. Set `EMAIL_ENABLED=true` and the `SMTP_*` settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS`). `PORTAL_BASE_URL` is the public frontend origin used to build links in emails.
+
+## Deployment
+
+Two Compose files share the same data volumes, so you can switch between them without losing data:
+
+- **`infra/docker-compose.infra.yml`** (`cargo make infra-up` / `infra-down`) — dependency services only (Postgres, ScyllaDB, Redis, OpenFGA). Used by the host-run quick-start flow above. Publishes every backing store to the host.
+- **`infra/docker-compose.yml`** (`cargo make up` / `down`) — the full containerized stack: the four dependencies **plus** `server`, `workers`, and `frontend`. OpenFGA is not published to the host here. The server container is health-checked on `/healthz`.
+
+```bash
+cargo make up      # full containerized stack (deps + server + workers + frontend)
+cargo make down    # stop it, keeping data volumes
+```
+
+### Images
+
+- **`Dockerfile`** (repo root) — builds the Rust binaries. Multi-target: `runtime` (debian-slim, runs one binary chosen via `--build-arg BINARY_NAME=server|workers`, exposes 8080) and `dev` (rust + cargo-watch for live rebuild). The same image serves both `server` and `workers`.
+- **`Dockerfile.frontend`** — builds the WASM frontend. `runtime` target runs `trunk build --release` and serves `dist/` from nginx on port 80; `dev` target runs `trunk serve` on 8081.
+
+### nginx (frontend container)
+
+`infra/nginx/nginx.conf` serves the SPA on port 80 and:
+
+- proxies `/api/` → `server:8080` (REST, auth, files),
+- proxies `/ws/` → `server:8080` with WebSocket upgrade and 24h read timeout,
+- falls back unmatched routes to `index.html` (client-side routing),
+- caches fingerprinted static assets for 30 days,
+- sets `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a per-request nonce CSP.
+
+## Ports
+
+| Service | Container port | Host port (env override) | Notes |
+| --- | --- | --- | --- |
+| Backend server | 8080 | `8080` (`SERVER_HOST_PORT`) | REST + WebSocket + files + health |
+| Frontend (nginx) | 80 | `80` (`FRONTEND_HOST_PORT`) | Full-stack compose only |
+| Frontend dev (Trunk) | 8081 | `8081` (`FRONTEND_DEV_PORT`) | Host-run quick start only |
+| PostgreSQL | 5432 | `5432` (`POSTGRES_HOST_PORT`) | |
+| Redis | 6379 | `6379` (`REDIS_HOST_PORT`) | |
+| ScyllaDB | 9042 | `9042` (`SCYLLA_HOST_PORT`) | CQL |
+| OpenFGA HTTP | 8080 | `8088` (`OPENFGA_HTTP_HOST_PORT`) | Host port avoids clash with server 8080 |
+| OpenFGA gRPC | 8081 | `8089` (`OPENFGA_GRPC_HOST_PORT`) | |
+
+## Operations
+
+### Health endpoints
+
+| Endpoint | Meaning | Behavior |
+| --- | --- | --- |
+| `GET /healthz` | Liveness | Always `200 "ok"`, dependency-free. Use for orchestrator liveness probes. |
+| `GET /readyz` | Readiness | Per-backend JSON status; returns `503` if any backend is down, `200` otherwise. Use for load-balancer drain. |
+
+Readiness is driven by per-backend circuit breakers, probed every `HEALTH_PROBE_INTERVAL_SECS`.
+
+### Bootstrap
+
+`cargo make bootstrap` (wraps `infra/scripts/init.sh`) is idempotent and safe to re-run. It brings the stores up, applies the Postgres schema (on an empty volume), migrates the OpenFGA datastore, applies the Scylla schema, and starts OpenFGA. A default admin user is created by the schema.
+
+### Backups
+
+On-demand, not automated by the stack:
+
+```bash
+cargo make backup
+```
+
+Dumps Postgres (app + OpenFGA databases) and snapshots the Scylla keyspace into `BACKUP_DIR` (default `./backups`), pruning archives older than `BACKUP_KEEP_DAYS` (default 7). Schedule via cron/systemd timer in production.
 
 ### Database schema
 
-`infra/postgres/10-init.sql` is the single source of truth for the relational schema —
-database-first, not ORM-managed. Postgres applies it via the docker entrypoint, but only
-on an **empty** data volume, so schema changes are made in that file and then the dev
-database is reinitialized:
+`infra/postgres/10-init.sql` is the single source of truth for the relational schema — database-first, not ORM-managed. Postgres applies it via the docker entrypoint only on an **empty** volume, so schema changes mean editing that file and reinitializing the dev database:
 
 ```bash
-# 1. Edit infra/postgres/10-init.sql
-# 2. Wipe the dev volumes and re-apply the schema (also re-bootstraps OpenFGA + Scylla)
-docker compose --env-file .env -f infra/docker-compose.infra.yml down -v
-cargo make bootstrap
-# 3. Regenerate the committed offline query cache against the fresh schema
-cargo make sqlx-prepare
+docker compose --env-file .env -f infra/docker-compose.infra.yml down -v   # wipe volumes
+cargo make bootstrap                                                        # re-apply schema
+cargo make sqlx-prepare                                                     # regenerate .sqlx cache
 ```
 
-The infrastructure crate uses sqlx compile-time query macros; CI builds with `SQLX_OFFLINE`
-against the committed `.sqlx/` cache, so commit the `.sqlx/` diff together with the schema
-change.
+CI builds with `SQLX_OFFLINE` against the committed `.sqlx/` cache — commit the `.sqlx/` diff together with the schema change.
 
 ## Testing
 
 | Tier | Location | Tool |
 | --- | --- | --- |
 | Unit | `crates/*/src/` `#[cfg(test)]` | `cargo test` |
-| Integration | `crates/server/tests/`, `crates/application/tests/` | `testcontainers` (real Postgres / Redis / Cassandra / OpenFGA) |
+| Integration | `crates/server/tests/`, `crates/application/tests/` | `testcontainers` (real Postgres / Redis / Scylla / OpenFGA) |
 | Frontend component | `crates/frontend/tests/` | `wasm-bindgen-test` |
 | End-to-end browser | `e2e/` | browser automation against a running stack |
 
 ```bash
-cargo test --workspace
+cargo make test            # whole workspace
+cargo make clippy          # lint (deny warnings)
 ```
 
-## Production build
-
-```bash
-cargo build --release --bin server --bin workers
-cd crates/frontend && trunk build --release
-```
-
-Artifacts:
-
-- `target/release/server` — HTTP / WebSocket binary
-- `target/release/workers` — background job binary
-- `crates/frontend/dist/` — static assets (HTML, JS glue, WASM, images)
-
-## Deployment
-
-CI/CD runs on GitHub Actions. Every pull request and push to `master` is gated on
-formatting, Clippy (native crates plus the WASM frontend), tests, and an MSRV (1.94)
-check — see `.github/workflows/ci.yml`. Each PR surfaces these as status checks; merge
-once they pass. There is no automated versioning or release step.
-
-Container images build from the repo-root `Dockerfile` (server + workers) and
-`Dockerfile.frontend` (static assets served by nginx — see `infra/nginx/`). Hosting,
-secrets management, and rollout strategy are still to be decided.
-
-## Configuration
-
-All runtime configuration is via environment variables. See `.env.example` for the full list. Highlights:
-
-| Variable | Purpose |
-| --- | --- |
-| `DATABASE_URL` | PostgreSQL connection string |
-| `REDIS_URL` | Redis connection string |
-| `CASSANDRA_HOSTS`, `CASSANDRA_KEYSPACE` | Chat history backend |
-| `OPENFGA_API_URL`, `OPENFGA_STORE_ID` | Authorization service |
-| `STORAGE_ROOT` | Directory on host where uploaded files are written |
-| `SERVER_HOST`, `SERVER_PORT` | Backend bind address |
-| `JWT_SECRET`, `SESSION_TTL_HOURS` | Auth |
-| `RUST_LOG` | Log filter (e.g. `info,portal=debug`) |
+CI runs on GitHub Actions; every PR and push to `master` is gated on formatting, Clippy (native + WASM frontend), tests, and an MSRV (1.94) check.
 
 ## License
 

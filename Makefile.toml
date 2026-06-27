@@ -1,23 +1,11 @@
-# cargo-make tasks for portal-app.
+# cargo-make tasks for portal-app. `cargo make <task>`; `cargo make --list-all-steps` to list.
+# Surfaced in RustRover via .idea/runConfigurations/.
 #
-# Install once: `cargo install cargo-make --locked`
-# Run a task:   `cargo make <task>`
-# List tasks:   `cargo make --list-all-steps`
-#
-# Tasks are surfaced in RustRover via .idea/runConfigurations/.
-#
-# Typical flow:
-#
-#   cargo make bootstrap       # bring up infra + bootstrap (idempotent — safe to re-run)
-#   cargo make run-all
-#
-# Day-to-day: `cargo make up` / `cargo make down` (both honor .env via --env-file).
-# If something goes wrong, wipe volumes and re-init:
-#   docker compose --env-file .env -f infra/docker-compose.infra.yml down -v
-#   cargo make bootstrap
+# First run:  cargo make bootstrap   (infra + schemas, idempotent)
+# Dev:        cargo make run-all      (server + workers + frontend on the host)
+# Prod-like:  cargo make up           (full containerized stack)
 
-# sqlx-prepare needs DATABASE_URL to reach the dev DB; same values dotenvy loads
-# at runtime, and cargo-make never overrides env vars that are already set.
+# sqlx-prepare and the services read .env; cargo-make never overrides already-set vars.
 env_files = [".env"]
 
 [config]
@@ -25,22 +13,13 @@ default_to_workspace = false
 skip_core_tasks = true
 
 # ---------------------------------------------------------------- Bootstrap
-# `cargo make bootstrap` runs infra/scripts/init.sh — one idempotent entry point:
-#   - First run: brings the stores up, runs the OpenFGA datastore migration,
-#     applies the Postgres schema (10-init.sql, via initdb) and the Cassandra
-#     schema, and starts OpenFGA.
-#   - Re-runs: no-op (Postgres init fires only on an empty volume; OpenFGA
-#     migrate + Scylla schema are IF NOT EXISTS; the store step skips when the
-#     id already exists).
-# `cargo make backup` dumps Postgres + ScyllaDB on demand to ./backups (host script).
 
 [tasks.bootstrap]
 description = "Bootstrap the dependency stack (idempotent): stores, OpenFGA migrate + store, schemas."
 command = "sh"
 args = ["infra/scripts/init.sh"]
 
-# Windows has no `sh` on PATH; cargo-make can't resolve it. Point straight at
-# Git Bash's sh (ships with Git for Windows) so this works without PATH changes.
+# Windows has no `sh` on PATH; point straight at Git Bash's sh.
 [tasks.bootstrap.windows]
 command = "C:\\Program Files\\Git\\usr\\bin\\sh.exe"
 args = ["infra/scripts/init.sh"]
@@ -54,10 +33,7 @@ args = ["infra/scripts/backup.sh"]
 command = "C:\\Program Files\\Git\\usr\\bin\\sh.exe"
 args = ["infra/scripts/backup.sh"]
 
-# `cargo make seed` loads OPTIONAL demo data (dev/testing): applies
-# infra/seed/demo-seed.sql, then materialises the matching OpenFGA tuples via the
-# seed_authz binary. The schema's default admin (10-init.sql) is always present
-# without this; the seed only adds the ~100-employee simulation. Re-runnable.
+# Optional demo data (re-runnable); the schema's default admin exists without this.
 [tasks.seed]
 description = "Load optional demo data: ~100 employees + org + sample activity, then sync OpenFGA tuples."
 command = "sh"
@@ -68,40 +44,46 @@ command = "C:\\Program Files\\Git\\usr\\bin\\sh.exe"
 args = ["infra/seed/seed.sh"]
 
 # ---------------------------------------------------------------- Schema / sqlx
-# infra/postgres/10-init.sql is the single source of truth for the relational
-# schema. Change it in place, then reinitialize the dev DB (Postgres only runs
-# the init script on an empty volume): `cargo make down -v`-equivalent then
-# bootstrap:
+# 10-init.sql is the source of truth. To change it, reinit the dev DB (Postgres inits
+# only on an empty volume):
 #   docker compose --env-file .env -f infra/docker-compose.infra.yml down -v
-#   cargo make bootstrap
-#   cargo make sqlx-prepare      # regenerate .sqlx, commit it with the schema
+#   cargo make bootstrap && cargo make sqlx-prepare   # regen .sqlx, commit with the schema
 
 [tasks.sqlx-prepare]
 description = "Regenerate the committed .sqlx offline query cache (needs an initialized dev DB)."
 command = "cargo"
+# Doubled --workspace is required: the second is forwarded to the cargo check sqlx shells out to.
 args = ["sqlx", "prepare", "--workspace", "--", "--workspace", "--exclude", "frontend"]
 
 # ------------------------------------------------------------- Stack lifecycle
-# Day-to-day up/down of the infra stack. Both pass --env-file so Compose honors
-# the repo-root .env (POSTGRES_HOST_PORT, etc.). `cargo make bootstrap` is only
-# needed on first run or after `down -v`.
+# infra-up/down: dependency stack only (Postgres, Redis, Scylla, OpenFGA) for the host-run flow.
+# up/down:       full containerized stack incl. server, workers, frontend (prod-like).
+# Both pass --env-file so Compose honors the repo-root .env.
 
 [tasks.up]
-description = "Bring the dependency stack up in the background (honors repo-root .env)."
+description = "Bring the full containerized stack up (deps + server + workers + frontend)."
+command = "docker"
+args = ["compose", "--env-file", ".env", "-f", "infra/docker-compose.yml", "up", "-d", "--wait"]
+
+[tasks.down]
+description = "Stop the full containerized stack, keeping data volumes."
+command = "docker"
+args = ["compose", "--env-file", ".env", "-f", "infra/docker-compose.yml", "down"]
+
+[tasks.infra-up]
+description = "Bring the dependency stack up in the background (deps only)."
 command = "docker"
 args = ["compose", "--env-file", ".env", "-f", "infra/docker-compose.infra.yml", "up", "-d", "--wait"]
 
-[tasks.down]
+[tasks.infra-down]
 description = "Stop the dependency stack, keeping data volumes."
 command = "docker"
 args = ["compose", "--env-file", ".env", "-f", "infra/docker-compose.infra.yml", "down"]
 
 # ---------------------------------------------------------------- Native services
-# Run the app on the host (not in containers) so breakpoints / hot-reload work
-# and RustRover's debugger can attach.
+# Run on the host so breakpoints / hot-reload work. `-p` scopes the package: a bare
+# `--bin` fails under run-all's parallelism ("no bin target in default-run packages").
 
-# `-p` scopes the package: a bare `--bin` from this virtual workspace root fails
-# "no bin target named ... in default-run packages" under run-all's parallelism.
 [tasks.run-server]
 description = "Run the backend server natively."
 command = "cargo"
@@ -114,10 +96,9 @@ command = "cargo"
 args = ["run", "-p", "workers", "--bin", "workers"]
 env = { RUST_LOG = "info,portal=debug" }
 
+# `--config` not cargo-make `cwd`: cwd does a process-wide chdir that races run-all's siblings.
 [tasks.run-frontend]
 description = "Run the Leptos dev server (trunk serve, port 8081)."
-# `--config` instead of cargo-make `cwd`: under parallel run-all a task `cwd` does
-# a process-wide chdir that races into the sibling tasks' repo-relative paths.
 command = "trunk"
 args = ["serve", "--config", "crates/frontend/Trunk.toml"]
 
