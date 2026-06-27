@@ -3,7 +3,8 @@ name = "frontend"
 edition.workspace = true
 rust-version.workspace = true
 version.workspace = true
-license.workspace = true
+# wasm-pack's manifest parser can't resolve `license.workspace`; keep it literal.
+license = "MIT"
 
 [[bin]]
 name = "frontend"
