@@ -105,10 +105,9 @@ impl ChatService {
         let direct = DirectChannel::new(id, actor, other_user, now);
         let channel = Channel::Direct(direct);
         self.chats.save_channel(&channel).await?;
-        // Subscribe both participants so the channel shows up in their lists.
-        // Direct-channel read access is enforced by identity (see
-        // `Permissions::require_can_view_channel`), not OpenFGA, so there is no
-        // participant tuple to write — and thus no Director backdoor.
+        // Subscribe both participants so the channel shows up in their lists. Read
+        // access is enforced by identity, not OpenFGA, so there is no participant
+        // tuple to write and thus no Director backdoor.
         self.chats
             .subscribe_member(actor, id, ChannelKind::Direct)
             .await?;
@@ -418,7 +417,7 @@ impl ChatService {
         Ok(message)
     }
 
-    /// Authoritative view check for a channel — identity for direct channels,
+    /// Authoritative view check for a channel: identity for direct channels,
     /// `OpenFGA` for group channels, active-status for the general channel. The
     /// WebSocket layer calls this to validate and re-validate subscriptions
     /// instead of caching memberships at connect time.
@@ -459,8 +458,8 @@ impl ChatService {
 }
 
 /// Recover the creation timestamp embedded in a `UUIDv7` ID. Used for the
-/// 15-minute message-delete grace window since `Message` itself doesn't store
-/// `created_at` — the time is implicit in the id.
+/// message-delete grace window since `Message` doesn't store `created_at`; the
+/// time is implicit in the id.
 fn uuid_v7_created_at(id: Uuid) -> OffsetDateTime {
     let ts = id
         .get_timestamp()

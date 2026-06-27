@@ -1,10 +1,6 @@
-//! Chat REST surface: channel list, message history, posting, editing, deletion,
-//! and read markers. Live delivery happens over the WebSocket (`chat_ws`); these
-//! endpoints cover history and one-shot actions.
-//!
-//! Regular messages can be edited by their sender within the post grace window
-//! (see `ChatService::edit_message`); announcements are edited via the
-//! announcements routes.
+//! Chat REST surface: channel list, history, posting, editing, deletion, read
+//! markers. Live delivery is over the WebSocket (`chat_ws`); senders edit their
+//! own messages within the grace window, announcements via the announcements routes.
 
 use std::collections::HashMap;
 use std::time::Duration;

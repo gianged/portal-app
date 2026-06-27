@@ -1,10 +1,7 @@
-//! Thin entry point. The composition root and serving loop live in the `server`
-//! library ([`server::run`]).
+//! Thin entry point; the composition root and serving loop live in [`server::run`].
 //!
-//! Builds the runtime on a thread with a generous stack: composing the full
-//! router (many nested route groups + middleware) produces deep stack frames in
-//! debug builds that overflow Windows' default 1 MiB main-thread stack; an 8 MiB
-//! stack gives the composition root ample headroom.
+//! Runs on a thread with an 8 MiB stack: composing the full router produces deep
+//! stack frames that overflow Windows' default 1 MiB main-thread stack in debug.
 fn main() -> anyhow::Result<()> {
     std::thread::Builder::new()
         .name("server-main".to_owned())

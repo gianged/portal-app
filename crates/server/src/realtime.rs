@@ -1,10 +1,8 @@
 //! Real-time plumbing for the chat WebSocket: a thin handle over Redis pub/sub.
 //!
-//! Two planes share one Redis. (1) The durable `application::DomainEvent`s the
-//! services emit to `portal.*` topics (chat, announcements) — the WS task
-//! subscribes and projects them to `ServerFrame`s. (2) Ephemeral `WsSignal`s
-//! (typing / presence / read-markers) the WS layer publishes itself to a
-//! dedicated `portal.ws` topic; these are best-effort and never persisted.
+//! Two planes share one Redis: durable `application::DomainEvent`s on `portal.*`
+//! topics that the WS task projects to `ServerFrame`s, and ephemeral `WsSignal`s
+//! (typing/presence/read-markers) on `portal.ws` that are best-effort, never persisted.
 
 use std::{pin::Pin, sync::Arc};
 

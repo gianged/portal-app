@@ -1,6 +1,4 @@
-//! Projection of incoming [`ServerFrame`]s onto a channel's message list +
-//! typing state. The single [`WsClient`](crate::api::ws::WsClient) delivers every
-//! frame; the thread filters to its channel and folds the relevant ones in.
+//! Projects incoming [`ServerFrame`]s onto a channel's message list and typing state; the thread filters to its channel and folds the relevant frames in.
 
 use std::time::Duration;
 
@@ -10,8 +8,7 @@ use shared::dto::chat::MessageDto;
 use shared::dto::ids::ChannelId;
 use shared::dto::ws::ServerFrame;
 
-/// Insert or replace a message by id (dedupes the WS echo against an optimistic
-/// REST insert).
+/// Insert or replace a message by id (dedupes the WS echo against an optimistic REST insert).
 pub fn push_message(messages: RwSignal<Vec<MessageDto>>, msg: MessageDto) {
     messages.update(|v| {
         if let Some(existing) = v.iter_mut().find(|m| m.id == msg.id) {
@@ -22,8 +19,7 @@ pub fn push_message(messages: RwSignal<Vec<MessageDto>>, msg: MessageDto) {
     });
 }
 
-/// Fold one server frame into the open channel's view. Frames for other channels
-/// are ignored.
+/// Fold one server frame into the open channel's view; frames for other channels are ignored.
 pub fn apply_server_frame(
     frame: &ServerFrame,
     channel: ChannelId,

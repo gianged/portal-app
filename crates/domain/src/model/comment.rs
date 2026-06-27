@@ -16,9 +16,8 @@ pub enum CommentEntity {
     Ticket { ticket_id: TicketId },
 }
 
-/// A discussion comment on a request or ticket. Author-editable (and
-/// deletable) within the shared [`EDIT_GRACE`] window — the announcement
-/// precedent — and immutable after it, so the timeline stays audit-worthy.
+/// A discussion comment on a request or ticket. Author-editable and deletable within
+/// the shared [`EDIT_GRACE`] window, immutable after, so the timeline stays audit-worthy.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Comment {
     pub id: CommentId,

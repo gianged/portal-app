@@ -1,7 +1,7 @@
-//! Email side-channel for notifications: resolves recipients to addresses,
-//! renders plain-text bodies, and enqueues onto the durable `emails` queue the
-//! worker's SMTP consumer drains. Strictly best-effort — a failure here must
-//! never fail (and thereby retry) the non-idempotent in-app fanout.
+//! Email side-channel for notifications: resolves recipients to addresses, renders
+//! plain-text bodies, and enqueues onto the durable `emails` queue the worker's
+//! SMTP consumer drains. Best-effort; a failure here must never fail (and thereby
+//! retry) the non-idempotent in-app fanout.
 
 use std::sync::Arc;
 
@@ -28,9 +28,8 @@ impl EmailNotifier {
         }
     }
 
-    /// Launch scope: assignments, mentions, and the ticket lifecycle get
-    /// email; everything else stays in-app only. Exhaustive on purpose — a new
-    /// kind forces an explicit decision here.
+    /// Which kinds get email: assignments, mentions, and the ticket lifecycle;
+    /// everything else stays in-app. Exhaustive so a new kind forces a decision.
     const fn wants_email(kind: NotificationKind) -> bool {
         match kind {
             NotificationKind::Mention
@@ -49,8 +48,8 @@ impl EmailNotifier {
         }
     }
 
-    /// Plain-text subject + body with a deep link back to the portal. `None`
-    /// for kinds outside the launch scope.
+    /// Plain-text subject + body with a deep link back to the portal. `None` for
+    /// kinds that are not emailed.
     fn render(&self, payload: &NotificationPayload) -> Option<(String, String)> {
         let (subject, line, path) = match payload {
             NotificationPayload::Mention { .. } => (
@@ -92,7 +91,7 @@ impl EmailNotifier {
     /// Enqueues one email per active recipient. Every failure (lookup, render,
     /// enqueue) is logged and swallowed.
     pub async fn notify(&self, recipients: &[UserId], payload: &NotificationPayload) {
-        // TODO(roadmap): per-user email preference check goes here.
+        // TODO: per-user email preference check goes here.
         if !Self::wants_email(payload.kind()) {
             return;
         }

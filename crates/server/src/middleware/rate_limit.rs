@@ -4,7 +4,7 @@
 //!   credential-stuffing. It degrades to a shared `login:unknown` bucket when no
 //!   [`ConnectInfo`] is attached (e.g. under `oneshot` tests).
 //! - [`per_user`] guards the protected API by caller id, read from the
-//!   [`AuthUser`] the auth layer inserts — so it must sit *inside* the auth layer.
+//!   [`AuthUser`] the auth layer inserts, so it must sit *inside* the auth layer.
 //! - [`within_chat_rate`] guards the WebSocket `SendMessage` path by caller id.
 //!   Unlike the other two it is NOT middleware: WS frames are not HTTP requests,
 //!   so the per-connection task calls it per frame instead.

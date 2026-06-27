@@ -5,12 +5,10 @@ use crate::features::home::components::{SidebarNav, Topbar};
 use crate::primitives::sidebar::SidebarLayout;
 use crate::theme::{class, space};
 
-/// A signed-in page: the auth guard wrapping the [`AppShell`]. Every routed page
-/// renders its body through this so the guard + frame aren't repeated per page.
+/// Signed-in page: the auth guard wrapping [`AppShell`], so the guard and frame aren't repeated per page.
 #[component]
 pub fn AuthedPage(#[prop(into)] title: String, children: ChildrenFn) -> impl IntoView {
-    // `RequireAuth` re-renders its children, so stash the page body in a
-    // `StoredValue` to call it on each render without moving it out.
+    // RequireAuth re-renders its children, so stash the page body in a StoredValue to call it each render.
     let children = StoredValue::new(children);
     view! {
         <RequireAuth>
@@ -21,8 +19,7 @@ pub fn AuthedPage(#[prop(into)] title: String, children: ChildrenFn) -> impl Int
     }
 }
 
-/// Authenticated app frame: fixed sidebar + sticky topbar + a centered, padded
-/// content column. Every signed-in page renders its body as `children` here.
+/// Authenticated app frame: fixed sidebar, sticky topbar, and a centered padded content column.
 #[component]
 pub fn AppShell(#[prop(into)] title: String, children: Children) -> impl IntoView {
     let main_cls = class(format!(

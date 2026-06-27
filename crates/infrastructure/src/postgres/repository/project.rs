@@ -244,7 +244,7 @@ impl ProjectRepository for PgProjectRepo {
     }
 
     async fn save_collaborator(&self, c: &ProjectCollaborator) -> Result<(), RepositoryError> {
-        // fn_no_self_collab trigger blocks owner-as-collaborator → surfaces as CheckViolation.
+        // fn_no_self_collab trigger blocks owner-as-collaborator, surfacing as a CheckViolation.
         sqlx::query!(
             r#"INSERT INTO project.project_collaborators
                  (id, project_id, group_id, created_at)

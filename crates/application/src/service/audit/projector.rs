@@ -11,15 +11,9 @@ use uuid::Uuid;
 use crate::{error::Result, events::DomainEvent};
 
 /// System-level handler that projects audited [`DomainEvent`]s into immutable
-/// [`AuditLog`] rows. Runs in the worker off the request path, so it holds the
-/// repository directly and performs no permission checks — it acts as the
-/// system, mirroring [`super::super::NotificationFanout`].
-///
-/// Only the who/what/which/when is recorded: `actor`, `action`, the target
-/// `entity_schema.entity_table` + `entity_id`, and `occurred_at`. The opaque
-/// `payload_*` blobs are intentionally left empty — populating them would mean
-/// serialising domain structs (e.g. `User`, which carries `password_hash`), so a
-/// redacted detail projection is deferred to a future detail endpoint.
+/// [`AuditLog`] rows. Runs in the worker with no permission checks; records only
+/// who/what/which/when, leaving `payload_*` empty to avoid serialising domain
+/// structs that carry secrets (e.g. `User.password_hash`).
 pub struct AuditProjector {
     audit: Arc<dyn AuditRepository>,
 }
@@ -306,7 +300,7 @@ impl AuditProjector {
                 ticket_id.0,
                 *at,
             ),
-            // System action — no actor (precedent: UserActivated).
+            // System action, no actor (precedent: UserActivated).
             E::TicketAutoClosed { ticket_id, at } => {
                 row(None, StatusChange, "ticket", "tickets", ticket_id.0, *at)
             }

@@ -23,10 +23,9 @@ const ACTIVE_USER_PAGE: u32 = 500;
 /// System-level handler that turns notification-producing [`DomainEvent`]s into
 /// persisted [`Notification`] rows.
 ///
-/// It runs in the worker, off the request path, so it holds repositories
-/// directly and performs no permission checks — it acts as the system, not a
-/// user. That is also why it cannot reuse `NotificationService`, whose methods
-/// all require an active actor and only read.
+/// Runs in the worker off the request path, so it holds repositories directly and
+/// performs no permission checks; it cannot reuse `NotificationService`, whose
+/// methods all require an active actor and only read.
 pub struct NotificationFanout {
     notifications: Arc<dyn NotificationRepository>,
     groups: Arc<dyn GroupRepository>,
@@ -370,9 +369,8 @@ impl NotificationFanout {
         match first_err {
             Some(e) => Err(e.into()),
             None => {
-                // Email only on the all-saves-succeeded path: a partial failure
-                // makes apalis retry this job, and emailing before that retry
-                // would double-send. The notifier itself never errors.
+                // Email only after all saves succeed: a partial failure makes
+                // apalis retry the job, and emailing first would double-send.
                 if let Some(email) = &self.email {
                     email.notify(&targets, payload).await;
                 }

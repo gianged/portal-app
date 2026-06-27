@@ -7,13 +7,7 @@ use domain::error::AuthzError;
 use super::client::OpenFgaConfig;
 
 /// Resolves an [`OpenFgaConfig`] at startup: finds or creates the named store,
-/// then resolves the latest authorization-model id (uploading `model_json` when
-/// the store has none yet). This replaces the one-shot `openfga-init.sh`
-/// bootstrap so the server is self-initialising.
-///
-/// `model_json` is the authorization model in `OpenFGA` request-body shape
-/// (`schema_version` + `type_definitions`), i.e. the contents of
-/// `infra/openfga/authorization-model.json`.
+/// then resolves the latest authorization-model id, uploading `model_json` if absent.
 pub async fn resolve_config(
     endpoint: &str,
     store_name: &str,
@@ -44,9 +38,7 @@ pub async fn resolve_config(
     })
 }
 
-/// Returns the id of the store named `name`, creating it if absent. A
-/// single-tenant portal has a handful of stores at most, so the first listing
-/// page is sufficient.
+/// Returns the id of the store named `name`, creating it if absent.
 async fn ensure_store(
     http: &Client,
     endpoint: &str,
@@ -67,9 +59,7 @@ async fn ensure_store(
     Ok(created.id)
 }
 
-/// Returns the latest authorization-model id for the store, uploading
-/// `model_json` first when the store has no model yet. `OpenFGA` returns models
-/// newest-first, so the first entry is the latest.
+/// Returns the latest authorization-model id (models come newest-first), uploading `model_json` when the store has none.
 async fn ensure_model(
     http: &Client,
     endpoint: &str,

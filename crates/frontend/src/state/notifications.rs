@@ -1,6 +1,5 @@
-//! In-app notification state. For now this is just the unread badge count shown
-//! on the topbar bell; the full notification center is a follow-on. Populated by
-//! [`crate::features::notifications::api`] after the session bootstraps.
+//! In-app notification state: the unread badge count shown on the topbar bell.
+//! Populated by [`crate::features::notifications::api`] after the session bootstraps.
 
 use leptos::prelude::*;
 

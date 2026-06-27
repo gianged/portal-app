@@ -1,9 +1,7 @@
 //! Session tokens (HS256 JWT) and the cookie they ride in.
 //!
-//! The token carries identity only — `sub` (user id) plus `iat`/`exp`. Roles and
-//! active-status are deliberately NOT encoded: `application::Permissions`
-//! re-resolves them from Postgres + `OpenFGA` on every call, so a deactivated user
-//! loses access immediately instead of at token expiry.
+//! The token carries identity only (`sub` + `iat`/`exp`); roles and active-status
+//! are re-resolved per call from Postgres + `OpenFGA`, so deactivation is immediate.
 
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
@@ -42,7 +40,7 @@ pub struct VerifiedToken {
     pub user_id: UserId,
     pub jti: Uuid,
     pub version: u64,
-    /// Expiry, seconds since the Unix epoch — lets logout size the denylist
+    /// Expiry, seconds since the Unix epoch; lets logout size the denylist
     /// entry to the token's remaining lifetime.
     pub exp: i64,
 }
@@ -61,8 +59,7 @@ impl TokenService {
     #[must_use]
     pub fn new(secret: &str, ttl_secs: u64, secure: bool) -> Self {
         let mut validation = Validation::new(Algorithm::HS256);
-        // No grace beyond the token's own expiry: a session is valid strictly
-        // within its TTL (jsonwebtoken otherwise allows 60s of clock skew).
+        // Strict expiry; jsonwebtoken otherwise grants 60s of clock-skew leeway.
         validation.leeway = 0;
         Self {
             encoding: EncodingKey::from_secret(secret.as_bytes()),
@@ -91,15 +88,13 @@ impl TokenService {
             jti: Uuid::now_v7(),
             ver,
         };
-        // HS256 signing of an in-memory struct with a valid key is infallible; an
-        // error here would be a configuration bug at startup, not a runtime path.
+        // HS256 signing with a valid key is infallible; an error here is a startup config bug.
         encode(&Header::new(Algorithm::HS256), &claims, &self.encoding)
             .expect("HS256 encoding of session claims is infallible")
     }
 
     /// Verifies signature + expiry and returns the decoded contents. Tokens
-    /// minted before the jti/ver claims existed fail decode and read as
-    /// invalid — a deliberate hard cut.
+    /// minted before the jti/ver claims existed fail decode and read as invalid.
     pub fn verify(&self, token: &str) -> Result<VerifiedToken, AuthError> {
         let data = decode::<Claims>(token, &self.decoding, &self.validation)
             .map_err(|_| AuthError::Invalid)?;
@@ -185,8 +180,7 @@ mod tests {
     #[test]
     fn verify_rejects_an_expired_token() {
         let svc = service("session-secret");
-        // Minted two hours ago with a one-hour TTL: long past expiry, and leeway
-        // is zero, so there is no grace window to rescue it.
+        // Minted two hours ago with a one-hour TTL and zero leeway: past expiry.
         let issued = OffsetDateTime::now_utc() - Duration::hours(2);
         let token = svc.issue_at(user(), 0, issued);
         assert!(matches!(svc.verify(&token), Err(AuthError::Invalid)));

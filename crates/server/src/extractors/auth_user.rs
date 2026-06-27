@@ -2,7 +2,7 @@
 //!
 //! `middleware::auth::require_auth` verifies the session cookie and inserts an
 //! `AuthUser` into the request extensions; this extractor reads it back out.
-//! Roles are NOT carried here — services resolve them through `Permissions`.
+//! Roles are NOT carried here - services resolve them through `Permissions`.
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;

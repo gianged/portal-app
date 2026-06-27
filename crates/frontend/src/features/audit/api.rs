@@ -7,16 +7,14 @@ use shared::dto::audit::AuditLogDto;
 use crate::api::client;
 use crate::api::error::FrontendError;
 
-/// The most-recent audit entries across all entities (`GET /audit/feed`).
-/// Admin-only; the server returns 403 for non-admins.
+/// Most-recent audit entries across all entities (`GET /audit/feed`); admin-only, 403 for non-admins.
 pub async fn feed(limit: u32) -> Result<Vec<AuditLogDto>, FrontendError> {
     let limit_s = limit.to_string();
     let q = client::query(&[("limit", &limit_s)]);
     client::get_json(&format!("/audit/feed{q}")).await
 }
 
-/// Per-entity audit history (`GET /audit`, admin-only); use the typed wrappers below
-/// so the schema/table strings live in one place.
+/// Per-entity audit history (`GET /audit`, admin-only); typed wrappers below keep the schema/table strings in one place.
 async fn for_entity(
     entity_schema: &str,
     entity_table: &str,

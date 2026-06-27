@@ -84,8 +84,7 @@ pub fn DashboardPage() -> impl IntoView {
 fn DashboardContent() -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");
 
-    // Assembled from existing list endpoints; each starts `None` (loading) and is
-    // filled by a one-shot fetch. `RequireAuth` guarantees `auth.user` is present.
+    // Each loadable starts None and is filled by a one-shot fetch; RequireAuth guarantees auth.user is present.
     let requests: Loadable<Vec<RequestDto>> = RwSignal::new(None);
     let tickets: Loadable<Vec<TicketDto>> = RwSignal::new(None);
     let channels: Loadable<Vec<ChannelSummaryDto>> = RwSignal::new(None);
@@ -129,8 +128,7 @@ fn first_name(full: &str) -> String {
     full.split_whitespace().next().unwrap_or(full).to_owned()
 }
 
-/// File access is via attachments inside requests; there is no standalone file
-/// browser (the backend exposes download-by-key only, no listing).
+/// File access is via request attachments; there is no standalone file browser (backend is download-by-key only).
 #[component]
 pub fn FilesPage() -> impl IntoView {
     view! {
@@ -145,8 +143,7 @@ pub fn FilesPage() -> impl IntoView {
     }
 }
 
-/// Access control is resolved server-side against the OpenFGA org graph; there is
-/// no direct permission-editing surface in the UI.
+/// Access control is resolved server-side via OpenFGA; there is no permission-editing surface in the UI.
 #[component]
 pub fn PermissionsPage() -> impl IntoView {
     view! {

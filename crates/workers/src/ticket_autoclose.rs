@@ -1,7 +1,5 @@
-//! Periodic ticket auto-close sweep: resolved tickets whose reopen window has
-//! lapsed are closed by the system, emitting the normal audit + notification
-//! events. Runs on a fixed interval; idempotent, so aborting at shutdown and
-//! resuming on the next launch is safe.
+//! Periodic ticket auto-close sweep: closes resolved tickets whose reopen window
+//! has lapsed, emitting audit + notification events. Idempotent, safe to abort.
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;

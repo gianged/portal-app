@@ -23,8 +23,6 @@
 //! notification/audit job enqueues are stubbed out (background side channels, not
 //! the persistence path under test); the Scylla write and Redis publish are real.
 #![cfg(feature = "integration")]
-// Throughput rates are usize-to-f64 for printing; precision past 2^52 messages is
-// irrelevant to a load test.
 #![allow(clippy::cast_precision_loss)]
 
 use std::collections::HashSet;

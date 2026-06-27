@@ -1,6 +1,4 @@
-//! Small presentational helpers shared across feature pages: section/page
-//! headings, muted captions, and the detail-page back link. Style-only — they
-//! resolve to scoped classes over the design tokens.
+//! Small presentational helpers shared across feature pages: headings, muted captions, and the detail-page back link; style-only scoped classes over the design tokens.
 
 use leptos::prelude::*;
 use leptos_router::components::A;

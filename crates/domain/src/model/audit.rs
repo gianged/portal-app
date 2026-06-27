@@ -4,9 +4,9 @@ use uuid::Uuid;
 
 use crate::ids::{AuditLogId, UserId};
 
-/// Append-only record of state changes. The `payload_*` columns hold opaque
-/// JSON snapshots — `serde_json` is not on the domain allow list, so they stay
-/// `Option<String>` and infra owns the (de)serialisation.
+/// Append-only record of state changes. The `payload_*` columns hold opaque JSON
+/// snapshots; `serde_json` is off the domain allow list, so they stay `Option<String>`
+/// and infra owns the (de)serialisation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditLog {
     pub id: AuditLogId,
@@ -14,8 +14,7 @@ pub struct AuditLog {
     pub action: AuditAction,
     pub entity_schema: String,
     pub entity_table: String,
-    /// Raw `Uuid` — the row pointed at lives in an arbitrary table, so no
-    /// single newtype fits.
+    /// Raw `Uuid`: the referenced row lives in an arbitrary table, so no single newtype fits.
     pub entity_id: Uuid,
     pub payload_before: Option<String>,
     pub payload_after: Option<String>,

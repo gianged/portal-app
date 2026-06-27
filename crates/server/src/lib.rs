@@ -5,8 +5,6 @@
 //! wrapper over [`run`] and the integration tests under `tests/` can drive the
 //! real router against in-memory fakes.
 
-// Handlers and the composition root return `AppError` / `anyhow::Result`; their
-// failure modes are documented conversationally rather than in `# Errors` blocks.
 #![allow(clippy::missing_errors_doc)]
 
 pub mod app;

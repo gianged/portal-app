@@ -52,7 +52,7 @@ pub async fn del(path: &str) -> Result<(), FrontendError> {
     handle_empty(resp).await
 }
 
-/// `POST` with no JSON body, for lifecycle actions (`/submit`, `/approve`, …)
+/// `POST` with no JSON body, for lifecycle actions (`/submit`, `/approve`, ...)
 /// that take their input from the path and return the updated resource.
 pub async fn post_empty<T>(path: &str) -> Result<T, FrontendError>
 where
@@ -93,7 +93,7 @@ where
     handle_json(resp).await
 }
 
-/// Build a `?k=v&…` query string from already-URL-safe pairs (enum tags, UUIDs,
+/// Build a `?k=v&...` query string from already-URL-safe pairs (enum tags, UUIDs,
 /// ints, bools). Returns an empty string when there are no pairs.
 #[must_use]
 pub fn query(pairs: &[(&str, &str)]) -> String {

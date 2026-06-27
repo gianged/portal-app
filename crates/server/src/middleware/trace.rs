@@ -1,5 +1,4 @@
-//! HTTP tracing layer (request span + latency). Thin wrapper over `tower-http`
-//! so the desired stack reads uniformly in `app::build`.
+//! HTTP tracing layer (request span + latency); thin wrapper over `tower-http`.
 
 use tower_http::{
     classify::{ServerErrorsAsFailures, SharedClassifier},

@@ -1,6 +1,4 @@
-//! Discussion comments on requests and tickets: one shared API + thread
-//! component (precedent for a triplet-less shared feature module: `ui`). The
-//! parent is a [`CommentTarget`]; everything else is identical between the two.
+//! Discussion comments on requests and tickets: one shared API + thread component parameterized by [`CommentTarget`].
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -85,9 +83,7 @@ async fn remove(target: CommentTarget, id: CommentId) -> Result<(), FrontendErro
 
 // --- thread component ---
 
-/// Newest-first comment timeline with a composer, backwards pagination, and
-/// grace-window edit/delete on the viewer's own comments (the server is the
-/// authority; `editable` is its verdict at render time).
+/// Newest-first comment timeline with a composer, backwards pagination, and grace-window edit/delete on the viewer's own comments.
 #[component]
 pub fn CommentThread(#[prop(into)] target: Signal<Option<CommentTarget>>) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");

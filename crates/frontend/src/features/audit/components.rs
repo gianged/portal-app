@@ -1,5 +1,4 @@
-//! Admin audit-log viewer: the most-recent state changes across the org, plus
-//! the per-entity [`AuditTrailPanel`] embedded on detail pages.
+//! Admin audit-log viewer: recent state changes across the org, plus the per-entity [`AuditTrailPanel`] embedded on detail pages.
 
 use leptos::prelude::*;
 use uuid::Uuid;
@@ -63,8 +62,7 @@ pub fn AuditLogIndex() -> impl IntoView {
     }
 }
 
-/// Which entity an [`AuditTrailPanel`] shows history for; dispatches to the
-/// typed api wrappers so the projector's schema/table strings stay in one place.
+/// Which entity an [`AuditTrailPanel`] shows history for; dispatches to the typed api wrappers.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum TrailKind {
     Request,
@@ -72,8 +70,7 @@ pub enum TrailKind {
     Project,
 }
 
-/// Per-entity audit history on detail pages (Director/HR only; server enforces a 403).
-/// `refresh` re-fetches after lifecycle actions; rows lag slightly (async projection).
+/// Per-entity audit history on detail pages (Director/HR only); `refresh` re-fetches after lifecycle actions, rows lag slightly via async projection.
 #[component]
 pub fn AuditTrailPanel(
     #[prop(into)] id: Signal<Option<Uuid>>,
@@ -183,8 +180,7 @@ fn audit_row(log: AuditLogDto) -> AnyView {
     .into_any()
 }
 
-/// First dash-delimited group of a UUID — enough to disambiguate at a glance
-/// without dumping the full id.
+/// First dash-delimited group of a UUID, enough to disambiguate at a glance.
 fn short_uuid(id: &str) -> String {
     id.split('-').next().unwrap_or(id).to_owned()
 }

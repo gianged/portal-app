@@ -1,5 +1,3 @@
-// The wrapped backend error type is declared in every public signature; a separate `# Errors`
-// rustdoc block would only restate it. Keep the conversational doc style used elsewhere.
 #![allow(clippy::missing_errors_doc)]
 
 pub mod jobs;

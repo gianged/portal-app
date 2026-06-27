@@ -23,10 +23,9 @@ pub enum AppError {
     RateLimited,
 }
 
-/// Authentication / session failures, surfaced as `401 Unauthorized`. Kept
-/// distinct from `application::Error::Forbidden` (403): a 401 means "we don't
-/// know who you are" (no/!invalid session, bad credentials), a 403 means "we
-/// know who you are, but you may not do this".
+/// Authentication / session failures, surfaced as `401 Unauthorized`. Distinct
+/// from `application::Error::Forbidden` (403): 401 means we don't know who you
+/// are, 403 means you may not do this.
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {
     #[error("authentication required")]
@@ -106,8 +105,7 @@ impl AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, message) = self.parts();
-        // Backend faults are logged with detail; the client only sees a generic
-        // message. Expected client errors (4xx) are not logged.
+        // Backend faults logged with detail; clients see a generic message, 4xx not logged.
         if status.is_server_error() {
             tracing::error!(error = %self, "request failed");
         }

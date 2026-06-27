@@ -15,7 +15,7 @@ pub enum FrontendError {
     },
     #[error("invalid response: {0}")]
     Serde(String),
-    #[allow(dead_code)] // TODO: unused, I will see it
+    #[allow(dead_code)] // TODO: unused
     #[error("{0}")]
     Validation(String),
 }

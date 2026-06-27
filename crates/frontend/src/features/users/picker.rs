@@ -1,6 +1,4 @@
-//! The reusable [`UserPicker`] — a `<select>` of active users, used wherever a
-//! person must be chosen (assign a request/ticket, add a group member, start a
-//! DM). Shared across features, so it lives in its own module.
+//! The reusable [`UserPicker`]: a `<select>` of active users for choosing a person (assign a request/ticket, add a group member, start a DM).
 
 use leptos::prelude::*;
 use uuid::Uuid;
@@ -12,8 +10,7 @@ use crate::features::users::api;
 use crate::primitives::select::Select;
 use crate::util::load::{Loadable, load};
 
-/// A `<select>` of active users. Loads the directory once and yields the chosen
-/// [`UserId`] via `on_select`.
+/// A `<select>` of active users; loads the directory once and yields the chosen [`UserId`] via `on_select`.
 #[component]
 pub fn UserPicker(
     #[prop(into)] selected: Signal<Option<UserId>>,

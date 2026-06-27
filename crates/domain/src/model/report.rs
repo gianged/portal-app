@@ -6,9 +6,8 @@ use crate::{
     model::{GroupKind, TicketCategory, TicketStatus},
 };
 
-/// Half-open reporting window `[start, end)`. Boundaries are the first instant of
-/// the period and of the next period, so they compare cleanly against the
-/// `created_at` / `resolved_at` timestamps the aggregation queries filter on.
+/// Half-open reporting window `[start, end)`. Boundaries are the first instant of the
+/// period and of the next, comparing cleanly against the timestamps queries filter on.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Period {
     pub start: OffsetDateTime,
@@ -16,9 +15,8 @@ pub struct Period {
 }
 
 // -----------------------------------------------------------------------------
-// Granular read-models — what the aggregation repository returns, one query each.
-// The application service joins these by group and assembles the renderer-facing
-// structs below.
+// Granular read-models: one query each from the aggregation repository. The
+// application service joins these by group into the renderer-facing structs below.
 // -----------------------------------------------------------------------------
 
 /// Per-group project counts (one row per group, zero-filled for empty groups).
@@ -92,7 +90,7 @@ pub struct MonthlyBucket {
 }
 
 // -----------------------------------------------------------------------------
-// Renderer-facing structs — assembled by the application service, consumed by the
+// Renderer-facing structs: assembled by the application service, consumed by the
 // PDF renderer and mapped to DTOs by the server.
 // -----------------------------------------------------------------------------
 
@@ -158,7 +156,7 @@ pub struct GrowthSeries {
     pub requests_completed: Vec<GrowthPoint>,
 }
 
-/// Headline yearly totals — "is the company growing?" in a handful of numbers.
+/// Headline yearly totals: "is the company growing?" in a handful of numbers.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct YearlyTotals {
     pub company_headcount: u32,
@@ -188,7 +186,7 @@ pub struct YearlyReportData {
 }
 
 // -----------------------------------------------------------------------------
-// Archive entity — metadata for a stored, generated report artifact.
+// Archive entity: metadata for a stored, generated report artifact.
 // -----------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

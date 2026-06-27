@@ -55,8 +55,7 @@ impl TryFrom<AttachmentRow> for ChatAttachment {
 #[async_trait]
 impl ChatAttachmentRepository for PgChatAttachmentRepo {
     async fn save(&self, a: &ChatAttachment) -> Result<(), RepositoryError> {
-        // Write-once metadata (like request_attachments); the CHECK constraint
-        // catches non-positive sizes.
+        // Write-once metadata; the CHECK constraint catches non-positive sizes.
         let size_bytes = i64::try_from(a.size_bytes)
             .map_err(|_| RepositoryError::Backend("size_bytes exceeds i64::MAX".into()))?;
         sqlx::query!(

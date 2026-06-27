@@ -1,10 +1,11 @@
-#![allow(dead_code)] // TODO: unused, I will see it
+#![allow(dead_code)] // TODO: unused
 
 use leptos::prelude::*;
 
 use crate::primitives::stack::Gap;
 use crate::theme::class;
 
+/// Lays children in a row, switching to a stacked column below `threshold` width.
 #[component]
 pub fn Switcher(
     #[prop(optional)] gap: Gap,

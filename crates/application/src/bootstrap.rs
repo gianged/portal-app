@@ -8,21 +8,13 @@ use uuid::Uuid;
 
 use crate::{error::Result, permissions::Permissions};
 
-/// Well-known id of the single company-wide general channel. Fixed (not a fresh
-/// `Uuid::now_v7`) so the find-or-create below is idempotent even if two
-/// composition roots boot concurrently — both converge on the same row instead
-/// of racing to create two general channels.
+/// Well-known id of the single company-wide general channel, fixed so the
+/// find-or-create below is idempotent across concurrent boots.
 const GENERAL_CHANNEL_ID: Uuid = Uuid::from_u128(0x0000_0000_0000_7000_8000_0000_0000_00a1);
 
-/// Idempotent org bootstrap, run by each composition root at startup. Wires the
-/// pieces the `OpenFGA` model and the chat list assume already exist:
-///
-/// - the `company#member` wildcard, so every user resolves the general channel's
-///   `viewer` (`member from company`);
-/// - the single general channel row (find-or-create);
-/// - the general channel's `company` tuple, so its viewer resolves.
-///
-/// Safe to call on every boot: each step is a no-op when already applied.
+/// Idempotent org bootstrap run by each composition root at startup: seeds the
+/// `company#member` wildcard, the single general channel row (find-or-create), and
+/// the general channel's `company` tuple. Each step is a no-op when already applied.
 ///
 /// # Errors
 /// Returns `Conflict` if the authz backend rejects a tuple write, or a repository error if the chat datastore or authz backend is unavailable.

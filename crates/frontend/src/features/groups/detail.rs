@@ -1,5 +1,4 @@
-//! Group detail: the org-tree roster (leader → sub-leaders → members) plus member
-//! administration — add, change role, remove, transfer leadership.
+//! Group detail: the org-tree roster (leader, sub-leaders, members) plus member administration: add, change role, remove, transfer leadership.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;

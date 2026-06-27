@@ -6,21 +6,15 @@ use domain::{error::RepositoryError, ports::rate_limit::RateLimit};
 
 /// Fixed-window rate limiter backed by `INCR` + `EXPIRE`.
 ///
-/// Each call advances the counter for the current window (60 seconds wide by
-/// default) and returns the post-increment value. The caller compares this
-/// to the bucket-specific limit. The per-window key has a TTL twice the
-/// window so late requests don't get a free counter reset; the key still
-/// expires eventually (no infinite keys).
+/// Each call advances the current window's counter and returns it; the key's TTL is
+/// twice the window so late requests can't reset the count early.
 #[derive(Clone)]
 pub struct RateLimiter {
     conn: ConnectionManager,
     window_secs: i64,
 }
 
-/// `INCR` then set `EXPIRE` on the first hit, atomically. Without this,
-/// a transient `EXPIRE` failure between the two commands would leave the key
-/// permanent, since later hits take the `count != 1` branch and never retry
-/// the TTL.
+/// `INCR` then `EXPIRE` on the first hit, atomically, so a failed `EXPIRE` can't strand a permanent key.
 const INCR_WITH_TTL: &str = "local v = redis.call('INCR', KEYS[1])\n\
                              if v == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end\n\
                              return v";
@@ -44,9 +38,7 @@ impl RateLimiter {
 
 #[async_trait]
 impl RateLimit for RateLimiter {
-    /// Increment the bucket's counter for the current window and return the
-    /// resulting count. Caller decides whether the count exceeds the bucket's
-    /// limit.
+    /// Increment the bucket's counter for the current window and return the resulting count.
     async fn incr(&self, bucket: &str) -> Result<u64, RepositoryError> {
         let now = OffsetDateTime::now_utc().unix_timestamp();
         let window = now / self.window_secs;

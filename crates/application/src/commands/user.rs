@@ -2,9 +2,8 @@ use std::fmt;
 
 use domain::model::SystemRole;
 
-/// Input to create a user. `password` is **plaintext** — the service hashes it
-/// before persistence, so it must never be logged; the hand-written `Debug`
-/// below redacts it.
+/// Input to create a user. `password` is plaintext; the service hashes it before
+/// persistence, so it must never be logged. The hand-written `Debug` redacts it.
 #[derive(Clone)]
 pub struct CreateUserCommand {
     pub email: String,

@@ -73,8 +73,7 @@ pub enum NotificationPayload {
     },
 }
 
-/// Filterable kind tag — repository queries take this without parsing the
-/// full payload.
+/// Filterable kind tag; repository queries take this without parsing the full payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NotificationKind {

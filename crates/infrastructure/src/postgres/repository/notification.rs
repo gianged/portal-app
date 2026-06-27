@@ -73,8 +73,7 @@ impl NotificationRepository for PgNotificationRepo {
         unread_only: bool,
         limit: u32,
     ) -> Result<Vec<Notification>, RepositoryError> {
-        // unread=true matches idx_notifications_recipient_user_id_unread (partial);
-        // unread=false matches idx_notifications_recipient_user_id_created.
+        // unread=true uses the partial unread index, unread=false the created index.
         let rows = sqlx::query_as!(
             NotificationRow,
             r#"SELECT
@@ -141,8 +140,7 @@ impl NotificationRepository for PgNotificationRepo {
         id: NotificationId,
         at: OffsetDateTime,
     ) -> Result<(), RepositoryError> {
-        // Idempotent: first call sets read_at; subsequent calls are no-ops because
-        // the WHERE clause filters to read_at IS NULL. The original timestamp is preserved.
+        // Idempotent: WHERE read_at IS NULL preserves the original timestamp on repeat calls.
         sqlx::query!(
             r#"UPDATE notification.notifications
                SET read_at = $2

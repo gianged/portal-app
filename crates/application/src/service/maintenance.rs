@@ -16,8 +16,7 @@ use crate::{
 };
 
 /// System-level maintenance routines invoked by the background workers. Holds no
-/// `Permissions` — these run as the system, not on behalf of a user (mirroring
-/// [`super::NotificationFanout`]).
+/// `Permissions`; they run as the system, not on behalf of a user.
 pub struct MaintenanceService {
     notifications: Arc<dyn NotificationRepository>,
     requests: Arc<dyn RequestRepository>,
@@ -30,7 +29,6 @@ pub struct MaintenanceService {
 }
 
 impl MaintenanceService {
-    // Pure dependency-injection constructor; one Arc per collaborator.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
@@ -69,11 +67,9 @@ impl MaintenanceService {
         Ok(self.notifications.delete_read_before(cutoff).await?)
     }
 
-    /// Closes resolved tickets whose reopen window (`window`) has lapsed,
-    /// applying the normal domain transition so a raced manual close/reopen is
-    /// skipped rather than clobbered. Emits [`DomainEvent::TicketAutoClosed`]
-    /// per ticket (audit row + requester/assignee notification). Returns the
-    /// number closed.
+    /// Closes resolved tickets whose reopen window (`window`) has lapsed, using the
+    /// normal domain transition so a raced manual close/reopen is skipped. Emits
+    /// [`DomainEvent::TicketAutoClosed`] per ticket and returns the number closed.
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable, or an event
@@ -112,10 +108,9 @@ impl MaintenanceService {
         Ok(closed)
     }
 
-    /// Sweeps stored upload objects that no attachment or avatar references,
-    /// skipping anything modified within `grace` of `now` so an in-flight upload
-    /// whose DB row has not committed yet is never deleted. Returns the count
-    /// removed.
+    /// Sweeps stored upload objects that nothing references, skipping anything
+    /// modified within `grace` of `now` (a possible in-flight upload whose DB row
+    /// has not committed yet). Returns the count removed.
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable, or a `Storage`

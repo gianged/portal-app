@@ -1,5 +1,4 @@
-//! Project + project-invite HTTP wrappers. Projects are listed per owning group
-//! (there is no global list); invites are listed per group.
+//! Project + project-invite HTTP wrappers; projects are listed per owning group (there is no global list) and invites per group.
 
 use shared::dto::ids::{GroupId, ProjectId, ProjectInviteId};
 use shared::dto::project::{
@@ -11,8 +10,7 @@ use shared::dto::project::{
 use crate::api::client;
 use crate::api::error::FrontendError;
 
-/// Projects owned by a group (`GET /projects?owner_group=…`); `q` filters by
-/// name substring. Owned `q` so the future is `'static` for the `load` helper.
+/// Projects owned by a group (`GET /projects?owner_group=…`); `q` filters by name substring.
 pub async fn list_for_owner_group(
     group: GroupId,
     q: Option<String>,
@@ -36,7 +34,7 @@ pub async fn create(req: &CreateProjectRequest) -> Result<ProjectDto, FrontendEr
     client::post_json("/projects", req).await
 }
 
-#[allow(dead_code)] // TODO: unused, I will see it
+#[allow(dead_code)] // TODO: unused for now
 pub async fn update(
     id: ProjectId,
     req: &UpdateProjectMetadataRequest,

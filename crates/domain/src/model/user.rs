@@ -28,11 +28,8 @@ pub enum UserStatus {
     Deactivated,
 }
 
-/// Org-wide identity, orthogonal to per-group `GroupRole`. Most users have
-/// `None`; only Directors and HR staff carry one. IT is not represented here —
-/// IT staff are identified by membership in the group with `GroupKind::It`.
-/// Use this for org-level authz (e.g. "is this user HR?"); use `Membership.role`
-/// for group-scoped checks (e.g. "is this user Leader of group X?").
+/// Org-wide identity, orthogonal to per-group `GroupRole`. Most users have `None`;
+/// only Directors and HR carry one. IT staff are members of the `GroupKind::It` group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SystemRole {
@@ -76,9 +73,8 @@ impl UserStatus {
 }
 
 impl User {
-    /// Marks a pending user as active on first successful login.
-    /// Sets `first_logged_in_at` to satisfy the schema's status/timestamp pairing.
-    /// Only callable on a `Pending` user; use `reactivate` for `Deactivated → Active`.
+    /// Marks a pending user as active on first login, recording `first_logged_in_at`.
+    /// Only valid on a `Pending` user; use `reactivate` for a deactivated one.
     pub fn activate(
         &mut self,
         first_logged_in_at: OffsetDateTime,

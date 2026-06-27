@@ -294,9 +294,8 @@ impl ProjectService {
         };
         self.projects.save_collaborator(&collaborator).await?;
         self.projects.save_invite(&invite).await?;
-        // OpenFGA: the invited group's members become collaborator_member ->
-        // viewer on the project. Subsequent membership changes propagate
-        // automatically via the group's member tuples.
+        // OpenFGA: the invited group's members become collaborator_member -> viewer;
+        // later membership changes propagate via the group's member tuples.
         self.perms
             .grant_project_collaborator(invite.invited_group_id, invite.project_id)
             .await?;

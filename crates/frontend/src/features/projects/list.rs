@@ -1,5 +1,4 @@
-//! Project index: an owner-group selector with the group's project cards and an
-//! incoming-invites inbox, plus a create dialog.
+//! Project index: an owner-group selector with the group's project cards, an incoming-invites inbox, and a create dialog.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;

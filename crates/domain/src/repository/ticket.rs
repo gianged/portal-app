@@ -13,7 +13,7 @@ use crate::{
 pub trait TicketRepository: Send + Sync {
     async fn find_by_id(&self, id: TicketId) -> Result<Option<Ticket>, RepositoryError>;
 
-    /// IT triage hot path — open + reopened tickets, recency-ordered.
+    /// IT triage hot path: open + reopened tickets, recency-ordered.
     async fn list_open_for_triage(
         &self,
         limit: u32,
@@ -32,8 +32,8 @@ pub trait TicketRepository: Send + Sync {
         q: Option<&str>,
     ) -> Result<Vec<Ticket>, RepositoryError>;
 
-    /// Tickets still in `Resolved` whose `resolved_at` is at or before
-    /// `cutoff` — the auto-close sweep's work list, oldest first.
+    /// Tickets still in `Resolved` whose `resolved_at` is at or before `cutoff`;
+    /// the auto-close sweep's work list, oldest first.
     async fn list_resolved_before(
         &self,
         cutoff: OffsetDateTime,

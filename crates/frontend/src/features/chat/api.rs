@@ -1,6 +1,4 @@
-//! Chat REST wrappers: channel list, DM open, message history + one-shot
-//! actions. Live delivery is over the WebSocket ([`crate::api::ws`]); these cover
-//! history and the REST fallback for sending/editing.
+//! Chat REST wrappers: channel list, DM open, message history, and send/edit fallbacks; live delivery is over the WebSocket ([`crate::api::ws`]).
 
 use serde::Serialize;
 use web_sys::FormData;
@@ -82,8 +80,7 @@ pub async fn mark_read(channel: ChannelId) -> Result<(), FrontendError> {
     client::post_no_content(&format!("/chat/channels/{}/read", channel.0)).await
 }
 
-/// Upload one file for a channel (multipart). The returned `storage_key` goes
-/// into a subsequent message's `attachment_keys`.
+/// Upload one file for a channel (multipart); the returned `storage_key` goes into a subsequent message's `attachment_keys`.
 pub async fn upload_attachment(
     channel: ChannelId,
     form: FormData,

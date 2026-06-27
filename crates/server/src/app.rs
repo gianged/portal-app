@@ -61,7 +61,7 @@ use crate::{
     routes,
 };
 
-/// Dependency-injection seam shared by every handler. Cheap to clone — every
+/// Dependency-injection seam shared by every handler; cheap to clone since every
 /// field is an `Arc`. The Redis-backed cross-cutting ports (`presence`,
 /// `rate_limiter`) and the `realtime` publisher are held as trait objects so the
 /// router can be exercised against in-memory fakes in tests.
@@ -391,10 +391,8 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .nest("/api/v1", api)
-        // Applied outermost-to-innermost: trace wraps request-id wraps the
-        // security headers wrap the body limit wraps the router (whose
-        // protected sub-tree adds the per-route auth + limit layers above).
-        // The caller adds CORS as the outermost layer.
+        // Applied outermost-to-innermost: trace, request-id, security headers, body
+        // limit, then the router (its protected sub-tree adds auth + limit); CORS is added by the caller.
         //
         // Global 1 MiB JSON cap; upload routes override with their own DefaultBodyLimit.
         .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))

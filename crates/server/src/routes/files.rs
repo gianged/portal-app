@@ -1,16 +1,12 @@
-//! Signed file download, backing attachment + avatar `storage_key`s and the URLs
+//! Signed file download backing attachment + avatar `storage_key`s and the URLs
 //! [`FileStorage::presign_get`] emits.
 //!
-//! Access control is two-factor: the signed `?exp&sig` query (HMAC over
-//! key + expiry + viewer) AND a valid session for the viewer the link was
-//! minted for — the router mounts this behind `require_auth`. The frontend is
-//! same-origin, so the session cookie rides along on `<img src>` and `<a href>`
-//! requests; `STORAGE_PUBLIC_BASE` must therefore share the app origin and
-//! include the `/api/v1` prefix.
-//!
-//! Responses are served defensively: only raster images and PDFs render
-//! inline, everything else (including SVG, which can carry scripts) downloads
-//! as an attachment with a generic content type.
+//! Two-factor access: the signed `?exp&sig` query (HMAC over key + expiry +
+//! viewer) plus a valid session for that viewer (mounted behind `require_auth`).
+//! `STORAGE_PUBLIC_BASE` must share the app origin and include `/api/v1` so the
+//! cookie rides along on `<img>`/`<a>` requests. Only raster images and PDFs
+//! render inline; everything else (including script-bearing SVG) downloads as an
+//! attachment with a generic content type.
 
 use axum::{
     Router,
@@ -94,9 +90,8 @@ async fn download(
         .map_err(|e| AppError::Validation(format!("failed to build file response: {e}")))
 }
 
-/// Storage drops the content type on write, so infer one from the key's
-/// extension. Returns `(mime, inline)`: only types that cannot execute script
-/// render inline; SVG and anything unknown are served as opaque downloads.
+/// Infers a MIME from the key extension (storage drops it on write). Returns
+/// `(mime, inline)`; only script-safe types render inline, SVG/unknown as downloads.
 fn guess_mime(key: &str) -> (HeaderValue, bool) {
     let ext = key
         .rsplit('.')

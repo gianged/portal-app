@@ -1,8 +1,5 @@
-//! Monthly company-report scheduler: on/after the configured day of the month,
-//! generate the previous month's report (idempotently) and email the PDF to every
-//! Director/HR recipient. Runs on a fixed interval; the durable archive guard
-//! inside `generate_and_store_monthly` keeps restarts from double-generating or
-//! double-emailing, and the per-recipient email enqueue is best-effort.
+//! Monthly company-report scheduler: on/after the configured day, generates the
+//! previous month's report (idempotently) and emails the PDF to Director/HR recipients.
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -42,7 +39,6 @@ pub async fn run(
     }
 }
 
-/// The previous calendar month relative to `now`.
 fn previous_month(now: OffsetDateTime) -> (i32, u8) {
     let (year, month) = (now.year(), u8::from(now.month()));
     if month == 1 {

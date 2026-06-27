@@ -213,7 +213,7 @@ async fn on_client_frame(
             mentions,
             attachment_keys,
         } => {
-            // Same validation as the REST path — the WS plane is not a bypass.
+            // Same validation as the REST path; the WS plane is not a bypass.
             if let Err(e) = validate_message_body(&body)
                 .and_then(|()| validate_message_extras(mentions.len(), &attachment_keys))
             {
@@ -305,7 +305,7 @@ async fn on_event(
 }
 
 /// Re-checks every current subscription, dropping the ones the user can no
-/// longer view. Errors drop the subscription too (fail-closed) — the client
+/// longer view. Errors drop the subscription too (fail-closed); the client
 /// can re-subscribe once the backend recovers.
 async fn revalidate_subscriptions(
     state: &AppState,

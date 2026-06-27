@@ -10,10 +10,8 @@ use domain::{
 
 use crate::error::{Error, Result};
 
-// OpenFGA relation strings. These MUST match the relations declared in
-// infra/openfga/authorization-model.json exactly — a typo means OpenFGA answers
-// for a relation that doesn't exist (deny / error). The `authz_vocabulary` test
-// in this crate parses the model and guards against drift.
+// OpenFGA relation strings; MUST match the relations in
+// infra/openfga/authorization-model.json exactly or checks silently deny.
 const REL_MEMBER: &str = "member";
 const REL_DIRECT_MEMBER: &str = "direct_member";
 const REL_LEADER: &str = "leader";
@@ -30,10 +28,8 @@ const REL_REQUESTER: &str = "requester";
 const REL_ASSIGNEE: &str = "assignee";
 const REL_IT_GROUP: &str = "it_group";
 
-/// The single `company` object. The portal is single-tenant, so one well-known
-/// id holds the org-wide `director`, `hr`, and `member` (wildcard) relations.
-/// The same string is used when granting org roles and when tying a resource to
-/// the company (`project#company`, `ticket#company`, …), so they resolve.
+/// The single well-known `company` object holding the org-wide `director`, `hr`,
+/// and `member` (wildcard) relations; reused when tying a resource to the company.
 const COMPANY_OBJECT: &str = "company:portal";
 /// Type-bound wildcard subject: every user. Backs `company#member`, which the
 /// general channel's viewer computes from.
@@ -71,9 +67,8 @@ fn role_relation(role: GroupRole) -> &'static str {
     match role {
         GroupRole::Leader => REL_LEADER,
         GroupRole::SubLeader => REL_SUB_LEADER,
-        // `group#member` is a computed union (direct_member or leader or
-        // sub_leader) and so is NOT directly assignable; plain members are
-        // written to `direct_member`, which the union folds back in.
+        // `group#member` is a computed union, not directly assignable; write plain
+        // members to `direct_member`, which the union folds back in.
         GroupRole::Member => REL_DIRECT_MEMBER,
     }
 }
@@ -85,13 +80,9 @@ fn company_role_relation(role: SystemRole) -> &'static str {
     }
 }
 
-/// Authorization gate over the org graph.
-///
-/// Resolves actors and memberships through the [`UserRepository`] /
-/// [`GroupRepository`] and answers permission questions — or writes the relation
-/// tuples backing a state change — through the [`AuthzClient`] (`OpenFGA`). The
-/// `REL_*` relation strings above MUST match the relations declared in
-/// `infra/openfga/authorization-model.json`.
+/// Authorization gate over the org graph: resolves actors and memberships through
+/// the [`UserRepository`] / [`GroupRepository`] and answers permission questions or
+/// writes the relation tuples backing a state change through the [`AuthzClient`].
 pub struct Permissions {
     users: Arc<dyn UserRepository>,
     groups: Arc<dyn GroupRepository>,
@@ -186,7 +177,7 @@ impl Permissions {
     }
 
     /// Verifies the actor is active and holds an org-wide system role (Director or
-    /// HR) — the admin tier that may read the audit log.
+    /// HR), the admin tier that may read the audit log.
     ///
     /// # Errors
     /// Returns `NotFound` if the actor does not exist, `Forbidden` if the actor is inactive or holds no system role, or a repository error if the datastore is unavailable.
@@ -272,13 +263,10 @@ impl Permissions {
 
     // --- Resource read gates ---
     //
-    // Read authorization for projects, requests, tickets, and group channels
-    // goes through the OpenFGA `viewer` relation. This is the single place the
-    // Director "reads everything except direct messages" rule (invariant 10)
-    // takes effect: each `viewer` unions in `director from company`, and the
-    // org `company#director` tuple is seeded alongside the user's system role.
-    // Write/management gates stay as the role checks above — they are correct
-    // and avoid a network Check per mutation.
+    // Reads for projects, requests, tickets, and group channels go through the
+    // OpenFGA `viewer` relation, which unions `director from company` so Directors
+    // read everything except direct messages (invariant 10). Write/management gates
+    // stay as the role checks above.
 
     /// Run an `OpenFGA` check and map a negative result to `Forbidden`. Shared by
     /// the resource read gates below.
@@ -343,9 +331,7 @@ impl Permissions {
     /// Returns `Forbidden` if the actor cannot view the channel, `NotFound` if the actor does not exist (general channel path), or a repository error if the datastore or authz backend is unavailable.
     pub async fn require_can_view_channel(&self, actor: UserId, channel: &Channel) -> Result<()> {
         match channel {
-            // Group-channel reads go through OpenFGA so Directors (viewer unions
-            // `director from company`) can read any group's chat, not just their
-            // own groups'.
+            // Group reads go through OpenFGA so Directors can read any group's chat.
             Channel::Group(c) => {
                 self.require_relation(actor, REL_VIEWER, &obj_group_channel(c.id))
                     .await
@@ -354,9 +340,8 @@ impl Permissions {
                 self.require_active(actor).await?;
                 Ok(())
             }
-            // Direct channels are participant-only, enforced by identity — no
-            // OpenFGA branch, so there is no path for a Director backdoor
-            // (invariant 10).
+            // Direct channels are participant-only, enforced by identity, so there
+            // is no OpenFGA branch and no Director backdoor (invariant 10).
             Channel::Direct(c) => {
                 if actor == c.user_low_id || actor == c.user_high_id {
                     Ok(())
@@ -430,9 +415,8 @@ impl Permissions {
 
     // --- Tuple writes ---
     //
-    // All grants funnel through the generalized AuthzClient. Helpers take domain
-    // types and format the `ReBAC` ids here, so services never touch raw tuple
-    // strings and infra never sees domain ids.
+    // Grants funnel through the AuthzClient; helpers format the `ReBAC` ids from
+    // domain types, so services never touch raw tuple strings.
 
     /// Writes the authz tuple granting `member` their role in the group.
     ///
@@ -566,9 +550,8 @@ impl Permissions {
             .map_err(map_authz_write)
     }
 
-    /// On ticket creation: requester, the IT group (drives `it_member`), and the
-    /// company singleton (drives the Director viewer branch). The IT group is
-    /// resolved here so callers don't need a `GroupRepository`.
+    /// On ticket creation: writes the requester, IT group, and company-singleton
+    /// tuples that drive the ticket viewer. The IT group is resolved here.
     ///
     /// # Errors
     /// Returns `Conflict` if the authz backend rejects the write, or a repository error if the datastore or authz backend is unavailable.
@@ -649,9 +632,8 @@ impl Permissions {
     }
 }
 
-/// `AuthzError::Denied` on a tuple-write means the authz backend rejected the
-/// write itself, not a domain authorization failure. Surface as Conflict so it
-/// doesn't get mapped to 403 for the API caller.
+/// Maps a tuple-write `AuthzError::Denied` to `Conflict` (the backend rejected the
+/// write, not a domain authz failure) so it isn't surfaced as 403 to the caller.
 fn map_authz_write(err: AuthzError) -> Error {
     match err {
         AuthzError::Denied => Error::Conflict("authz_write_denied".into()),
@@ -662,9 +644,7 @@ fn map_authz_write(err: AuthzError) -> Error {
 #[cfg(test)]
 mod tests {
     //! Vocabulary guard: the relation strings this module sends to `OpenFGA` must
-    //! line up with the loaded authorization model, or every check silently
-    //! denies (the original bug: `can_view` vs `viewer`). These tests parse the
-    //! real model file and fail at `cargo test` if the two ever drift.
+    //! match the loaded authorization model, or checks silently deny.
     use std::collections::HashSet;
 
     use serde_json::Value;
@@ -693,9 +673,8 @@ mod tests {
             .unwrap_or_default()
     }
 
-    /// Only the directly-assignable relations — the model lists exactly these
-    /// under `metadata.relations` (they carry `directly_related_user_types`).
-    /// Writing a tuple to any other relation is rejected by `OpenFGA`.
+    /// Only the directly-assignable relations, listed under `metadata.relations`;
+    /// writing a tuple to any other relation is rejected by `OpenFGA`.
     fn assignable(model: &Value, ty: &str) -> HashSet<String> {
         type_def(model, ty)["metadata"]["relations"]
             .as_object()

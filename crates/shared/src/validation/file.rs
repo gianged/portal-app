@@ -4,10 +4,9 @@ use crate::errors::SharedError;
 pub const FILENAME_MAX: usize = 128;
 
 /// Normalizes a client-supplied upload filename to a single safe path segment:
-/// takes the last component after `/` and `\` (browsers may send full paths),
-/// strips control characters and quote/backslash, and caps the length while
-/// keeping the extension. The result is safe to embed in a storage key and a
-/// `Content-Disposition` header.
+/// keeps the last `/`/`\` component, strips control characters and quotes, and
+/// caps the length while preserving the extension. Safe to embed in a storage
+/// key and a `Content-Disposition` header.
 ///
 /// # Errors
 ///

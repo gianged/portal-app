@@ -1,5 +1,4 @@
-//! Group + membership HTTP wrappers. The directory (`list`) backs group pickers
-//! across features; the rest drive the group detail / roster admin page.
+//! Group + membership HTTP wrappers; the directory (`list`) backs group pickers across features, and the rest drive the group detail / roster admin page.
 
 use serde::Serialize;
 
@@ -26,7 +25,7 @@ pub async fn create(req: &CreateGroupRequest) -> Result<GroupDto, FrontendError>
     client::post_json("/groups", req).await
 }
 
-#[allow(dead_code)] // TODO: unused, I will see it
+#[allow(dead_code)] // TODO: unused for now
 pub async fn update(id: GroupId, req: &UpdateGroupRequest) -> Result<GroupDto, FrontendError> {
     client::patch_json(&format!("/groups/{}", id.0), req).await
 }
@@ -50,8 +49,7 @@ pub async fn remove_member(group: GroupId, user: UserId) -> Result<(), FrontendE
     client::del(&format!("/groups/{}/members/{}", group.0, user.0)).await
 }
 
-/// `POST /groups/{id}/transfer-leadership` — the body shape is server-local (not
-/// in `shared::dto`), so it is declared here.
+/// Server-local body for `POST /groups/{id}/transfer-leadership` (not in `shared::dto`).
 #[derive(Serialize)]
 struct TransferLeadership {
     from_user_id: UserId,

@@ -96,9 +96,7 @@ impl TicketRepository for PgTicketRepo {
         limit: u32,
         q: Option<&str>,
     ) -> Result<Vec<Ticket>, RepositoryError> {
-        // Status set matches idx_tickets_status_priority_open. Priority NULLS LAST
-        // pushes un-triaged tickets to the end so triaged-urgent surfaces first;
-        // created_at breaks ties for stable ordering.
+        // Matches idx_tickets_status_priority_open; NULLS LAST sinks un-triaged tickets, created_at breaks ties.
         let pattern: Option<String> = q.map(like_pattern);
         let rows = sqlx::query_as!(
             TicketRow,

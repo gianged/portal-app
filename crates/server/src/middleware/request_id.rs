@@ -1,6 +1,5 @@
-//! Per-request correlation id. Assigns a UUID v7, enters a tracing span carrying
-//! it (so all logs for one request correlate), and echoes it back to the client
-//! on the response as `x-request-id`.
+//! Per-request correlation id: assigns a UUID v7, enters a tracing span, and
+//! echoes it back to the client on the response as `x-request-id`.
 
 use axum::{
     extract::Request,

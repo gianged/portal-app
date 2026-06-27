@@ -130,8 +130,8 @@ impl Message {
     }
 }
 
-/// Mirrors a row of Cassandra's `channels_by_user` — what channels a user can
-/// see plus their read marker for unread-badge computation.
+/// Mirrors a row of Cassandra's `channels_by_user`: channels a user can see plus
+/// their read marker for unread-badge computation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelMembership {
     pub user_id: UserId,

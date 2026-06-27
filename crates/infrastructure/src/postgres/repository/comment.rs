@@ -12,8 +12,7 @@ use domain::{
 
 use crate::postgres::mappers::map_pg_error;
 
-/// One repo over both comment tables; each method matches the entity to pick the
-/// table, one `query_as!` per arm.
+/// One repo over both comment tables; each method matches the entity to pick the table.
 pub struct PgCommentRepo {
     pool: PgPool,
 }
@@ -34,8 +33,7 @@ struct CommentRow {
 }
 
 impl CommentRow {
-    /// The table the row came from implies the parent, so the caller reattaches
-    /// the entity.
+    /// Reattaches the entity since the source table already implies the parent.
     fn into_comment(self, entity: CommentEntity) -> Comment {
         Comment {
             id: CommentId(self.id),

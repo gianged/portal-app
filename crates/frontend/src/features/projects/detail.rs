@@ -1,5 +1,4 @@
-//! Project detail: status transitions, collaborator management, group
-//! invitations, and the project's requests.
+//! Project detail: status transitions, collaborator management, group invitations, and the project's requests.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;

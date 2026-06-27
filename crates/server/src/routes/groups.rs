@@ -55,8 +55,7 @@ async fn list(
     auth: AuthUser,
 ) -> Result<Json<Vec<GroupDto>>, AppError> {
     let groups = state.group.list_all(auth.user_id).await?;
-    // Member counts are resolved per group (N reads); fine at this scale, and
-    // consistent with the other denormalized list endpoints.
+    // Member counts resolved per group (N reads); fine at this scale.
     let mut out = Vec::with_capacity(groups.len());
     for group in &groups {
         let count = state.group.active_member_count(group.id).await?;
@@ -169,8 +168,7 @@ async fn remove_member(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Server-local until the frontend consumes it; promote to `shared::dto::group`
-/// when wired into the UI.
+/// Server-local request DTO. TODO: promote to `shared::dto::group` when the UI consumes it.
 #[derive(Deserialize)]
 struct TransferLeadershipRequest {
     from_user_id: Uuid,

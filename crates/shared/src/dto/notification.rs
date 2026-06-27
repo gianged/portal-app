@@ -52,7 +52,7 @@ impl NotificationKind {
 }
 
 /// Tagged exactly like `domain::model::NotificationPayload` (same `kind` tag and
-/// field names) so the wire format round-trips. IDs stay bare — the client
+/// field names) so the wire format round-trips. IDs stay bare so the client
 /// navigates by them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

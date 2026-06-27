@@ -1,5 +1,4 @@
-//! The people directory: a searchable index of users with an HR create-user
-//! dialog.
+//! The people directory: a searchable index of users with an HR create-user dialog.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;

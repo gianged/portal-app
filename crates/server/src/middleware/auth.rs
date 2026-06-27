@@ -1,7 +1,5 @@
-//! JWT session verification, applied as a `route_layer` on the protected
-//! sub-router. Reads the session cookie, verifies it, and stashes the resolved
-//! [`AuthUser`] in the request extensions for the extractor to read. Unmatched
-//! paths still 404 (no auth) because this is a `route_layer`, not a global one.
+//! JWT session verification as a `route_layer` on the protected sub-router: reads
+//! and verifies the session cookie, then stashes the resolved [`AuthUser`] in extensions.
 
 use axum::{
     extract::{Request, State},
@@ -28,7 +26,7 @@ pub async fn require_auth(
         .map(Cookie::value)
         .ok_or(AppError::Auth(AuthError::Missing))?;
     let verified = state.token.verify(token)?;
-    // Revocation check (logout denylist / stale version); fail-closed, same posture as the rate limiter in this path.
+    // Revocation check (logout denylist / stale version); fail-closed.
     if state
         .revocation
         .is_revoked(verified.jti)

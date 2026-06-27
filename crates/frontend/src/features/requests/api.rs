@@ -1,5 +1,4 @@
-//! Work-request HTTP wrappers. Listing is scope-filtered (`mine` or `project`);
-//! the lifecycle endpoints each return the updated [`RequestDto`].
+//! Work-request HTTP wrappers; listing is scope-filtered (`mine` or `project`), and the lifecycle endpoints each return the updated [`RequestDto`].
 
 use web_sys::FormData;
 
@@ -12,7 +11,6 @@ use shared::dto::request::{
 use crate::api::client;
 use crate::api::error::FrontendError;
 
-/// Wire (`snake_case`) value for the `status` query filter.
 fn status_param(status: RequestStatus) -> &'static str {
     match status {
         RequestStatus::Draft => "draft",
@@ -25,8 +23,7 @@ fn status_param(status: RequestStatus) -> &'static str {
     }
 }
 
-/// Requests assigned to the caller (`GET /requests?mine=true`); `q` filters by
-/// title substring. Owned `q` so the future is `'static` for the `load` helper.
+/// Requests assigned to the caller (`GET /requests?mine=true`); `q` filters by title substring.
 pub async fn list_mine(
     status: Option<RequestStatus>,
     q: Option<String>,
@@ -65,7 +62,7 @@ pub async fn create(req: &CreateRequestRequest) -> Result<RequestDto, FrontendEr
     client::post_json("/requests", req).await
 }
 
-#[allow(dead_code)] // TODO: unused, I will see it
+#[allow(dead_code)] // TODO: unused for now
 pub async fn update(
     id: RequestId,
     req: &UpdateRequestRequest,

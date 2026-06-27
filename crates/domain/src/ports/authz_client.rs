@@ -4,11 +4,10 @@ use crate::{error::AuthzError, ids::UserId};
 
 /// A single `ReBAC` relationship tuple: `subject` holds `relation` on `object`.
 ///
-/// `subject` is a fully-qualified `ReBAC` id and may be a user (`user:<id>`), a
-/// userset (`group:<id>#member`), a type-bound wildcard (`user:*`), or another
-/// object (`company:portal`). Formatting is the caller's responsibility — see
-/// `application::permissions` — so `domain` does not accumulate `ReBAC`
-/// vocabulary.
+/// `subject` is a fully-qualified `ReBAC` id: a user (`user:<id>`), a userset
+/// (`group:<id>#member`), a wildcard (`user:*`), or another object (`company:portal`).
+/// Formatting is the caller's job (`application::permissions`), keeping `ReBAC`
+/// vocabulary out of `domain`.
 #[derive(Debug, Clone)]
 pub struct RelationTuple {
     pub subject: String,
@@ -39,7 +38,7 @@ pub trait AuthzClient: Send + Sync {
     async fn check(&self, user: UserId, relation: &str, object: &str) -> Result<bool, AuthzError>;
 
     /// Write a single tuple. `subject` is a fully-qualified id (`user:<id>`,
-    /// `group:<id>`, `company:portal`, `user:*`, …) — not just a user.
+    /// `group:<id>`, `company:portal`, `user:*`), not just a user.
     async fn write_tuple(
         &self,
         subject: &str,

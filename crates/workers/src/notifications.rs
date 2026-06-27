@@ -5,12 +5,8 @@ use apalis::prelude::{BoxDynError, Data, Error};
 use application::{DomainEvent, NotificationFanout};
 use infrastructure::jobs::NotificationEnvelope;
 
-/// apalis task handler for the `notifications` queue. Deserialises the queued
-/// domain event and hands it to [`NotificationFanout`], which persists the
-/// resulting notification rows.
-///
-/// A malformed payload or a fan-out failure returns [`Error::Failed`] so apalis
-/// applies its retry/backoff policy rather than silently dropping the job.
+/// apalis handler for the `notifications` queue: decodes the event and hands it to
+/// [`NotificationFanout`]. Returns [`Error::Failed`] on bad payload or fan-out error so apalis retries.
 #[tracing::instrument(skip_all, err)]
 pub async fn handle(
     envelope: NotificationEnvelope,
@@ -22,7 +18,6 @@ pub async fn handle(
     Ok(())
 }
 
-/// Wraps any concrete error into the apalis task error.
 fn failed<E: std::error::Error + Send + Sync + 'static>(e: E) -> Error {
     Error::Failed(Arc::new(Box::new(e) as BoxDynError))
 }

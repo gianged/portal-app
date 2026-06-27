@@ -1,5 +1,4 @@
-//! Announcement HTTP wrappers. Announcements are per-channel; listing requires a
-//! channel id (resolve the General channel via the chat channel list).
+//! Announcement HTTP wrappers; announcements are per-channel, so listing requires a channel id.
 
 use shared::dto::announcement::{
     AnnouncementDto, EditAnnouncementRequest, PostAnnouncementRequest,

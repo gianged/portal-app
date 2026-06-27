@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Wire-side ID newtypes. These mirror `domain::ids` one-for-one but live here
-/// because `shared` cannot depend on `domain` (it compiles to wasm). They
-/// serialize as a bare UUID string (`#[serde(transparent)]`), matching the
-/// default newtype encoding the server emits when projecting from domain types.
+/// Wire-side ID newtypes mirroring `domain::ids`, re-declared here because
+/// `shared` compiles to wasm and cannot depend on `domain`. They serialize as a
+/// bare UUID string (`#[serde(transparent)]`).
 macro_rules! id_newtype {
     ($name:ident) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

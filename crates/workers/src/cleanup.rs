@@ -1,7 +1,5 @@
 //! Periodic notification-retention sweep: prunes read notifications older than
-//! the configured retention window. Runs on a fixed interval alongside the
-//! notification consumer; aborted at shutdown and resumed on the next launch
-//! (the operation is idempotent).
+//! the configured retention window. Idempotent, so safe to abort at shutdown.
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;

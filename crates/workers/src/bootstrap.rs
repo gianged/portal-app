@@ -50,10 +50,8 @@ pub struct WorkerContext {
     pub email_queue: Arc<dyn JobQueue>,
 }
 
-/// Builds the infrastructure adapters, wires the notification fan-out service,
-/// and opens the apalis job storage the worker consumes. Mirrors the server
-/// composition root, minus the HTTP/authz slice the fan-out does not need
-/// (fan-out runs as the system, so no `Permissions`/`OpenFGA`).
+/// Builds the infrastructure adapters and opens the apalis job storage the worker
+/// consumes. Mirrors the server composition root, minus the HTTP/authz slice.
 pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     let pool = build_pool(&cfg.database_url, cfg.pg_max_connections)
         .await
@@ -74,8 +72,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     );
     let tickets: Arc<dyn TicketRepository> = Arc::new(PgTicketRepo::new(pool.clone()));
     let projects: Arc<dyn ProjectRepository> = Arc::new(PgProjectRepo::new(pool.clone()));
-    // The orphan-sweep job only lists and deletes; it never presigns, so this
-    // signer is never exercised (hence the empty key).
+    // The orphan-sweep job only lists and deletes, never presigns, so the empty key is unused.
     let signer = Arc::new(SignedUrl::new(b""));
     let file_storage: Arc<dyn FileStorage> = Arc::new(LocalStorage::new(
         cfg.storage_root.clone(),
@@ -93,8 +90,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         .await
         .context("connecting apalis redis (email jobs)")?;
 
-    // Event bus for system events (ticket auto-close); same wiring as the server -
-    // broadcast publisher + the two durable queues this process consumes.
+    // Event bus for system events (ticket auto-close): broadcast publisher plus the two durable queues this process consumes.
     let publisher = Arc::new(
         RedisEventPublisher::new(&cfg.redis_url)
             .await
@@ -106,8 +102,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         Arc::new(ApalisAuditQueue::new(audit_storage.clone())),
     ));
 
-    // Reporting: one Pg repo backs the aggregate reads + the archive; the renderer
-    // is stateless. Built before the fan-out moves the repo handles below.
+    // Reporting: one Pg repo backs the aggregate reads and the archive; the renderer is stateless.
     let report_repo = Arc::new(PgReportingRepo::new(pool.clone()));
     let report_stats: Arc<dyn ReportStatsRepository> = report_repo.clone();
     let report_archive: Arc<dyn ReportArchiveRepository> = report_repo;

@@ -259,8 +259,7 @@ impl RequestRepository for PgRequestRepo {
     }
 
     async fn save_attachment(&self, a: &RequestAttachment) -> Result<(), RepositoryError> {
-        // request_attachments has no updated_at (write-once metadata). The
-        // chk_request_attachments_size_positive CHECK catches non-positive sizes.
+        // Write-once metadata (no updated_at); CHECK rejects non-positive sizes.
         let size_bytes = i64::try_from(a.size_bytes)
             .map_err(|_| RepositoryError::Backend("size_bytes exceeds i64::MAX".into()))?;
         sqlx::query!(

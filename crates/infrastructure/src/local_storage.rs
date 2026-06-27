@@ -116,8 +116,7 @@ impl FileStorage for LocalStorage {
         ttl: Duration,
         user: UserId,
     ) -> Result<String, StorageError> {
-        // Validate the key, then emit a signed, time-limited URL. The signature binds
-        // key, expiry, and viewer; the server verifies all three plus the session, so a leaked link is useless to others.
+        // Validate the key, then emit a signed URL bound to key, expiry, and viewer.
         self.resolve(key)?;
         let (exp, sig) = self
             .signer

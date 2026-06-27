@@ -54,7 +54,7 @@ impl UserStatus {
     }
 }
 
-/// Org-wide identity. Mirrors `domain::model::SystemRole` (IT is not here — IT
+/// Org-wide identity. Mirrors `domain::model::SystemRole` (IT is not here; IT
 /// staff are members of the `GroupKind::It` group).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

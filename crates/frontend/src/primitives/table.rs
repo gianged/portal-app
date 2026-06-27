@@ -17,7 +17,7 @@ pub fn TableWrap(children: Children) -> impl IntoView {
     view! { <div class=cls>{children()}</div> }
 }
 
-/// Header strip above a table — title/filters on the left, actions on the right.
+/// Header strip above a table: title/filters on the left, actions on the right.
 #[component]
 pub fn TableToolbar(children: Children) -> impl IntoView {
     let cls = class(format!(

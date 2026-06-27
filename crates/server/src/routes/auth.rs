@@ -45,8 +45,7 @@ async fn login(
     let Some(user) = state.user.login(&body.email, &body.password).await? else {
         return Err(AuthError::InvalidCredentials.into());
     };
-    // Mint at the user's current token version so the session survives until
-    // the next version bump (deactivation, password change).
+    // Mint at the user's current token version; the session survives until the next version bump.
     let ver = state
         .revocation
         .version(user.id)
@@ -68,9 +67,7 @@ async fn logout(
     jar: CookieJar,
 ) -> Result<(CookieJar, StatusCode), AppError> {
     // Denylist the presented token for its remaining lifetime so clearing the
-    // cookie actually ends the session server-side. An absent or invalid
-    // cookie still clears cleanly; a Redis failure is a real error — don't
-    // claim a logout that didn't happen.
+    // cookie ends the session server-side; a Redis failure is a real error.
     if let Some(token) = jar.get(SESSION_COOKIE).map(Cookie::value)
         && let Ok(verified) = state.token.verify(token)
     {

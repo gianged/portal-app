@@ -19,7 +19,7 @@ pub struct Config {
     pub storage_public_base: String,
     pub server_addr: SocketAddr,
     pub jwt_secret: String,
-    /// HMAC key for presigned file-download URLs — deliberately distinct from
+    /// HMAC key for presigned file-download URLs; deliberately distinct from
     /// `jwt_secret` so the two credentials can rotate independently.
     pub storage_signing_secret: String,
     pub session_ttl_secs: u64,

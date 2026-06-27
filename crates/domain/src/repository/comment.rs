@@ -8,8 +8,7 @@ use crate::{
 
 #[async_trait]
 pub trait CommentRepository: Send + Sync {
-    /// The comment scoped to its parent — a matching id under a different
-    /// entity reads as `None`.
+    /// The comment scoped to its parent; a matching id under a different entity reads as `None`.
     async fn find_by_id(
         &self,
         entity: CommentEntity,

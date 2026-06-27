@@ -1,5 +1,4 @@
-//! IT-ticket detail: status-gated lifecycle actions, triage (set priority), and
-//! assignment, plus the comment thread and audit trail.
+//! IT-ticket detail: status-gated lifecycle actions, triage (set priority), and assignment, plus the comment thread and audit trail.
 
 use futures::FutureExt;
 use futures::future::LocalBoxFuture;

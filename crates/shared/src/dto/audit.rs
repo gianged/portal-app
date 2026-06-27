@@ -34,9 +34,8 @@ impl AuditAction {
     }
 }
 
-/// Read-only audit-log row for an admin viewer. The `payload_before`/`after`
-/// JSON blobs are intentionally omitted from the list shape; expose them via a
-/// detail endpoint if ever needed.
+/// Read-only audit-log row for an admin viewer; the `payload_before`/`after`
+/// JSON blobs are omitted from this list shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditLogDto {
     pub id: AuditLogId,
@@ -44,7 +43,7 @@ pub struct AuditLogDto {
     pub action: AuditAction,
     pub entity_schema: String,
     pub entity_table: String,
-    /// Raw UUID — the referenced row lives in an arbitrary table, so no single
+    /// Raw UUID; the referenced row lives in an arbitrary table, so no single
     /// newtype fits (mirrors `domain::model::AuditLog::entity_id`).
     pub entity_id: Uuid,
     #[serde(with = "time::serde::rfc3339")]

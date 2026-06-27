@@ -274,8 +274,7 @@ pub fn SidebarNav() -> impl IntoView {
                                         } else {
                                             base.clone()
                                         };
-                                        // The Inbox count tracks the live unread badge; others use the
-                                        // static seed (none yet).
+                                        // Inbox count tracks the live unread badge; others use the static seed.
                                         let count_view = if item.href == "/inbox" {
                                             let cc = count_cls.clone();
                                             view! {
@@ -475,8 +474,7 @@ fn UserMenu() -> impl IntoView {
         });
     });
 
-    // UserMenu only mounts inside the authenticated shell, so the user is present;
-    // resolve the profile href once (untracked) rather than as a reactive closure.
+    // The user is always present inside the authed shell, so resolve the profile href once (untracked).
     let profile_href = auth.user.with_untracked(|u| {
         u.as_ref()
             .map_or_else(|| "/users".to_owned(), |x| format!("/users/{}", x.id.0))

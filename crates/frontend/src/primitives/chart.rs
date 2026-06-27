@@ -1,8 +1,6 @@
-//! Hand-built SVG charts — zero dependencies, WASM-safe, and themeable: shapes use
-//! `fill`/`stroke` set to design-token CSS variables, so they reskin on the
-//! `data-theme` flip like the icons. Data comes in as concrete `Vec`s built inside
-//! a page's loaded arm; the components render once (no internal reactivity except
-//! [`ProgressBar`]).
+//! Hand-built SVG charts: zero-dependency, WASM-safe, and themeable via design-token
+//! CSS variables for fill/stroke, so they reskin on the `data-theme` flip. Data is
+//! passed in as concrete `Vec`s and rendered once; only [`ProgressBar`] is reactive.
 
 use leptos::prelude::*;
 

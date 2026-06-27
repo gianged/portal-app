@@ -1,6 +1,4 @@
-//! The open channel's transcript: REST history (paged backwards via "load
-//! older") merged with live [`ServerFrame`]s from the WebSocket, plus a typing
-//! indicator.
+//! The open channel's transcript: REST history merged with live [`ServerFrame`]s from the WebSocket, plus a typing indicator.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -51,8 +49,7 @@ pub fn MessageThread(
         edit_body.set(body);
         edit_open.set(true);
     };
-    // The WS echo (`apply_server_frame`) folds the delete back into `messages`,
-    // so there is nothing to update optimistically here.
+    // The WS echo (apply_server_frame) folds the delete back into messages, so no optimistic update here.
     let do_delete = move |cid: ChannelId, mid: MessageId| {
         spawn_local(async move {
             if let Err(e) = api::delete(cid, mid).await {
@@ -212,8 +209,7 @@ fn message_row(
         when
     };
 
-    // Edit/Delete only on your own, still-present messages. The server stays the
-    // authority (it rejects edits outside its window); failures surface as toasts.
+    // Edit/Delete only on your own, still-present messages; the server stays authority and failures surface as toasts.
     let controls = match (is_mine && !deleted).then_some(channel).flatten() {
         Some(cid) => {
             let actions_cls = class("margin-left: auto;");
@@ -256,8 +252,7 @@ fn message_row(
     }
 }
 
-/// Renders a message's attachments: images inline (linked to the full file),
-/// everything else as a paperclip file row. URLs are presigned per viewer.
+/// Renders attachments: images inline, everything else as a paperclip file row; URLs are presigned per viewer.
 fn attachment_views(attachments: Vec<shared::dto::chat::ChatAttachmentDto>) -> AnyView {
     let img_cls = class(format!(
         "max-width: 320px; max-height: 240px; border-radius: 6px; border: 1px solid {b}; \

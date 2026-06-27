@@ -1,5 +1,4 @@
-//! The user profile detail: identity card with status, edit, deactivate /
-//! reactivate, and password change / reset dialogs.
+//! The user profile detail: identity card with status, edit, deactivate/reactivate, and password change/reset dialogs.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -197,8 +196,7 @@ fn ChangePasswordDialog(open: RwSignal<bool>) -> impl IntoView {
                 Ok(()) => {
                     toast.success("Password changed — sign in with the new password");
                     open.set(false);
-                    // The old token is already revoked; logout just clears the
-                    // stale cookie, then the auth guard redirects to /login.
+                    // Token already revoked; logout clears the stale cookie and the guard redirects to /login.
                     let _ = auth_api::logout().await;
                     auth.clear();
                 }

@@ -16,8 +16,7 @@ pub async fn me() -> Result<UserDto, FrontendError> {
     client::get_json("/me").await
 }
 
-/// Self-service password change (`POST /me/password`). Success revokes every
-/// session, including the current one — the caller must re-login.
+/// Self-service password change (`POST /me/password`); success revokes all sessions including the current one, so the caller must re-login.
 pub async fn change_password(req: &ChangePasswordRequest) -> Result<(), FrontendError> {
     client::post_json_no_content("/me/password", req).await
 }

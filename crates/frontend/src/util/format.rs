@@ -1,8 +1,7 @@
-//! Presentation helpers shared across features: compact relative timestamps,
-//! a deterministic avatar tone, and domain-status → [`BadgeVariant`] mappings.
-//!
-//! Labels are not duplicated here — every status/priority enum in `shared::dto`
-//! already exposes `.label()`. These mappers only choose the badge color.
+//! Presentation helpers shared across features: compact relative timestamps, a
+//! deterministic avatar tone, and domain status to [`BadgeVariant`] mappings.
+//! Labels are not duplicated here; every status/priority enum in `shared::dto`
+//! already exposes `.label()`, so these mappers only choose the badge color.
 
 use shared::dto::{
     project::ProjectStatus,

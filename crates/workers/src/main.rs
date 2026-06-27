@@ -1,6 +1,5 @@
-//! Thin entry point. Like `server::main`, runs the tokio runtime on an 8 MiB
-//! thread: composing the worker graph overflows Windows' 1 MiB main-thread stack
-//! in debug builds (`STATUS_STACK_OVERFLOW`).
+//! Thin entry point. Runs the tokio runtime on an 8 MiB thread because composing
+//! the worker graph overflows Windows' 1 MiB main-thread stack in debug builds.
 mod audit;
 mod bootstrap;
 mod cleanup;
@@ -53,10 +52,8 @@ async fn run() -> anyhow::Result<()> {
         email_queue,
     } = bootstrap::build(&cfg).await?;
 
-    // Periodic maintenance loops run alongside the queue consumer. Each loop handles and
-    // logs its own errors internally and never returns, so dropping the `JoinHandle` only
-    // forgoes observing an outright panic (a bug). They are idempotent, so aborting them
-    // when the runtime stops at shutdown is safe.
+    // Periodic maintenance loops run alongside the queue consumer. Each handles its own
+    // errors and never returns; idempotent, so aborting at shutdown is safe.
     tokio::spawn(cleanup::run(
         maintenance.clone(),
         cfg.notification_retention,
@@ -84,9 +81,8 @@ async fn run() -> anyhow::Result<()> {
         drop((report, email_queue));
     }
 
-    // One worker per durable queue the server enqueues. Separate queues keep the
-    // (non-idempotent) notification fan-out and the audit projector isolated so a
-    // retry in one never re-runs the other.
+    // One worker per durable queue. Separate queues isolate the non-idempotent
+    // notification fan-out from the audit projector so a retry never re-runs the other.
     let notify_worker = WorkerBuilder::new("notifications")
         .data(fanout)
         .backend(storage)
@@ -116,8 +112,7 @@ async fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Force-exits [`FORCE_EXIT_GRACE`] after the signal if shutdown hasn't finished,
-/// so Ctrl-C reliably stops the process.
+/// Force-exits [`FORCE_EXIT_GRACE`] after the signal so Ctrl-C reliably stops the process.
 async fn force_exit_watchdog() {
     let ctrl_c = async {
         let _ = tokio::signal::ctrl_c().await;

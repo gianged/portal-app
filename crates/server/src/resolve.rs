@@ -1,9 +1,8 @@
 //! Async resolution of denormalized references for wire DTOs.
 //!
-//! Several DTOs embed `UserSummaryDto`, but domain models carry only ids. These
-//! helpers fetch and project the referenced users. List endpoints dedupe via a
-//! map — an N-query resolution that is fine at this scale; replace it with a
-//! repository-side join if ticket/request volume grows.
+//! DTOs embed `UserSummaryDto` but domain models carry only ids; these helpers
+//! fetch and project the referenced users. List endpoints dedupe via a map.
+//! TODO: replace the N-query resolution with a repository-side join if volume grows.
 
 use std::collections::{HashMap, HashSet};
 

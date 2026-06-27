@@ -127,9 +127,7 @@ pub fn LoginForm() -> impl IntoView {
     }
 }
 
-/// Route guard for authenticated pages. Waits for the session bootstrap to
-/// resolve ([`AuthState::loaded`]); once resolved it renders `children` for a
-/// signed-in user, otherwise redirects to `/login`.
+/// Route guard: waits for session bootstrap ([`AuthState::loaded`]), then renders children for a signed-in user or redirects to `/login`.
 #[component]
 pub fn RequireAuth(children: ChildrenFn) -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");

@@ -54,13 +54,10 @@ impl From<AuditRow> for AuditLog {
 #[async_trait]
 impl AuditRepository for PgAuditRepo {
     async fn append(&self, e: &AuditLog) -> Result<(), RepositoryError> {
-        // Audit rows are immutable (invariant 5) — plain INSERT, no UPSERT.
-        // payload_* are JSONB columns; bind as TEXT and cast in SQL so infra
-        // doesn't parse opaque JSON that came pre-stringified from the caller.
+        // Immutable append (invariant 5): plain INSERT, no UPSERT.
         let action = SqlAuditAction::from(e.action);
-        // $7::text::jsonb chain keeps the parameter bound as TEXT (Option<&str>),
-        // then casts text → jsonb in SQL. A direct $7::jsonb would make sqlx infer
-        // the parameter as serde_json::Value, forcing us to parse opaque JSON.
+        // Bind payload_* as TEXT and cast ::text::jsonb in SQL; a direct ::jsonb
+        // would make sqlx infer serde_json::Value and force parsing opaque JSON.
         sqlx::query!(
             r#"INSERT INTO audit.audit_log
                  (id, actor_user_id, action, entity_schema, entity_table, entity_id,
@@ -89,8 +86,7 @@ impl AuditRepository for PgAuditRepo {
         entity_id: Uuid,
         limit: u32,
     ) -> Result<Vec<AuditLog>, RepositoryError> {
-        // Matches idx_audit_log_entity. payload_*::text yields Postgres's
-        // canonical normalized JSONB form — stable across reads of the same row.
+        // Matches idx_audit_log_entity; payload_*::text yields Postgres's canonical JSONB form.
         let rows = sqlx::query_as!(
             AuditRow,
             r#"SELECT
@@ -123,8 +119,7 @@ impl AuditRepository for PgAuditRepo {
         limit: u32,
         before: Option<OffsetDateTime>,
     ) -> Result<Vec<AuditLog>, RepositoryError> {
-        // Global admin feed, backed by idx_audit_log_occurred. A NULL `before`
-        // (the first page) matches every row; otherwise page backwards by time.
+        // Global admin feed (idx_audit_log_occurred); NULL `before` is the first page, else page back by time.
         let rows = sqlx::query_as!(
             AuditRow,
             r#"SELECT

@@ -17,14 +17,7 @@ use time::OffsetDateTime;
 
 use crate::error::Result;
 
-/// A business fact emitted by an application service after a successful state
-/// change.
-///
-/// Serialized with an internally-tagged `snake_case` `type` discriminant and
-/// routed by [`EventBus`] to a broadcast publisher (Redis pub/sub) and, for
-/// notification-bearing topics, the durable job queue. [`Self::topic`] maps each
-/// variant to its `portal.*` topic; the `before`/`after` payloads carry the
-/// state that audit and notification consumers read.
+/// A business fact emitted by an application service after a successful state change.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DomainEvent {
@@ -59,7 +52,7 @@ pub enum DomainEvent {
         before: User,
         after: User,
     },
-    // No `User` payload — serializing it would put the password hash on the event bus.
+    // No `User` payload: serializing it would put the password hash on the event bus.
     UserPasswordChanged {
         user_id: UserId,
         at: OffsetDateTime,
@@ -341,9 +334,8 @@ impl DomainEvent {
     }
 }
 
-/// Topics whose events can produce notifications. Only these are mirrored onto
-/// the durable job queue for the worker to fan out; the rest (`portal.user`,
-/// `portal.group`) are still broadcast for real-time consumers but never queued.
+/// Topics whose events are mirrored onto the durable job queue for the worker to
+/// fan out as notifications.
 const NOTIFY_TOPICS: &[&str] = &[
     "portal.ticket",
     "portal.announcement",
@@ -352,9 +344,8 @@ const NOTIFY_TOPICS: &[&str] = &[
     "portal.chat",
 ];
 
-/// Topics whose events are projected into the immutable audit log. Postgres-
-/// backed entities only — `portal.chat` / `portal.announcement` live in Scylla
-/// and are not audited here.
+/// Topics whose events are projected into the immutable audit log (Postgres-backed
+/// entities only; `portal.chat` / `portal.announcement` live in Scylla).
 const AUDIT_TOPICS: &[&str] = &[
     "portal.user",
     "portal.group",
@@ -363,10 +354,8 @@ const AUDIT_TOPICS: &[&str] = &[
     "portal.ticket",
 ];
 
-/// Dispatches every [`DomainEvent`] to two sinks: a broadcast publisher (Redis
-/// pub/sub, for real-time WebSocket fan-out) and a durable job queue (apalis,
-/// for background processing such as notifications). The same serialised bytes
-/// feed both.
+/// Dispatches every [`DomainEvent`] to a broadcast publisher (Redis pub/sub) and a
+/// durable job queue (apalis), feeding both the same serialised bytes.
 pub struct EventBus {
     publisher: Arc<dyn EventPublisher>,
     jobs: Arc<dyn JobQueue>,
@@ -395,9 +384,8 @@ impl EventBus {
     ///
     /// # Panics
     ///
-    /// Panics only if `serde_json::to_vec` fails for `DomainEvent`, which would
-    /// indicate a programming error — every variant is composed of types that
-    /// implement `Serialize` infallibly.
+    /// Panics only if `serde_json::to_vec` fails for `DomainEvent`, which cannot
+    /// happen for these infallibly-serialisable variants.
     pub async fn emit(&self, event: DomainEvent) -> Result<()> {
         let topic = event.topic();
         let payload = serde_json::to_vec(&event)
@@ -412,14 +400,8 @@ impl EventBus {
         Ok(())
     }
 
-    /// Broadcasts `event` to the real-time publisher only, skipping the durable
-    /// job queue. The batched chat drain uses this so it can enqueue
-    /// notifications selectively rather than once per message.
-    ///
-    /// Unlike [`Self::emit`] this does NOT apply the `NOTIFY_TOPICS` /
-    /// `AUDIT_TOPICS` routing: callers own that. Pairing it with a topic that
-    /// belongs to `AUDIT_TOPICS` and not enqueuing the audit job elsewhere would
-    /// silently drop an audit-log entry.
+    /// Broadcasts `event` to the real-time publisher only, skipping the durable job
+    /// queue and the `NOTIFY_TOPICS` / `AUDIT_TOPICS` routing that callers own.
     ///
     /// # Errors
     /// Returns an `Event` error if publishing to the broadcast publisher fails.
@@ -435,10 +417,7 @@ impl EventBus {
     }
 
     /// Enqueues `event` onto the durable notification queue only, skipping the
-    /// broadcast. Pairs with [`Self::broadcast`] for callers that fan out a batch
-    /// and enqueue notifications for just the events that need them. Like
-    /// [`Self::broadcast`], it does not consult `NOTIFY_TOPICS` / `AUDIT_TOPICS`:
-    /// the caller decides which events warrant a notification.
+    /// broadcast and the `NOTIFY_TOPICS` / `AUDIT_TOPICS` routing.
     ///
     /// # Errors
     /// Returns a `Job` error if enqueuing onto the job queue fails.

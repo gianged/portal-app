@@ -1,5 +1,4 @@
-//! Work-request detail: status-gated lifecycle actions, the assignee picker, and
-//! attachment upload, plus the comment thread and audit trail.
+//! Work-request detail: status-gated lifecycle actions, the assignee picker, and attachment upload, plus the comment thread and audit trail.
 
 use futures::FutureExt;
 use futures::future::LocalBoxFuture;

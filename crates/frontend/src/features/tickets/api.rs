@@ -1,5 +1,4 @@
-//! IT-ticket HTTP wrappers. Listing is scope-filtered (mine / assigned / triage
-//! queue); the lifecycle endpoints each return the updated [`TicketDto`].
+//! IT-ticket HTTP wrappers; listing is scope-filtered (mine / assigned / triage queue), and the lifecycle endpoints each return the updated [`TicketDto`].
 
 use shared::dto::ids::TicketId;
 use shared::dto::ticket::{
@@ -9,6 +8,7 @@ use shared::dto::ticket::{
 use crate::api::client;
 use crate::api::error::FrontendError;
 
+/// Which tickets to list: the caller's own, those assigned to them, or the triage queue.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
     Mine,
@@ -26,7 +26,7 @@ impl Scope {
     }
 }
 
-/// Owned `q` so the future is `'static` for the `load` helper.
+/// Tickets in the given scope (`GET /tickets?scope=…`); `q` filters by title substring.
 pub async fn list(scope: Scope, q: Option<String>) -> Result<Vec<TicketDto>, FrontendError> {
     let mut pairs: Vec<(&str, &str)> = vec![("scope", scope.wire())];
     let encoded = q.map(|term| String::from(web_sys::js_sys::encode_uri_component(&term)));

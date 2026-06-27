@@ -4,8 +4,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-// `::scylla` (leading `::`) names the driver crate explicitly; a bare `scylla`
-// here is ambiguous with this crate's own `scylla` module.
+// `::scylla` names the driver crate, not this crate's own `scylla` module.
 use ::scylla::{
     client::session::Session,
     statement::{
@@ -29,36 +28,34 @@ use crate::scylla::mappers::{
     row_to_announcement, row_to_channel, row_to_membership, row_to_message,
 };
 
-/// Prepared statements held for the lifetime of the repository. Preparing
-/// once at startup avoids the per-call round-trip and gives the driver
-/// a stable token to route by.
+/// Prepared statements held for the repository's lifetime; prepared once at startup to avoid per-call round-trips.
 struct Statements {
-    // Partition: id — single-row channel lookup.
+    // Partition: id - single-row channel lookup.
     find_channel: PreparedStatement,
-    // Partition: (user_low_id, user_high_id) — direct-channel lookup by canonical pair.
+    // Partition: (user_low_id, user_high_id) - direct-channel lookup by canonical pair.
     find_direct_channel_id: PreparedStatement,
-    // Partition: id — write paths split by channel kind so each `INSERT` is shape-correct.
+    // Partition: id - write paths split by channel kind so each `INSERT` is shape-correct.
     insert_group_channel: PreparedStatement,
     insert_general_channel: PreparedStatement,
     insert_direct_channel: PreparedStatement,
     insert_direct_channel_lookup: PreparedStatement,
-    // Partition: group_id — group->channel lookup (1:1) for member subscription.
+    // Partition: group_id - group->channel lookup (1:1) for member subscription.
     insert_group_channel_lookup: PreparedStatement,
     find_group_channel_id: PreparedStatement,
-    // Partition: scope — org-wide singleton channel lookup ('general').
+    // Partition: scope - org-wide singleton channel lookup ('general').
     insert_singleton_channel: PreparedStatement,
     find_general_channel_id: PreparedStatement,
     insert_channel_by_user: PreparedStatement,
     delete_channel_by_user: PreparedStatement,
-    // Partition: user_id — list a user's joined channels with read marker.
+    // Partition: user_id - list a user's joined channels with read marker.
     list_channels_for_user: PreparedStatement,
     update_last_read: PreparedStatement,
-    // Partition: channel_id, clustering: message_id DESC — reverse-chrono.
+    // Partition: channel_id, clustering: message_id DESC - reverse-chrono.
     list_messages_latest: PreparedStatement,
     list_messages_before: PreparedStatement,
     find_message: PreparedStatement,
     save_message: PreparedStatement,
-    // Partition: channel_id, clustering: message_id DESC — denormalised announcement rail.
+    // Partition: channel_id, clustering: message_id DESC - denormalised announcement rail.
     find_announcement: PreparedStatement,
     list_announcements: PreparedStatement,
     save_announcement: PreparedStatement,
@@ -70,6 +67,7 @@ const CHANNEL_COLS: &str = "id, kind, name, group_id, user_a_id, user_b_id, crea
 const MESSAGE_COLS: &str = "message_id, sender_user_id, body, mentions, attachment_keys, is_announcement, edited_at, deleted_at";
 const ANNOUNCEMENT_COLS: &str = "message_id, sender_user_id, body, edited_at";
 
+/// Scylla-backed implementation of `ChatRepository`.
 pub struct ScyllaChatRepo {
     session: Arc<Session>,
     stmts: Statements,
@@ -244,16 +242,13 @@ fn backend<E: std::fmt::Display>(e: E) -> RepositoryError {
     RepositoryError::Backend(e.to_string())
 }
 
-// Single-partition UNLOGGED batch insert for one channel's chunk. A free fn (not a
-// closure) so the future has a concrete type the stream combinators accept.
+// Single-partition UNLOGGED batch insert for one channel's chunk; a free fn so the future has a concrete type the stream combinators accept.
 async fn write_message_batch(
     session: &Session,
     stmt: &PreparedStatement,
     chunk: Vec<&Message>,
 ) -> Result<(), RepositoryError> {
-    // Unlogged: a single-partition batch is already atomic and isolated, so the
-    // batchlog round-trip a logged batch (Batch::default) pays would be pure
-    // write-amplification.
+    // Unlogged: a single-partition batch is already atomic, so a logged batch's batchlog round-trip would be pure write-amplification.
     let mut batch = Batch::new(BatchType::Unlogged);
     let mut values = Vec::with_capacity(chunk.len());
     for message in &chunk {
@@ -340,11 +335,7 @@ impl ChatRepository for ScyllaChatRepo {
                     .map_err(backend)?;
             }
             Channel::Direct(c) => {
-                // Logged batch: the lookup table and the per-user index must
-                // stay consistent with the canonical row in `channels`. Group
-                // and general channel members are subscribed into channels_by_user
-                // by the application (Permissions/ChatService) when memberships
-                // change — direct channels seed both participants here.
+                // Logged batch keeps the lookup table and per-user index consistent with the canonical row; direct channels seed both participants here.
                 let mut batch = Batch::default();
                 batch.append_statement(self.stmts.insert_direct_channel.clone());
                 batch.append_statement(self.stmts.insert_direct_channel_lookup.clone());
@@ -537,9 +528,7 @@ impl ChatRepository for ScyllaChatRepo {
             return Ok(());
         }
 
-        // messages_by_channel is partitioned by channel_id, and Scylla batches are
-        // only efficient within one partition. Group per channel, then chunk to
-        // stay under the server's per-batch statement limit.
+        // Scylla batches are only efficient within one partition, so group by channel_id then chunk under the per-batch statement limit.
         const MAX_BATCH_STATEMENTS: usize = 100;
         const MAX_CONCURRENT_BATCHES: usize = 16;
 
@@ -624,9 +613,7 @@ impl ChatRepository for ScyllaChatRepo {
         channel_id: ChannelId,
         message_id: MessageId,
     ) -> Result<(), RepositoryError> {
-        // Announcements are hard-deleted from both the announcement rail and
-        // the underlying message log (per the schema comment). Batch keeps
-        // the two tables consistent.
+        // Hard-delete from both the announcement rail and the underlying message log; batch keeps the two tables consistent.
         let mut batch = Batch::default();
         batch.append_statement(self.stmts.delete_announcement_row.clone());
         batch.append_statement(self.stmts.delete_announcement_message.clone());

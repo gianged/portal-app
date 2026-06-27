@@ -14,8 +14,7 @@ pub(crate) fn map_pg_error(e: sqlx::Error) -> RepositoryError {
     }
 }
 
-/// Escape LIKE metacharacters (backslash first — it's the escape char itself) and
-/// wrap in `%…%` for literal ILIKE matching.
+/// Escapes LIKE metacharacters (backslash first, it's the escape char itself) and wraps in `%...%` for literal ILIKE matching.
 pub(crate) fn like_pattern(q: &str) -> String {
     let escaped = q
         .replace('\\', "\\\\")

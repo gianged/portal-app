@@ -123,9 +123,8 @@ impl GroupService {
             return Err(Error::Conflict("group_has_active_projects".into()));
         }
 
-        // The actual row deletion happens at the infrastructure layer in
-        // response to the GroupDeleted event; emitting the event is the service
-        // signaling intent.
+        // Row deletion happens in infrastructure on the GroupDeleted event; the
+        // service only signals intent.
         self.events
             .emit(DomainEvent::GroupDeleted {
                 group_id: group.id,
@@ -483,10 +482,8 @@ impl GroupService {
 
     /// Id of the single `GroupKind::It` group, if one exists.
     ///
-    /// Memoized after the first hit: the IT group's id is stable, so a process
-    /// caches it for its lifetime. While no IT group exists yet the lookup keeps
-    /// hitting the datastore, so a later-created one is still picked up. A
-    /// deleted-then-recreated IT group with a new id requires a restart to clear.
+    /// Memoized after the first hit (the id is stable); until one exists the lookup
+    /// keeps hitting the datastore, and a recreated id needs a restart to clear.
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
@@ -515,7 +512,6 @@ impl GroupService {
         group_id: GroupId,
     ) -> Result<Vec<Membership>> {
         self.perms.require_active(actor).await?;
-        // Members of the group, HR, and Directors can see the membership roster.
         let is_member = self.perms.group_role(actor, group_id).await?.is_some();
         if !is_member && !self.perms.is_hr(actor).await? && !self.perms.is_director(actor).await? {
             return Err(Error::Forbidden);

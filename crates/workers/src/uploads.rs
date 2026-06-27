@@ -1,7 +1,5 @@
-//! Periodic orphan-upload sweep: deletes stored files that no attachment or
-//! avatar references and that are older than the grace window. Runs on a fixed
-//! interval; the grace window protects in-flight uploads whose DB row has not
-//! committed yet.
+//! Periodic orphan-upload sweep: deletes stored files no attachment or avatar
+//! references that are older than the grace window. Grace protects in-flight uploads.
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;

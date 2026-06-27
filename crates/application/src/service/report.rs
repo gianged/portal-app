@@ -30,10 +30,8 @@ pub struct GeneratedReport {
 
 /// Aggregates report data, renders PDFs, and archives the artifacts.
 ///
-/// This is a system-level service: it performs no authorization. The Director/HR
-/// gate lives at the call site (the server gates each handler with
-/// `Permissions::require_admin`; the scheduled worker runs as the system). The
-/// optional `generated_by` on the generate methods records attribution only.
+/// System-level: it performs no authorization. The Director/HR gate lives at the
+/// call site; `generated_by` on the generate methods records attribution only.
 pub struct ReportService {
     stats: Arc<dyn ReportStatsRepository>,
     archive: Arc<dyn ReportArchiveRepository>,

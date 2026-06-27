@@ -1,7 +1,4 @@
-//! The message composer: sends over the WebSocket when connected (the echo
-//! arrives via the chat plane), or falls back to a REST post and inserts the
-//! returned message. Emits typing signals as you type. Files attach via the
-//! paperclip: uploaded immediately, held as pending chips, attached by storage key on send.
+//! Message composer: sends over the WebSocket when connected, else falls back to a REST post; emits typing signals and attaches files by storage key on send.
 
 use leptos::html::Input as HtmlInputEl;
 use leptos::prelude::*;
@@ -34,7 +31,7 @@ pub fn Composer(
     let pending = RwSignal::new(Vec::<ChatAttachmentDto>::new());
     let file_ref: NodeRef<HtmlInputEl> = NodeRef::new();
 
-    // Channel switch drops pending uploads — keys are channel-bound.
+    // Channel switch drops pending uploads; keys are channel-bound.
     Effect::new(move |_| {
         let _ = channel.get();
         pending.set(Vec::new());

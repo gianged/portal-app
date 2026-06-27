@@ -11,8 +11,8 @@ use crate::{
 pub trait ChatRepository: Send + Sync {
     async fn find_channel(&self, id: ChannelId) -> Result<Option<Channel>, RepositoryError>;
 
-    /// Lookup using the `direct_channel_by_users` table; users should be passed
-    /// in any order — the impl canonicalises via `DirectChannel::new`.
+    /// Lookup using the `direct_channel_by_users` table; users may be passed in any
+    /// order, the impl canonicalises via `DirectChannel::new`.
     async fn find_direct_channel(
         &self,
         a: UserId,
@@ -32,7 +32,7 @@ pub trait ChatRepository: Send + Sync {
     async fn find_general_channel(&self) -> Result<Option<Channel>, RepositoryError>;
 
     /// Add a `channels_by_user` row so `channel_id` appears in the user's channel
-    /// list. Idempotent — re-subscribing an existing member is harmless.
+    /// list. Idempotent: re-subscribing an existing member is harmless.
     async fn subscribe_member(
         &self,
         user_id: UserId,

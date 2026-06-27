@@ -15,10 +15,9 @@ use crate::{
     permissions::Permissions,
 };
 
-/// Discussion comments on requests and tickets. One service for both parents —
-/// the logic is identical, only the view gate differs ([`Self::require_can_view`]).
-/// Comments are author-editable/deletable within the domain's shared 15-minute
-/// grace window and immutable afterwards.
+/// Discussion comments on requests and tickets; one service for both parents,
+/// author-editable within the domain's shared 15-minute grace window and immutable
+/// afterwards. Only the view gate differs ([`Self::require_can_view`]).
 pub struct CommentService {
     comments: Arc<dyn CommentRepository>,
     requests: Arc<dyn RequestRepository>,
@@ -45,9 +44,8 @@ impl CommentService {
         }
     }
 
-    /// Commenting rights == viewing rights, using the exact gates the detail
-    /// endpoints use: project view for a request's comments, ticket view for a
-    /// ticket's.
+    /// Commenting rights == viewing rights: project view for a request's comments,
+    /// ticket view for a ticket's.
     async fn require_can_view(&self, actor: UserId, entity: CommentEntity) -> Result<()> {
         self.perms.require_active(actor).await?;
         match entity {

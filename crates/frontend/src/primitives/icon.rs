@@ -1,13 +1,11 @@
-//! The app's icon set, ported from the Lucide-style glyphs in
-//! `references/components/app.jsx`. One `Icon` component renders a 24x24
-//! stroked SVG selected by [`IconName`]; `currentColor` lets callers tint it
-//! via the surrounding text color, so icons reskin with the theme for free.
+//! The app's Lucide-style icon set. One `Icon` component renders a 24x24 stroked
+//! SVG selected by [`IconName`], tinted via `currentColor` so icons reskin with the theme.
 
 use leptos::prelude::*;
 
 use crate::theme::class;
 
-#[allow(dead_code)] // TODO: unused, I will see it
+#[allow(dead_code)] // TODO: unused
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum IconName {
     Search,

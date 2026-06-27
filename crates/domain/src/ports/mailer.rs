@@ -18,7 +18,7 @@ pub struct EmailAttachment {
 pub struct EmailMessage {
     pub to: String,
     pub subject: String,
-    /// Plain text — no HTML templating by design.
+    /// Plain text; no HTML templating by design.
     pub body: String,
     /// Optional file attachments. Empty for notification emails; carries the PDF
     /// for the scheduled report mail. `#[serde(default)]` keeps older queued

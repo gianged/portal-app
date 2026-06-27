@@ -1,5 +1,4 @@
-//! User directory + HR administration. The directory (`list`) also backs the
-//! assignee / member / DM pickers used across features.
+//! User directory + HR administration; the directory (`list`) also backs the assignee / member / DM pickers across features.
 
 use shared::dto::ids::UserId;
 use shared::dto::user::{
@@ -10,7 +9,6 @@ use crate::api::client;
 use crate::api::error::FrontendError;
 
 /// Active user directory (`GET /users`); `q` filters by name/email substring.
-/// Owned `q` so the future is `'static` for the `load` helper.
 pub async fn list(q: Option<String>) -> Result<Vec<UserDto>, FrontendError> {
     let query = match q {
         Some(term) => {
@@ -50,8 +48,7 @@ pub async fn reactivate(id: UserId) -> Result<UserProfileDto, FrontendError> {
     client::post_empty(&format!("/users/{}/reactivate", id.0)).await
 }
 
-/// Set a temporary password for a user (HR; `POST /users/{id}/reset-password`).
-/// Revokes the target's sessions.
+/// Set a temporary password for a user, revoking their sessions (HR; `POST /users/{id}/reset-password`).
 pub async fn reset_password(id: UserId, req: &ResetPasswordRequest) -> Result<(), FrontendError> {
     client::post_json_no_content(&format!("/users/{}/reset-password", id.0), req).await
 }

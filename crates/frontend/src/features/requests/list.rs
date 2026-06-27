@@ -1,5 +1,4 @@
-//! Work-request index: the "assigned to me" table with a create dialog and a
-//! group → project cascade picker.
+//! Work-request index: the "assigned to me" table with a create dialog and a group to project cascade picker.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -331,7 +330,7 @@ fn CreateRequestDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl I
     }
 }
 
-/// Group → project cascade. Writes the chosen project into `selected`.
+/// Group to project cascade; writes the chosen project into `selected`.
 #[component]
 fn ProjectPicker(selected: RwSignal<Option<ProjectId>>) -> impl IntoView {
     let groups: Loadable<Vec<GroupDto>> = RwSignal::new(None);

@@ -1,5 +1,4 @@
-//! Inbox UI: the notification list with an unread filter, mark-read on click,
-//! mark-all, and navigation to the referenced request/ticket/project/etc.
+//! Inbox UI: the notification list with an unread filter, mark-read on click, mark-all, and navigation to the referenced item.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;

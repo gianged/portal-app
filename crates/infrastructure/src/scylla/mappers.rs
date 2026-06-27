@@ -16,9 +16,7 @@ const KIND_GROUP: &str = "group";
 const KIND_GENERAL: &str = "general";
 const KIND_DIRECT: &str = "direct";
 
-/// Row tuple for the `channels` table.
-///
-/// Columns: `id`, `kind`, `name`, `group_id`, `user_a_id`, `user_b_id`, `created_at`.
+/// Row tuple for the `channels` table: `id`, `kind`, `name`, `group_id`, `user_a_id`, `user_b_id`, `created_at`.
 pub(crate) type ChannelRow = (
     Uuid,
     String,
@@ -29,8 +27,6 @@ pub(crate) type ChannelRow = (
     OffsetDateTime,
 );
 
-// `user_a_id` / `user_b_id` mirror the CQL column names; renaming would
-// obscure the row layout.
 #[allow(clippy::similar_names)]
 pub(crate) fn row_to_channel(row: ChannelRow) -> Result<Channel, RepositoryError> {
     let (id, kind, name, group_id, user_a_id, user_b_id, created_at) = row;
@@ -71,11 +67,8 @@ pub(crate) fn row_to_channel(row: ChannelRow) -> Result<Channel, RepositoryError
     }
 }
 
-/// Row tuple for the `messages_by_channel` table.
-///
-/// Columns: `message_id`, `sender_user_id`, `body`, `mentions`, `attachment_keys`,
-/// `is_announcement`, `edited_at`, `deleted_at`. `channel_id` is part of the partition
-/// key and is supplied by the caller — no need to round-trip it through the row.
+/// Row tuple for the `messages_by_channel` table: `message_id`, `sender_user_id`, `body`, `mentions`, `attachment_keys`, `is_announcement`, `edited_at`, `deleted_at`.
+/// `channel_id` is the partition key, supplied by the caller rather than round-tripped through the row.
 pub(crate) type MessageRow = (
     Uuid,
     Uuid,
@@ -116,11 +109,8 @@ pub(crate) fn row_to_message(channel_id: ChannelId, row: MessageRow) -> Message 
     }
 }
 
-/// Row tuple for the `announcements_by_channel` table.
-///
-/// Columns: `message_id`, `sender_user_id`, `body`, `edited_at`. `created_at` is
-/// derived from the embedded timestamp in the v7 `message_id` UUID since the
-/// schema does not store it explicitly.
+/// Row tuple for the `announcements_by_channel` table: `message_id`, `sender_user_id`, `body`, `edited_at`.
+/// `created_at` is derived from the v7 `message_id` timestamp since the schema does not store it.
 pub(crate) type AnnouncementRow = (Uuid, Uuid, String, Option<OffsetDateTime>);
 
 pub(crate) fn row_to_announcement(
@@ -139,10 +129,7 @@ pub(crate) fn row_to_announcement(
     })
 }
 
-/// Row tuple for the `channels_by_user` table.
-///
-/// Columns: `channel_id`, `kind`, `last_read_at`. `user_id` is the partition key and
-/// is supplied by the caller.
+/// Row tuple for the `channels_by_user` table: `channel_id`, `kind`, `last_read_at`. `user_id` is the partition key, supplied by the caller.
 pub(crate) type ChannelMembershipRow = (Uuid, String, Option<OffsetDateTime>);
 
 pub(crate) fn row_to_membership(
@@ -179,9 +166,6 @@ fn parse_channel_kind(s: &str) -> Result<ChannelKind, RepositoryError> {
 }
 
 /// Extracts the UUID v7 embedded millisecond timestamp as `OffsetDateTime`.
-///
-/// `MessageId`s are generated as v7 in the application layer; the `time::*_micros`
-/// API works regardless of version provided the timestamp field exists.
 fn uuid_v7_timestamp(id: Uuid) -> Result<OffsetDateTime, RepositoryError> {
     let ts = id
         .get_timestamp()

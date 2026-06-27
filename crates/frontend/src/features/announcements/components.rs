@@ -1,5 +1,4 @@
-//! Announcement UI: a channel-scoped feed (defaulting to General) with a
-//! broadcast composer and grace-window edit/delete on your own posts.
+//! Announcement UI: a channel-scoped feed (defaulting to General) with a broadcast composer and grace-window edit/delete on your own posts.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;

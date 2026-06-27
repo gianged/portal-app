@@ -1,6 +1,4 @@
-//! Assembles the chat surface: the channel rail beside the open channel's thread
-//! and composer. The selected channel + its message list / typing state are owned
-//! here and shared with the thread and composer.
+//! Chat surface: the channel rail beside the open channel's thread and composer; owns the selected channel and its message/typing state.
 
 use leptos::prelude::*;
 

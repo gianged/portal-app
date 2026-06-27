@@ -11,11 +11,6 @@ use domain::{
 };
 
 /// Configuration for the `OpenFGA` HTTP client.
-///
-/// `endpoint` is the base URL of the `OpenFGA` server (e.g. `http://openfga:8080`).
-/// `store_id` and `authorization_model_id` come from the `OpenFGA` store created
-/// by `fga store create` + `fga model write`. `bearer_token` is optional;
-/// supply it when the `OpenFGA` deployment requires shared-secret auth.
 #[derive(Clone)]
 pub struct OpenFgaConfig {
     pub endpoint: String,
@@ -24,8 +19,7 @@ pub struct OpenFgaConfig {
     pub bearer_token: Option<String>,
 }
 
-// Manual `Debug` so a stray `tracing::error!("{cfg:?}")` or panic dump
-// cannot leak the shared-secret token.
+// Manual `Debug` to keep the bearer token out of logs and panic dumps.
 impl fmt::Debug for OpenFgaConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OpenFgaConfig")
@@ -40,9 +34,7 @@ impl fmt::Debug for OpenFgaConfig {
     }
 }
 
-/// HTTP-REST adapter implementing the [`AuthzClient`] port against an
-/// `OpenFGA` server. The underlying `reqwest::Client` keeps an internal
-/// connection pool, so a single instance can be cloned/shared across tasks.
+/// HTTP-REST adapter implementing the [`AuthzClient`] port against an `OpenFGA` server.
 pub struct OpenFgaAuthzClient {
     http: Client,
     endpoint: String,
@@ -100,10 +92,8 @@ impl OpenFgaAuthzClient {
         }
     }
 
-    /// Single-tuple write that treats OpenFGA's "tuple already exists" 400 as
-    /// success — re-granting an existing relationship is a no-op `seed_company`
-    /// relies on at boot. Batch `write_tuples` stays strict (a partial duplicate
-    /// there must not silently drop the batch's new tuples).
+    /// Single-tuple write that treats OpenFGA's "already exists" 400 as success,
+    /// making a re-grant idempotent. Batch `write_tuples` stays strict.
     async fn write_single(&self, req: &WriteRequest<'_>) -> Result<(), AuthzError> {
         let url = self.store_url("write");
         let mut http = self.http.post(&url).json(req);

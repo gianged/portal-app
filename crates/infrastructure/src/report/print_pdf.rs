@@ -361,7 +361,7 @@ fn group_table(c: &mut Canvas, groups: &[GroupReportRow]) {
 
     for g in groups {
         c.ensure(6.5);
-        // re-draw header on a fresh page would be nice; kept simple.
+        // TODO: re-draw the header row after a page break.
         c.text(COL_GROUP, c.y, 8.5, ink(), &truncate(&g.group_name, 26));
         c.text(
             COL_PROJ,

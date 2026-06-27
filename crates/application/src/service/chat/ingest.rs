@@ -76,10 +76,9 @@ impl ChatIngest {
     /// `Conflict("chat_unavailable")` when the drain loop has stopped.
     pub async fn enqueue(&self, actor: UserId, cmd: PostMessageCommand) -> Result<Message> {
         let message = self.chat.prepare_message(actor, cmd).await?;
-        // Backpressure policy: shed load rather than await capacity. A full buffer
-        // means the drain can't keep up, so blocking here would only stall the WS
-        // task and back-pressure into the whole connection; instead surface
-        // `chat_overloaded` and let the client retry.
+        // Backpressure: shed load rather than await capacity. A full buffer means
+        // the drain can't keep up, so surface `chat_overloaded` and let the client
+        // retry instead of stalling the WS task.
         match self.tx.try_send(message.clone()) {
             Ok(()) => Ok(message),
             Err(mpsc::error::TrySendError::Full(_)) => {
@@ -92,10 +91,9 @@ impl ChatIngest {
     }
 
     /// Drains the buffer, persisting batches and fanning out each message. Runs
-    /// until either every sender is dropped or `shutdown` fires, then flushes the
-    /// tail and returns. The explicit `shutdown` is what makes graceful drain work
-    /// at process exit: the loop holds a `tx` via `self` and live WebSocket tasks
-    /// hold more, so the senders never all drop on their own.
+    /// until every sender drops or `shutdown` fires, then flushes the tail. The
+    /// explicit `shutdown` is needed because `self` and live WebSocket tasks hold
+    /// senders, so they never all drop on their own.
     pub async fn run(
         self: Arc<Self>,
         mut rx: mpsc::Receiver<Message>,
@@ -119,11 +117,9 @@ impl ChatIngest {
                     }
                 }
                 _ = ticker.tick() => self.flush(&mut buf).await,
-                // Shutdown signalled (or its sender dropped): stop accepting, sweep
-                // whatever is still queued, and flush the tail so optimistically
-                // -acked messages survive exit. A message a live client sends after
-                // this lands on a closed channel and is rejected, bounded by the
-                // server's force-exit watchdog.
+                // Shutdown signalled: stop accepting, sweep what's queued, and flush
+                // the tail so optimistically-acked messages survive exit. Later
+                // sends land on a closed channel and are rejected.
                 _ = &mut shutdown => {
                     rx.close();
                     while let Ok(message) = rx.try_recv() {
@@ -139,10 +135,9 @@ impl ChatIngest {
         }
     }
 
-    /// Fans out a persisted batch off the WS task: a per-message broadcast pass
-    /// (the real-time fan-out) followed by the batch's notification jobs enqueued
-    /// together. On a persist failure the batch is logged and dropped: under
-    /// optimistic ack the senders were already told their posts succeeded.
+    /// Fans out a persisted batch off the WS task: a per-message broadcast pass then
+    /// the batch's notification jobs. On a persist failure the batch is logged and
+    /// dropped, since optimistic ack already told senders their posts succeeded.
     async fn flush(&self, buf: &mut Vec<Message>) {
         if buf.is_empty() {
             return;
@@ -178,10 +173,9 @@ impl ChatIngest {
             }
         }
 
-        // Side channel, enqueued together after the fan-out so a slow job queue
-        // never stalls broadcast ordering. Only mention-bearing messages notify;
-        // chat is Scylla-backed and absent from AUDIT_TOPICS, so there are no
-        // audit jobs to enqueue here.
+        // Notifications enqueued after the fan-out so a slow job queue never stalls
+        // broadcast ordering. Only mention-bearing messages notify; chat is absent
+        // from AUDIT_TOPICS, so there are no audit jobs here.
         for event in &events {
             let mentioned = matches!(
                 event,

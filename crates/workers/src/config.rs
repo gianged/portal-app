@@ -4,9 +4,8 @@ use std::time::Duration as StdDuration;
 use anyhow::Context;
 use time::Duration;
 
-/// Worker configuration, parsed once from the environment at startup. Workers
-/// share the server's backends and add the maintenance-job intervals + retention
-/// windows.
+/// Worker configuration, parsed once from the environment at startup. Adds the
+/// maintenance-job intervals and retention windows on top of the server's backends.
 pub struct Config {
     pub database_url: String,
     pub pg_max_connections: u32,

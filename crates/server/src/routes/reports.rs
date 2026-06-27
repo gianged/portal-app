@@ -1,4 +1,4 @@
-//! Company report endpoints (Director/HR only — gated inside `ReportService`).
+//! Company report endpoints (Director/HR only, gated inside `ReportService`).
 //!
 //! Stats endpoints back the in-app dashboard; the `generate` endpoints render and
 //! store a PDF and return a signed download URL (the same `/files` mechanism the
@@ -18,7 +18,7 @@ use shared::dto::report::{MonthlyReportDto, ReportSummaryDto, YearlyReportDto};
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser};
 
-/// Signed report links live an hour — long enough to click through, short enough
+/// Signed report links live an hour: long enough to click through, short enough
 /// not to linger as a bearer token.
 const URL_TTL: Duration = Duration::from_secs(3600);
 const DEFAULT_LIMIT: u32 = 50;

@@ -1,5 +1,4 @@
-//! In-app notification data: the unread badge count, the inbox list, and the
-//! mark-read flow.
+//! In-app notification data: the unread badge count, the inbox list, and the mark-read flow.
 
 use serde::Deserialize;
 
@@ -9,8 +8,7 @@ use shared::dto::notification::{MarkReadRequest, NotificationDto};
 use crate::api::client;
 use crate::api::error::FrontendError;
 
-/// `GET /notifications/unread-count` returns a bare `{ "count": <n> }` object
-/// (no shared DTO), so it is decoded into this local shape.
+/// Local shape for the bare `{ "count": <n> }` body from `GET /notifications/unread-count` (no shared DTO).
 #[derive(Deserialize)]
 struct UnreadCount {
     count: u64,

@@ -1,14 +1,12 @@
 //! Boundary mapping between `domain` types and the wire DTOs in `shared`.
 //!
-//! `shared` cannot depend on `domain` (it targets wasm), so the orphan rule
-//! rules out `impl From<domain::X> for shared::Y`. These free functions are the
-//! one place that projection lives; handlers map here and never leak domain
-//! types over HTTP. Denormalized DTOs that embed `UserSummaryDto` take the
-//! resolved summary as an argument -- see `crate::resolve`.
+//! `shared` cannot depend on `domain` (it targets wasm), so the orphan rule rules
+//! out `impl From`. These free functions are the one place projection lives;
+//! handlers map here and never leak domain types over HTTP. Denormalized DTOs that
+//! embed `UserSummaryDto` take the resolved summary as an argument; see `crate::resolve`.
 //!
-//! Split by entity into submodules and flattened back out here, so call sites
-//! stay `dto::<fn>`. The id projections and the `id_map!` macro live in this
-//! parent because nearly every submodule needs them.
+//! Split by entity into submodules and re-exported here so call sites stay
+//! `dto::<fn>`; id projections and the `id_map!` macro live in this parent.
 
 mod audit;
 mod chat;

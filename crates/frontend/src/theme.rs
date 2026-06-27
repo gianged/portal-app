@@ -7,8 +7,7 @@ use std::str::FromStr;
 
 #[must_use]
 pub fn class(css: impl AsRef<str>) -> String {
-    // SAFETY: CSS strings come from static templates + theme constants we control;
-    // a parse failure would be a programmer error caught long before this runs.
+    // CSS comes from static templates and theme constants we control, so a parse failure is a programmer bug.
     let sheet =
         stylist::ast::Sheet::from_str(css.as_ref()).expect("CSS template is statically valid");
     stylist::Style::new(sheet)
@@ -17,12 +16,9 @@ pub fn class(css: impl AsRef<str>) -> String {
         .to_string()
 }
 
-/// The single global stylesheet: theme variable definitions (light + dark),
-/// base element resets, and scrollbar styling. Injected once at the app root.
-///
-/// Every `color::*` / shadow / ring token resolves to one of these variables, so
-/// setting `data-theme="dark"` on `<html>` reskins the entire app with no rebuild.
-/// Ported from `references/styles/tokens.css` (density variants intentionally omitted).
+/// The single global stylesheet: theme variables (light + dark), base resets, and
+/// scrollbar styling, injected once at the app root. Every `color::*`/shadow/ring
+/// token resolves to one of these variables, so a `data-theme` flip reskins the app.
 #[must_use]
 pub fn global_stylesheet() -> &'static str {
     r#"

@@ -152,8 +152,7 @@ async fn change_status(
 ) -> Result<Json<ProjectDto>, AppError> {
     let pid = ProjectId(id);
     let project = match body.status {
-        // `Active` is reachable from both Planning (activate) and OnHold (resume);
-        // pick by current state. The service still rejects an illegal transition.
+        // `Active` is reachable from Planning (activate) and OnHold (resume); pick by current state.
         WireProjectStatus::Active => {
             let current = state.project.find(auth.user_id, pid).await?;
             if current.status == ProjectStatus::OnHold {

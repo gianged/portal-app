@@ -3,9 +3,7 @@ use redis::{AsyncCommands, Client, aio::ConnectionManager};
 
 use domain::{error::RepositoryError, ids::UserId, ports::presence::Presence};
 
-/// `SETEX`-backed presence store. Every key carries a TTL so a process that
-/// crashes without cleaning up stops showing the user as online once the TTL
-/// elapses (per the no-infinite-keys rule).
+/// `SETEX`-backed presence store; every key carries a TTL so a crashed process stops showing online.
 #[derive(Clone)]
 pub struct PresenceStore {
     conn: ConnectionManager,
@@ -21,8 +19,7 @@ impl PresenceStore {
 
 #[async_trait]
 impl Presence for PresenceStore {
-    /// Mark the user online for `ttl_secs` seconds. Heartbeat by calling
-    /// again before the TTL expires; the value is opaque.
+    /// Mark the user online for `ttl_secs` seconds; call again before expiry to heartbeat.
     async fn set_online(&self, user: UserId, ttl_secs: u64) -> Result<(), RepositoryError> {
         let key = presence_key(user);
         let mut conn = self.conn.clone();

@@ -1,5 +1,4 @@
-//! Dashboard data. There is no bespoke "summary" endpoint — the dashboard is
-//! assembled client-side from the same list endpoints the feature pages use.
+//! Dashboard data assembled client-side from the same list endpoints the feature pages use; there is no bespoke summary endpoint.
 
 use shared::dto::{
     chat::ChannelSummaryDto, group::GroupDto, request::RequestDto, ticket::TicketDto,

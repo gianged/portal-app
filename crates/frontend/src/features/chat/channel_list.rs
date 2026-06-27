@@ -1,5 +1,4 @@
-//! The chat left rail: the caller's channels with unread dots, plus a "New DM"
-//! action that opens (or finds) a direct channel and selects it.
+//! Chat left rail: the caller's channels with unread dots, plus a New DM action that opens (or finds) a direct channel and selects it.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;

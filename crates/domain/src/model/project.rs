@@ -224,8 +224,8 @@ impl ProjectInvite {
         Ok(())
     }
 
-    /// Revoke does not set `responded_by_user_id` / `responded_at` — the schema
-    /// CHECK only requires those for `accepted` / `declined`.
+    /// Revoke does not set `responded_by_user_id` / `responded_at`; the schema CHECK
+    /// only requires those for `accepted` / `declined`.
     pub fn revoke(&mut self, now: OffsetDateTime) -> Result<(), TransitionError> {
         self.status = self.status.try_revoke()?;
         self.updated_at = now;

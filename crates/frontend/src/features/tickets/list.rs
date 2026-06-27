@@ -1,5 +1,4 @@
-//! IT-ticket index: a scope-filtered table (Mine / Assigned / Triage queue) with
-//! a raise dialog.
+//! IT-ticket index: a scope-filtered table (Mine / Assigned / Triage queue) with a raise dialog.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;

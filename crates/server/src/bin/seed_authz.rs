@@ -1,18 +1,11 @@
 //! Materialises `OpenFGA` relationship tuples from the seeded Postgres org graph.
 //!
 //! `infra/seed/demo-seed.sql` writes rows straight into Postgres, bypassing the
-//! application services that would normally emit the matching authorization
-//! tuples. This one-shot tool reads that org graph back and re-issues the same
-//! grants through [`application::permissions::Permissions`], so resource reads
-//! (projects, tickets, the Director "see-everything" view) resolve in `OpenFGA`.
-//!
-//! Only Postgres + `OpenFGA` are touched — no Scylla/Redis — so it runs even when
-//! a full server boot is unavailable. Run via `cargo make seed` (after the SQL)
-//! or directly: `cargo run --bin seed_authz`.
-//!
-//! `OpenFGA` rejects re-writing a tuple that already exists, so a re-run against a
-//! populated store logs per-tuple warnings and is otherwise a no-op; for a
-//! guaranteed-clean run reset the store first (`down -v` + `cargo make bootstrap`).
+//! services that would emit the matching authz tuples; this one-shot tool reads the
+//! org graph back and re-issues the grants through [`application::permissions::Permissions`].
+//! Only Postgres + `OpenFGA` are touched, so it runs without a full server boot. Run
+//! via `cargo make seed` (after the SQL). `OpenFGA` rejects re-writing an existing
+//! tuple, so a re-run logs per-tuple warnings and is otherwise a no-op.
 
 use std::sync::Arc;
 

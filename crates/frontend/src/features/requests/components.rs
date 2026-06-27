@@ -1,5 +1,4 @@
-//! Leaf helpers shared by the requests index ([`super::list`]) and detail
-//! ([`super::detail`]) surfaces.
+//! Leaf helpers shared by the requests index ([`super::list`]) and detail ([`super::detail`]) surfaces.
 
 use leptos::prelude::*;
 

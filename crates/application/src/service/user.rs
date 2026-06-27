@@ -131,7 +131,7 @@ impl UserService {
     }
 
     /// Promotes a `Pending` user to `Active` on their first successful login.
-    /// Caller authentication is enforced upstream (in the login route) — this
+    /// Caller authentication is enforced upstream (in the login route); this
     /// service trusts the `user_id` it receives.
     ///
     /// # Errors
@@ -160,12 +160,10 @@ impl UserService {
 
     /// Authenticates a login attempt and returns the resolved active user.
     ///
-    /// Returns `Ok(None)` for every failure mode — unknown email, wrong
-    /// password, or a deactivated account — so callers cannot use the endpoint
-    /// to enumerate accounts or distinguish "no such user" from "wrong
-    /// password". A `Pending` user who supplies the right password is promoted
-    /// to `Active` on this first login (via [`Self::complete_first_login`]) and
-    /// returned in the activated state.
+    /// Returns `Ok(None)` for every failure mode (unknown email, wrong password, or
+    /// a deactivated account) so callers cannot enumerate accounts. A `Pending` user
+    /// who supplies the right password is promoted to `Active` on this first login
+    /// (via [`Self::complete_first_login`]) and returned activated.
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable or the stored
@@ -436,9 +434,8 @@ impl UserService {
 }
 
 async fn hash_password(password: impl Into<String>) -> Result<String> {
-    // Argon2 is intentionally CPU-heavy (tens of ms). Run it on the blocking
-    // pool so it never stalls a tokio worker thread. The owned `String` is moved
-    // into the closure because `spawn_blocking` requires a `'static` body.
+    // Argon2 is CPU-heavy (tens of ms); run it on the blocking pool so it never
+    // stalls a tokio worker thread.
     let password = password.into();
     tokio::task::spawn_blocking(move || {
         let salt = SaltString::generate(&mut OsRng);

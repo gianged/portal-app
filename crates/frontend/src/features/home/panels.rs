@@ -1,6 +1,4 @@
-//! Dashboard widgets: the stat-tile row and the Requests / Tickets / Channels
-//! panels. Each is fed a [`Loadable`] signal owned by the dashboard page and
-//! renders its own loading / empty / error state.
+//! Dashboard widgets: the stat-tile row and the Requests/Tickets/Channels panels, each fed a [`Loadable`] signal owned by the dashboard page.
 
 use leptos::prelude::*;
 

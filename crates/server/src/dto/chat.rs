@@ -90,7 +90,7 @@ pub fn chat_attachment_dto(a: &model::ChatAttachment, download_url: String) -> C
 }
 
 /// `attachments` are the resolved + presigned DTOs for the message's keys
-/// (empty for deleted messages — the caller decides).
+/// (empty for deleted messages; the caller decides).
 #[must_use]
 pub fn message_dto(
     message: &model::Message,

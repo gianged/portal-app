@@ -79,7 +79,7 @@ impl WsClient {
     }
 
     /// Queue a frame for delivery. Frames sent while reconnecting are buffered and
-    /// flushed once the socket is back. Errors (channel closed) are swallowed —
+    /// flushed once the socket is back. Errors (channel closed) are swallowed since
     /// chat actions have a REST fallback.
     pub fn send(&self, frame: ClientFrame) {
         self.tx.with_value(|tx| {
@@ -138,7 +138,7 @@ async fn run(
                                         break;
                                     }
                             }
-                            // Sender dropped — the WsClient is gone; stop entirely.
+                            // Sender dropped: the WsClient is gone; stop entirely.
                             None => return,
                         },
                     }

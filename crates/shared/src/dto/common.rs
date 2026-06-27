@@ -9,11 +9,9 @@ use crate::{
     errors::SharedError,
 };
 
-/// Machine-stable error discriminator carried in every [`ApiError`]. Serializes
-/// to the same `snake_case` strings the backend has always emitted (`"validation"`,
-/// `"internal"`, …), so it is wire-compatible with the old `code: String`.
-/// Unknown/future codes deserialize to [`ErrorCode::Unknown`] so an older
-/// frontend never fails to decode a newer backend's error body.
+/// Machine-stable error discriminator carried in every [`ApiError`]; serializes
+/// to `snake_case` wire tokens. Unknown codes deserialize to [`ErrorCode::Unknown`]
+/// so an older frontend can still decode a newer backend's error body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
@@ -25,8 +23,8 @@ pub enum ErrorCode {
     Forbidden,
     Conflict,
     Internal,
-    /// Catch-all for codes this build doesn't recognise. Deserialize-only — the
-    /// backend never emits it.
+    /// Catch-all for codes this build doesn't recognise; deserialize-only, never
+    /// emitted by the backend.
     #[serde(other)]
     Unknown,
 }
@@ -66,9 +64,8 @@ impl ErrorCode {
     }
 }
 
-/// Stable error body returned on every non-2xx response. The frontend
-/// deserializes this instead of treating the body as opaque text. [`ErrorCode`]
-/// is a machine-stable discriminator the frontend maps to a friendly title;
+/// Stable error body returned on every non-2xx response; [`ErrorCode`] is a
+/// machine-stable discriminator the frontend maps to a friendly title, and
 /// `message` is human-readable.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiError {

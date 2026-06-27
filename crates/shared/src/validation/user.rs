@@ -84,7 +84,7 @@ pub fn validate_phone(phone: &str) -> Result<(), SharedError> {
     Ok(())
 }
 
-/// Format/length check only — no timezone database lookup (that crate is not
+/// Format/length check only; no timezone database lookup (that crate is not
 /// wasm-safe and the server re-validates against a real tz set).
 ///
 /// # Errors

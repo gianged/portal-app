@@ -1,11 +1,7 @@
 //! HMAC-signed, time-limited URLs for the local file store.
 //!
-//! [`crate::local_storage::LocalStorage::presign_get`] appends `?exp=..&sig=..`
-//! to a `/files/{key}` URL; the server's download handler verifies the pair
-//! before serving the bytes. The signature binds the storage key to an expiry,
-//! so a leaked link stops working after its TTL and cannot be retargeted at a
-//! different key. S3-shaped backends would presign with the SDK instead; this is
-//! the equivalent for the on-disk store.
+//! The signature binds storage key, expiry, and viewer, so a leaked link stops
+//! working after its TTL and is useless to anyone else.
 
 use std::fmt::Write as _;
 use std::time::Duration;
@@ -19,8 +15,7 @@ use domain::ids::UserId;
 type HmacSha256 = Hmac<Sha256>;
 
 /// Signs and verifies file-download URLs with an embedded expiry, bound to the
-/// viewer they were issued for. Holds the shared HMAC key (the composition
-/// root passes the deployment secret).
+/// viewer they were issued for. Holds the shared HMAC key.
 pub struct SignedUrl {
     key: Box<[u8]>,
 }
@@ -31,10 +26,8 @@ impl SignedUrl {
         Self { key: secret.into() }
     }
 
-    /// Returns `(exp, sig)` where `exp` is the Unix-seconds expiry (`now + ttl`,
-    /// saturating) and `sig` is the lowercase-hex HMAC-SHA256 of `key|exp|user`.
-    /// Binding the viewer into the signature makes a shared link useless to
-    /// anyone but the user it was minted for.
+    /// Returns `(exp, sig)`: the Unix-seconds expiry (`now + ttl`, saturating)
+    /// and the lowercase-hex HMAC-SHA256 over `key|exp|user`.
     #[must_use]
     pub fn sign_for(
         &self,
@@ -48,9 +41,8 @@ impl SignedUrl {
         (exp, self.tag(key, exp, user))
     }
 
-    /// Verifies `sig` against `key|exp|user` in constant time and confirms the
-    /// link has not expired (`exp > now`). Returns `false` on any mismatch,
-    /// malformed hex, expiry, or a different viewer than the link was signed for.
+    /// Verifies `sig` against `key|exp|user` in constant time and that the link
+    /// has not expired. Returns `false` on any mismatch, malformed hex, or expiry.
     #[must_use]
     pub fn verify_for(
         &self,
@@ -83,8 +75,7 @@ impl SignedUrl {
     }
 }
 
-/// Canonical signed message: key, expiry, and viewer on separate lines so no
-/// field can bleed into another.
+/// Canonical signed message; separate lines keep fields from bleeding together.
 fn message(key: &str, exp: i64, user: UserId) -> String {
     format!("{key}\n{exp}\n{}", user.0)
 }
