@@ -1,5 +1,8 @@
 use leptos::{prelude::*, task::spawn_local};
-use leptos_router::{components::{Route, Router, Routes}, path};
+use leptos_router::{
+    components::{Route, Router, Routes},
+    path,
+};
 
 use crate::api::ws::WsClient;
 use crate::features::announcements::routes::AnnouncementsPage;

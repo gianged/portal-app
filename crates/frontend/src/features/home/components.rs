@@ -1,7 +1,11 @@
 #![allow(dead_code)] // TODO: UserCard unused, I will see it
 
 use leptos::{prelude::*, task::spawn_local};
-use leptos_router::{NavigateOptions, components::A, hooks::{use_location, use_navigate}};
+use leptos_router::{
+    NavigateOptions,
+    components::A,
+    hooks::{use_location, use_navigate},
+};
 
 use crate::features::auth::api as auth_api;
 use crate::primitives::avatar::{Avatar, AvatarSize};

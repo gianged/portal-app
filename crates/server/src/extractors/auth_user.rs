@@ -34,7 +34,10 @@ where
 mod tests {
     use super::*;
 
-    use axum::{http::{Request, StatusCode}, response::IntoResponse};
+    use axum::{
+        http::{Request, StatusCode},
+        response::IntoResponse,
+    };
 
     fn parts_with(user: Option<AuthUser>) -> Parts {
         let mut request = Request::builder().body(()).expect("build request");

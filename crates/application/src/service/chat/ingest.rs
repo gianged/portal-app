@@ -9,12 +9,12 @@ use tokio::{
     time::MissedTickBehavior,
 };
 
+use super::ChatService;
 use crate::{
     commands::chat::PostMessageCommand,
     error::{Error, Result},
     events::{DomainEvent, EventBus},
 };
-use super::ChatService;
 
 /// Tunables for the write-behind ingest buffer.
 #[derive(Debug, Clone, Copy)]

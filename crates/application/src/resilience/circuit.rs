@@ -8,8 +8,8 @@ use domain::{
     health::HealthStatus,
 };
 
-use crate::error::{Error, Result};
 use super::backoff::Backoff;
+use crate::error::{Error, Result};
 
 /// Tunables for one breaker.
 #[derive(Debug, Clone, Copy)]

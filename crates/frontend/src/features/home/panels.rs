@@ -280,7 +280,10 @@ fn channel_row(c: ChannelSummaryDto) -> impl IntoView {
     ));
     let unread = c.unread;
     let name = c.title.clone();
-    let when = c.last_message_at.map(format::relative_time).unwrap_or_default();
+    let when = c
+        .last_message_at
+        .map(format::relative_time)
+        .unwrap_or_default();
     view! {
         <div class=row>
             {if unread {
