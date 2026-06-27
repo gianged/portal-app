@@ -21,10 +21,7 @@ use application::{
     service::{
         announcement::AnnouncementService,
         audit::AuditService,
-        chat::{
-            ChatService,
-            ingest::{ChatIngest, ChatIngestConfig},
-        },
+        chat::{ChatIngest, ChatIngestConfig, ChatService},
         comment::CommentService,
         group::GroupService,
         notification::NotificationService,

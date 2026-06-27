@@ -13,8 +13,7 @@ pub mod user;
 
 pub use announcement::AnnouncementService;
 pub use audit::{AuditProjector, AuditService};
-pub use chat::ingest::{ChatIngest, ChatIngestConfig};
-pub use chat::{ChannelOverview, ChatService};
+pub use chat::{ChannelOverview, ChatIngest, ChatIngestConfig, ChatService};
 pub use comment::CommentService;
 pub use group::GroupService;
 pub use maintenance::MaintenanceService;

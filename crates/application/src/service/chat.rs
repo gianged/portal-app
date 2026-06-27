@@ -1,4 +1,4 @@
-pub mod ingest;
+mod ingest;
 
 use std::sync::Arc;
 
@@ -19,6 +19,8 @@ use crate::{
     events::{DomainEvent, EventBus},
     permissions::Permissions,
 };
+
+pub use ingest::{ChatIngest, ChatIngestConfig};
 
 /// Members can delete only their own messages within this window after posting.
 /// Group-channel leaders bypass this grace and can delete anytime.

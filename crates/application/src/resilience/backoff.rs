@@ -3,9 +3,17 @@ use std::{
     time::Duration,
 };
 
+/// 64-bit golden-ratio constant, floor(2^64 / phi). Bit-irregular, so it makes
+/// a good initial jitter seed.
+const GOLDEN_RATIO: u64 = 0x9E37_79B9_7F4A_7C15;
+
+/// xorshift64* scramble multiplier. Doubles as the per-construction seed
+/// increment so back-to-back backoffs diverge.
+const XORSHIFT_MULTIPLIER: u64 = 0x2545_F491_4F6C_DD1D;
+
 /// Process-global seed source so each `Backoff` gets a distinct jitter stream
 /// without reading the clock, which keeps construction pure and test-friendly.
-static SEED: AtomicU64 = AtomicU64::new(0x9E37_79B9_7F4A_7C15);
+static SEED: AtomicU64 = AtomicU64::new(GOLDEN_RATIO);
 
 /// Decorrelated-jitter exponential backoff. Each [`Backoff::next_delay`] picks a delay
 /// in `[base, prev * 3]` capped at `cap`, so concurrent retriers spread out
@@ -26,7 +34,7 @@ impl Backoff {
     #[must_use]
     pub fn new(base: Duration, cap: Duration) -> Self {
         // Advance the global seed so two backoffs built back-to-back diverge.
-        let seed = SEED.fetch_add(0x2545_F491_4F6C_DD1D, Ordering::Relaxed);
+        let seed = SEED.fetch_add(XORSHIFT_MULTIPLIER, Ordering::Relaxed);
         Self {
             base,
             cap,
@@ -57,12 +65,13 @@ impl Backoff {
         if nanos == 0 {
             return Duration::ZERO;
         }
+        // xorshift64*: 12/25/27 is a published full-period shift triple.
         let mut x = self.rng;
         x ^= x >> 12;
         x ^= x << 25;
         x ^= x >> 27;
         self.rng = x;
-        let r = x.wrapping_mul(0x2545_F491_4F6C_DD1D);
+        let r = x.wrapping_mul(XORSHIFT_MULTIPLIER);
         Duration::from_nanos(r % nanos)
     }
 }

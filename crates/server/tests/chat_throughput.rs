@@ -42,10 +42,7 @@ use application::{
     commands::chat::PostMessageCommand,
     events::EventBus,
     permissions::Permissions,
-    service::chat::{
-        ChatService,
-        ingest::{ChatIngest, ChatIngestConfig},
-    },
+    service::chat::{ChatIngest, ChatIngestConfig, ChatService},
 };
 use domain::{
     error::{AuthzError, JobError, RepositoryError, StorageError},
