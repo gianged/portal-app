@@ -76,6 +76,7 @@ impl NotificationFanout {
     /// # Errors
     /// Returns a repository error if resolving recipients (channels, groups,
     /// users, or the originating request) or persisting any notification fails.
+    #[tracing::instrument(skip_all)]
     pub async fn handle(&self, event: &DomainEvent) -> Result<()> {
         match event {
             DomainEvent::AnnouncementPosted {

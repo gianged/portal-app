@@ -88,6 +88,7 @@ impl UserService {
     /// already in use, a repository error if the datastore or authz backend is
     /// unavailable or password hashing fails, or an event error if the event bus
     /// fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn create_user(&self, actor: UserId, cmd: CreateUserCommand) -> Result<User> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
@@ -138,6 +139,7 @@ impl UserService {
     /// Returns `NotFound` if the user does not exist, `Transition` if the user is
     /// not in a state that can be activated, a repository error if the datastore
     /// is unavailable, or an event error if the event bus fails.
+    #[tracing::instrument(skip_all, fields(user_id = ?user_id))]
     pub async fn complete_first_login(&self, user_id: UserId) -> Result<User> {
         let now = OffsetDateTime::now_utc();
         let mut user = self
@@ -170,6 +172,7 @@ impl UserService {
     /// password hash cannot be parsed or verified, and propagates the errors of
     /// first-login activation when a `Pending` user is promoted. Unknown email,
     /// wrong password, and deactivated accounts yield `Ok(None)`, not an error.
+    #[tracing::instrument(skip_all)]
     pub async fn login(&self, email: &str, password: &str) -> Result<Option<User>> {
         let Some(user) = self.users.find_by_email(email).await? else {
             return Ok(None);
@@ -195,6 +198,7 @@ impl UserService {
     /// requests assigned, `Transition` if the user cannot be deactivated from its
     /// current state, a repository error if the datastore or authz backend is
     /// unavailable, or an event error if the event bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, target = ?target))]
     pub async fn deactivate_user(&self, actor: UserId, target: UserId) -> Result<()> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
@@ -255,6 +259,7 @@ impl UserService {
     /// not exist, `Transition` if the user cannot be reactivated from its current
     /// state, a repository error if the datastore or authz backend is
     /// unavailable, or an event error if the event bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, target = ?target))]
     pub async fn reactivate_user(&self, actor: UserId, target: UserId) -> Result<User> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
@@ -289,6 +294,7 @@ impl UserService {
     /// profile) or not HR (when editing another user), `NotFound` if the target
     /// does not exist, a repository error if the datastore is unavailable, or an
     /// event error if the event bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, target = ?target))]
     pub async fn update_profile(
         &self,
         actor: UserId,
@@ -343,6 +349,7 @@ impl UserService {
     /// Returns `Forbidden` if the actor is not active, `Validation` if the
     /// current password is wrong, `NotFound` if the actor row is missing, or a
     /// repository/event error from the backends.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn change_password(
         &self,
         actor: UserId,
@@ -380,6 +387,7 @@ impl UserService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the target
     /// does not exist, or a repository/event error from the backends.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, target = ?target))]
     pub async fn admin_reset_password(
         &self,
         actor: UserId,
@@ -412,6 +420,7 @@ impl UserService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     pub async fn find(&self, id: UserId) -> Result<Option<User>> {
         Ok(self.users.find_by_id(id).await?)
     }
@@ -420,6 +429,7 @@ impl UserService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all)]
     pub async fn find_by_email(&self, email: &str) -> Result<Option<User>> {
         Ok(self.users.find_by_email(email).await?)
     }
@@ -428,6 +438,7 @@ impl UserService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(limit, offset))]
     pub async fn list_active(&self, limit: u32, offset: u32, q: Option<&str>) -> Result<Vec<User>> {
         Ok(self.users.list_active(limit, offset, q).await?)
     }

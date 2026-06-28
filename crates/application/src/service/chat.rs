@@ -71,6 +71,7 @@ impl ChatService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     pub async fn find_channel(&self, id: ChannelId) -> Result<Option<Channel>> {
         Ok(self.chats.find_channel(id).await?)
     }
@@ -84,6 +85,7 @@ impl ChatService {
     /// targets themselves, `NotFound` if the other user does not exist, `Conflict`
     /// if the recipient is not active, or a repository error if the datastore is
     /// unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, other_user = ?other_user))]
     pub async fn open_direct_channel(&self, actor: UserId, other_user: UserId) -> Result<Channel> {
         self.perms.require_active(actor).await?;
         if actor == other_user {
@@ -124,6 +126,7 @@ impl ChatService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not active, or a repository error if
     /// the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn list_channels(&self, actor: UserId) -> Result<Vec<ChannelMembership>> {
         self.perms.require_active(actor).await?;
         Ok(self.chats.list_channels_for_user(actor).await?)
@@ -136,6 +139,7 @@ impl ChatService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not active, or a repository error if
     /// the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn channel_overviews(&self, actor: UserId) -> Result<Vec<ChannelOverview>> {
         let memberships = self.list_channels(actor).await?;
         let mut out = Vec::with_capacity(memberships.len());
@@ -167,6 +171,7 @@ impl ChatService {
     /// Returns `Forbidden` if the actor is not active or cannot view the channel,
     /// `NotFound` if the channel does not exist, or a repository error if the
     /// datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id, limit))]
     pub async fn list_messages(
         &self,
         actor: UserId,
@@ -240,6 +245,7 @@ impl ChatService {
     /// Returns `Forbidden` if the actor is not active or cannot post in the
     /// channel, `NotFound` if the channel does not exist, a repository error if
     /// the datastore is unavailable, or an event error if the event bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn post_message(&self, actor: UserId, cmd: PostMessageCommand) -> Result<Message> {
         let message = self.prepare_message(actor, cmd).await?;
         self.chats.save_message(&message).await?;
@@ -264,6 +270,7 @@ impl ChatService {
     /// Returns `Forbidden` if the actor is not active or cannot post in the
     /// channel, `NotFound` if the channel does not exist, `Validation` for an
     /// oversized payload, or a repository/storage error.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id))]
     pub async fn add_attachment(
         &self,
         actor: UserId,
@@ -311,6 +318,7 @@ impl ChatService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all)]
     pub async fn attachments_by_keys(&self, keys: &[String]) -> Result<Vec<ChatAttachment>> {
         Ok(self.attachments.find_by_keys(keys).await?)
     }
@@ -323,6 +331,7 @@ impl ChatService {
     /// within the grace window nor a channel moderator, `NotFound` if the channel
     /// or message does not exist, a repository error if the datastore is
     /// unavailable, or an event error if the event bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id, message_id = ?message_id))]
     pub async fn delete_message(
         &self,
         actor: UserId,
@@ -379,6 +388,7 @@ impl ChatService {
     /// the grace window, `NotFound` if the message does not exist, `Conflict` if
     /// the message is deleted or is an announcement, a repository error if the
     /// datastore is unavailable, or an event error if the event bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id, message_id = ?message_id))]
     pub async fn edit_message(
         &self,
         actor: UserId,
@@ -428,6 +438,7 @@ impl ChatService {
     /// Returns `Forbidden` if the actor is not active or cannot view the channel,
     /// `NotFound` if the channel does not exist, or a repository error if the
     /// datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id))]
     pub async fn ensure_can_view(&self, actor: UserId, channel_id: ChannelId) -> Result<()> {
         self.perms.require_active(actor).await?;
         let channel = self
@@ -445,6 +456,7 @@ impl ChatService {
     /// Returns `Forbidden` if the actor is not active or cannot view the channel,
     /// `NotFound` if the channel does not exist, or a repository error if the
     /// datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id))]
     pub async fn mark_read(&self, actor: UserId, channel_id: ChannelId) -> Result<()> {
         self.perms.require_active(actor).await?;
         let channel = self

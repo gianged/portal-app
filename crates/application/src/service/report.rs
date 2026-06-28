@@ -61,6 +61,7 @@ impl ReportService {
     ///
     /// # Errors
     /// Returns `Validation` for an invalid month, or a repository error.
+    #[tracing::instrument(skip_all)]
     pub async fn monthly_stats(&self, year: i32, month: u8) -> Result<MonthlyReportData> {
         self.assemble_monthly(month_period(year, month)?).await
     }
@@ -69,6 +70,7 @@ impl ReportService {
     ///
     /// # Errors
     /// Returns `Validation` for an invalid year, or a repository error.
+    #[tracing::instrument(skip_all)]
     pub async fn yearly_stats(&self, year: i32) -> Result<YearlyReportData> {
         self.assemble_yearly(year).await
     }
@@ -79,6 +81,7 @@ impl ReportService {
     /// # Errors
     /// Returns `Validation` for an invalid month, or a repository, storage, or
     /// render error.
+    #[tracing::instrument(skip_all)]
     pub async fn generate_monthly(
         &self,
         year: i32,
@@ -94,6 +97,7 @@ impl ReportService {
     /// # Errors
     /// Returns `Validation` for an invalid year, or a repository, storage, or
     /// render error.
+    #[tracing::instrument(skip_all)]
     pub async fn generate_yearly(&self, year: i32, generated_by: Option<UserId>) -> Result<Report> {
         let period = year_period(year)?;
         Ok(self.store_yearly(period, year, generated_by).await?.report)
@@ -105,6 +109,7 @@ impl ReportService {
     /// # Errors
     /// Returns `Validation` for an invalid month, or a repository, storage, or
     /// render error.
+    #[tracing::instrument(skip_all)]
     pub async fn generate_and_store_monthly(
         &self,
         year: i32,
@@ -118,6 +123,7 @@ impl ReportService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(limit))]
     pub async fn list_reports(&self, limit: u32) -> Result<Vec<Report>> {
         Ok(self.archive.list(limit).await?)
     }
@@ -126,6 +132,7 @@ impl ReportService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all)]
     pub async fn list_admin_recipients(&self) -> Result<Vec<(String, UserId)>> {
         let users = self.users.list_with_system_role().await?;
         Ok(users.into_iter().map(|u| (u.email, u.id)).collect())

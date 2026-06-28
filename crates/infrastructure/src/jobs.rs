@@ -5,11 +5,17 @@ use serde::{Deserialize, Serialize};
 
 use domain::{error::JobError, ports::job_queue::JobQueue};
 
+use crate::telemetry;
+
 /// Wrapper persisted on the apalis/Redis queue, carrying serialised
 /// `application::DomainEvent` bytes the worker fans out into notifications.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationEnvelope {
     pub event: Vec<u8>,
+    /// W3C `traceparent` of the enqueuing request, so the worker continues the
+    /// same trace. Absent on jobs queued without active OTLP export.
+    #[serde(default)]
+    pub traceparent: Option<String>,
 }
 
 /// Builds the Redis-backed notification job storage, shared by producer and
@@ -45,6 +51,7 @@ impl JobQueue for ApalisNotificationQueue {
         storage
             .push(NotificationEnvelope {
                 event: payload.to_vec(),
+                traceparent: telemetry::current_traceparent(),
             })
             .await
             .map_err(|e| JobError::Backend(e.to_string()))?;
@@ -57,6 +64,9 @@ impl JobQueue for ApalisNotificationQueue {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditEnvelope {
     pub event: Vec<u8>,
+    /// W3C `traceparent` of the enqueuing request; see [`NotificationEnvelope`].
+    #[serde(default)]
+    pub traceparent: Option<String>,
 }
 
 /// Builds the Redis-backed audit job storage, shared by producer and consumer
@@ -90,6 +100,7 @@ impl JobQueue for ApalisAuditQueue {
         storage
             .push(AuditEnvelope {
                 event: payload.to_vec(),
+                traceparent: telemetry::current_traceparent(),
             })
             .await
             .map_err(|e| JobError::Backend(e.to_string()))?;
@@ -102,6 +113,9 @@ impl JobQueue for ApalisAuditQueue {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmailEnvelope {
     pub message: Vec<u8>,
+    /// W3C `traceparent` of the enqueuing request; see [`NotificationEnvelope`].
+    #[serde(default)]
+    pub traceparent: Option<String>,
 }
 
 /// Builds the Redis-backed email job storage. Producer (`ApalisEmailQueue`) and
@@ -135,6 +149,7 @@ impl JobQueue for ApalisEmailQueue {
         storage
             .push(EmailEnvelope {
                 message: payload.to_vec(),
+                traceparent: telemetry::current_traceparent(),
             })
             .await
             .map_err(|e| JobError::Backend(e.to_string()))?;

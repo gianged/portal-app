@@ -64,6 +64,7 @@ impl From<TicketRow> for Ticket {
 
 #[async_trait]
 impl TicketRepository for PgTicketRepo {
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn find_by_id(&self, id: TicketId) -> Result<Option<Ticket>, RepositoryError> {
         sqlx::query_as!(
             TicketRow,
@@ -91,6 +92,7 @@ impl TicketRepository for PgTicketRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    #[tracing::instrument(skip_all, fields(limit = ?limit))]
     async fn list_open_for_triage(
         &self,
         limit: u32,
@@ -128,6 +130,7 @@ impl TicketRepository for PgTicketRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all, fields(assignee = ?assignee))]
     async fn list_for_assignee(
         &self,
         assignee: UserId,
@@ -164,6 +167,7 @@ impl TicketRepository for PgTicketRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all, fields(requester = ?requester))]
     async fn list_for_requester(
         &self,
         requester: UserId,
@@ -199,6 +203,7 @@ impl TicketRepository for PgTicketRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all, fields(limit = ?limit))]
     async fn list_resolved_before(
         &self,
         cutoff: OffsetDateTime,
@@ -235,6 +240,7 @@ impl TicketRepository for PgTicketRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save(&self, ticket: &Ticket) -> Result<(), RepositoryError> {
         let status = SqlTicketStatus::from(ticket.status);
         let priority: Option<SqlTicketPriority> = ticket.priority.map(Into::into);

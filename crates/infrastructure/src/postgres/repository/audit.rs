@@ -53,6 +53,7 @@ impl From<AuditRow> for AuditLog {
 
 #[async_trait]
 impl AuditRepository for PgAuditRepo {
+    #[tracing::instrument(skip_all)]
     async fn append(&self, e: &AuditLog) -> Result<(), RepositoryError> {
         // Immutable append (invariant 5): plain INSERT, no UPSERT.
         let action = SqlAuditAction::from(e.action);
@@ -79,6 +80,7 @@ impl AuditRepository for PgAuditRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(limit = ?limit))]
     async fn list_for_entity(
         &self,
         entity_schema: &str,
@@ -114,6 +116,7 @@ impl AuditRepository for PgAuditRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all, fields(limit = ?limit))]
     async fn list_recent(
         &self,
         limit: u32,

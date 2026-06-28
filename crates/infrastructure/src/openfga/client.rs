@@ -120,6 +120,7 @@ impl OpenFgaAuthzClient {
 
 #[async_trait]
 impl AuthzClient for OpenFgaAuthzClient {
+    #[tracing::instrument(skip_all, fields(user = ?user))]
     async fn check(&self, user: UserId, relation: &str, object: &str) -> Result<bool, AuthzError> {
         let req = CheckRequest {
             tuple_key: TupleKeyDto {
@@ -133,6 +134,7 @@ impl AuthzClient for OpenFgaAuthzClient {
         Ok(resp.allowed)
     }
 
+    #[tracing::instrument(skip_all)]
     async fn write_tuple(
         &self,
         subject: &str,
@@ -153,6 +155,7 @@ impl AuthzClient for OpenFgaAuthzClient {
         self.write_single(&req).await
     }
 
+    #[tracing::instrument(skip_all)]
     async fn delete_tuple(
         &self,
         subject: &str,
@@ -174,6 +177,7 @@ impl AuthzClient for OpenFgaAuthzClient {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn write_tuples(
         &self,
         writes: &[RelationTuple],
@@ -201,6 +205,7 @@ impl AuthzClient for OpenFgaAuthzClient {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(user = ?user))]
     async fn list_objects(
         &self,
         user: UserId,

@@ -85,6 +85,7 @@ impl ChatIngest {
     /// Surfaces the same validation errors as `ChatService::post_message`, plus
     /// `Conflict("chat_overloaded")` when the buffer is full and
     /// `Conflict("chat_unavailable")` when the drain loop has stopped.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn enqueue(&self, actor: UserId, cmd: PostMessageCommand) -> Result<Message> {
         let message = self.chat.prepare_message(actor, cmd).await?;
         // Backpressure: shed load rather than await capacity. A full buffer means
@@ -105,6 +106,7 @@ impl ChatIngest {
     /// until every sender drops or `shutdown` fires, then flushes the tail. The
     /// explicit `shutdown` is needed because `self` and live WebSocket tasks hold
     /// senders, so they never all drop on their own.
+    #[tracing::instrument(skip_all)]
     pub async fn run(
         self: Arc<Self>,
         mut rx: mpsc::Receiver<Message>,

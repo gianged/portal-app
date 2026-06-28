@@ -49,6 +49,7 @@ impl HealthCheck for PgHealthCheck {
         BackendId::Postgres
     }
 
+    #[tracing::instrument(skip_all)]
     async fn ping(&self) -> Result<(), HealthError> {
         with_timeout(async {
             // A constant liveness ping needs no compile-time check; the typed
@@ -81,6 +82,7 @@ impl HealthCheck for ScyllaHealthCheck {
         BackendId::Scylla
     }
 
+    #[tracing::instrument(skip_all)]
     async fn ping(&self) -> Result<(), HealthError> {
         with_timeout(async {
             self.session
@@ -114,6 +116,7 @@ impl HealthCheck for RedisHealthCheck {
         BackendId::Redis
     }
 
+    #[tracing::instrument(skip_all)]
     async fn ping(&self) -> Result<(), HealthError> {
         let mut conn = self.conn.clone();
         with_timeout(async move {
@@ -160,6 +163,7 @@ impl HealthCheck for OpenFgaHealthCheck {
         BackendId::OpenFga
     }
 
+    #[tracing::instrument(skip_all)]
     async fn ping(&self) -> Result<(), HealthError> {
         with_timeout(async {
             let mut req = self.http.get(&self.healthz_url);

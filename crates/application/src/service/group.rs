@@ -54,6 +54,7 @@ impl GroupService {
     /// Returns `Forbidden` if the actor is not HR, a repository error if the
     /// datastore or authz backend is unavailable, or an event error if the event
     /// bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn create_group(&self, actor: UserId, cmd: CreateGroupCommand) -> Result<Group> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
@@ -102,6 +103,7 @@ impl GroupService {
     /// not exist, `Conflict` if the group still owns active projects, a repository
     /// error if the datastore is unavailable, or an event error if the event bus
     /// fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, group_id = ?group_id))]
     pub async fn delete_group(&self, actor: UserId, group_id: GroupId) -> Result<()> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
@@ -144,6 +146,7 @@ impl GroupService {
     /// is `Leader` while the group already has one, a repository error if the
     /// datastore or authz backend is unavailable, or an event error if the event
     /// bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn add_membership(
         &self,
         actor: UserId,
@@ -208,6 +211,7 @@ impl GroupService {
     /// demote the last leader, or the group already has a leader when promoting,
     /// a repository error if the datastore or authz backend is unavailable, or an
     /// event error if the event bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, group_id = ?group_id, user_id = ?user_id))]
     pub async fn change_role(
         &self,
         actor: UserId,
@@ -265,6 +269,7 @@ impl GroupService {
     /// does not exist, `Conflict` if the member is the last leader (transfer
     /// leadership first), a repository error if the datastore or authz backend is
     /// unavailable, or an event error if the event bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, group_id = ?group_id, user_id = ?user_id))]
     pub async fn deactivate_membership(
         &self,
         actor: UserId,
@@ -313,6 +318,7 @@ impl GroupService {
     /// `Conflict` if the source is not an active leader or the target is inactive,
     /// a repository error if the datastore or authz backend is unavailable, or an
     /// event error if the event bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, group_id = ?group_id, from_user = ?from_user, to_user = ?to_user))]
     pub async fn transfer_leadership(
         &self,
         actor: UserId,
@@ -395,6 +401,7 @@ impl GroupService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     pub async fn find(&self, id: GroupId) -> Result<Option<Group>> {
         Ok(self.groups.find_group(id).await?)
     }
@@ -404,6 +411,7 @@ impl GroupService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not active, or a repository error if
     /// the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn list_all(&self, actor: UserId) -> Result<Vec<Group>> {
         self.perms.require_active(actor).await?;
         Ok(self.groups.list_all().await?)
@@ -415,6 +423,7 @@ impl GroupService {
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the group does
     /// not exist, a repository error if the datastore is unavailable, or an event
     /// error if the event bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, group_id = ?group_id))]
     pub async fn update_metadata(
         &self,
         actor: UserId,
@@ -453,6 +462,7 @@ impl GroupService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(group_id = ?group_id))]
     pub async fn active_member_count(&self, group_id: GroupId) -> Result<u32> {
         let memberships = self.groups.list_memberships_for_group(group_id).await?;
         let count = memberships.iter().filter(|m| m.is_active()).count();
@@ -465,6 +475,7 @@ impl GroupService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all)]
     pub async fn active_memberships_for_users(
         &self,
         user_ids: &[UserId],
@@ -487,6 +498,7 @@ impl GroupService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all)]
     pub async fn it_group_id(&self) -> Result<Option<GroupId>> {
         if let Some(id) = self.it_group.get() {
             return Ok(Some(*id));
@@ -506,6 +518,7 @@ impl GroupService {
     /// Returns `Forbidden` if the actor is not active or is not a member, HR, or
     /// Director, or a repository error if the datastore or authz backend is
     /// unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, group_id = ?group_id))]
     pub async fn list_memberships(
         &self,
         actor: UserId,

@@ -76,6 +76,7 @@ impl LocalStorage {
 
 #[async_trait]
 impl FileStorage for LocalStorage {
+    #[tracing::instrument(skip_all)]
     async fn put(
         &self,
         key: &str,
@@ -94,6 +95,7 @@ impl FileStorage for LocalStorage {
             .map_err(|e| StorageError::Backend(e.to_string()))
     }
 
+    #[tracing::instrument(skip_all)]
     async fn get(&self, key: &str) -> Result<Vec<u8>, StorageError> {
         let path = self.resolve(key)?;
         fs::read(&path).await.map_err(|e| match e.kind() {
@@ -102,6 +104,7 @@ impl FileStorage for LocalStorage {
         })
     }
 
+    #[tracing::instrument(skip_all)]
     async fn delete(&self, key: &str) -> Result<(), StorageError> {
         let path = self.resolve(key)?;
         match fs::remove_file(&path).await {
@@ -112,6 +115,7 @@ impl FileStorage for LocalStorage {
         }
     }
 
+    #[tracing::instrument(skip_all, fields(user = ?user))]
     async fn presign_get(
         &self,
         key: &str,
@@ -129,6 +133,7 @@ impl FileStorage for LocalStorage {
         ))
     }
 
+    #[tracing::instrument(skip_all)]
     async fn list(&self, prefix: &str) -> Result<Vec<StorageObject>, StorageError> {
         let base = if prefix.is_empty() {
             self.root.clone()

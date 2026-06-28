@@ -53,6 +53,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not a leader of the owner group, or a repository, event, or authz-backed repository error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn create_project(
         &self,
         actor: UserId,
@@ -96,6 +97,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader or sub-leader of the owner group, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id))]
     pub async fn update_metadata(
         &self,
         actor: UserId,
@@ -132,6 +134,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader or sub-leader of the owner group, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id))]
     pub async fn set_progress(
         &self,
         actor: UserId,
@@ -164,6 +167,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the project is not in an activatable state, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id))]
     pub async fn activate(&self, actor: UserId, project_id: ProjectId) -> Result<Project> {
         self.transition(actor, project_id, Project::activate).await
     }
@@ -172,6 +176,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the project cannot be put on hold from its current state, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id))]
     pub async fn hold(&self, actor: UserId, project_id: ProjectId) -> Result<Project> {
         self.transition(actor, project_id, Project::hold).await
     }
@@ -180,6 +185,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the project is not on hold, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id))]
     pub async fn resume(&self, actor: UserId, project_id: ProjectId) -> Result<Project> {
         self.transition(actor, project_id, Project::resume).await
     }
@@ -188,6 +194,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the project cannot be completed from its current state (or an open request cannot be cancelled), or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id))]
     pub async fn complete(&self, actor: UserId, project_id: ProjectId) -> Result<Project> {
         let project = self
             .transition(actor, project_id, Project::complete)
@@ -200,6 +207,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the project cannot be cancelled from its current state (or an open request cannot be cancelled), or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id))]
     pub async fn cancel(&self, actor: UserId, project_id: ProjectId) -> Result<Project> {
         let project = self.transition(actor, project_id, Project::cancel).await?;
         self.cascade_cancel_open_requests(actor, project_id).await?;
@@ -210,6 +218,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Validation` if the target group is the owner group, `Conflict` if the project is not active or the group is already a collaborator or already has a pending invite, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id, target_group = ?target_group))]
     pub async fn invite_group(
         &self,
         actor: UserId,
@@ -269,6 +278,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `NotFound` if the invite does not exist, `Forbidden` if the actor is not a leader of the invited group, `Transition` if the invite is not pending, or a repository, event, or authz-backed repository error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, invite_id = ?invite_id))]
     pub async fn accept_invite(
         &self,
         actor: UserId,
@@ -316,6 +326,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `NotFound` if the invite does not exist, `Forbidden` if the actor is not a leader of the invited group, `Transition` if the invite is not pending, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, invite_id = ?invite_id))]
     pub async fn decline_invite(
         &self,
         actor: UserId,
@@ -349,6 +360,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `NotFound` if the invite or its project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the invite is not pending, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, invite_id = ?invite_id))]
     pub async fn revoke_invite(
         &self,
         actor: UserId,
@@ -383,6 +395,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `NotFound` if the project does not exist or the group is not a collaborator, `Forbidden` if the actor is not a leader of the owner group, or a repository, event, or authz-backed repository error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id, group_id = ?group_id))]
     pub async fn remove_collaborator(
         &self,
         actor: UserId,
@@ -418,6 +431,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor cannot view it, or a repository or authz-backed repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, id = ?id))]
     pub async fn find(&self, actor: UserId, id: ProjectId) -> Result<Project> {
         let project = self.load(id).await?;
         self.perms.require_can_view_project(actor, id).await?;
@@ -428,6 +442,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor cannot view the project, or a repository or authz-backed repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id))]
     pub async fn list_collaborators(
         &self,
         actor: UserId,
@@ -443,6 +458,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not a member of the group, or a repository or authz-backed repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, group_id = ?group_id))]
     pub async fn list_for_owner_group(
         &self,
         actor: UserId,
@@ -457,6 +473,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not a leader or sub-leader of the group, or a repository or authz-backed repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, group_id = ?group_id))]
     pub async fn list_pending_invites_for_group(
         &self,
         actor: UserId,
@@ -475,6 +492,7 @@ impl ProjectService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor cannot view the project, or a repository or authz-backed repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id))]
     pub async fn list_pending_invites_for_project(
         &self,
         actor: UserId,

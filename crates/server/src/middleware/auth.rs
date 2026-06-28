@@ -7,6 +7,7 @@ use axum::{
     response::Response,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar};
+use tracing::{Span, field};
 
 use crate::{
     app::AppState,
@@ -44,6 +45,8 @@ pub async fn require_auth(
     {
         return Err(AuthError::Invalid.into());
     }
+    // Enrich the enclosing `http` span now that the caller is known.
+    Span::current().record("user_id", field::display(verified.user_id.0));
     req.extensions_mut().insert(AuthUser {
         user_id: verified.user_id,
     });

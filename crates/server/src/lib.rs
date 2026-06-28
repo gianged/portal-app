@@ -18,7 +18,9 @@ pub mod realtime;
 pub mod resolve;
 pub mod routes;
 
-use std::{net::SocketAddr, path::Path, time::Duration};
+use std::{net::SocketAddr, time::Duration};
+
+use infrastructure::telemetry;
 
 /// Grace after the shutdown signal before the watchdog forces exit.
 const FORCE_EXIT_GRACE: Duration = Duration::from_secs(3);
@@ -29,8 +31,8 @@ pub async fn run() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
     // Capture panics as structured logs, then stand up the log sinks. The guard
     // keeps the file-writer flush thread alive for the process lifetime.
-    infrastructure::telemetry::install_panic_hook();
-    let _log_guard = infrastructure::telemetry::init(Path::new("logs"), "server");
+    telemetry::install_panic_hook();
+    let _log_guard = telemetry::init(&config::telemetry_config());
 
     let cfg = config::from_env()?;
     let (router, ingest) = app::build(&cfg).await?;

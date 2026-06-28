@@ -2,6 +2,25 @@ use std::{net::SocketAddr, path::PathBuf};
 
 use anyhow::Context;
 
+use infrastructure::telemetry::{LogFormat, TelemetryConfig};
+
+/// Telemetry settings, read separately so the log sinks stand up before the rest
+/// of config is parsed (and config-parse errors are themselves logged). The
+/// service name is fixed for this binary; `LOG_FORMAT` and the OTLP endpoint come
+/// from the env. Never fails: a missing/blank var falls back to a default.
+#[must_use]
+pub fn telemetry_config() -> TelemetryConfig {
+    TelemetryConfig {
+        log_dir: PathBuf::from("logs"),
+        file_prefix: "server".to_owned(),
+        service_name: "portal-server".to_owned(),
+        format: LogFormat::from_env(&optional("LOG_FORMAT", "tree")),
+        otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+            .ok()
+            .filter(|s| !s.is_empty()),
+    }
+}
+
 /// Runtime configuration, parsed once from the environment at startup. This is
 /// the only place the server reads env vars; everything else receives a typed
 /// `Config`.

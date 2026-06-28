@@ -36,6 +36,7 @@ impl RedisTokenRevocation {
 
 #[async_trait]
 impl TokenRevocation for RedisTokenRevocation {
+    #[tracing::instrument(skip_all, fields(ttl_secs = ?ttl_secs))]
     async fn revoke(&self, jti: Uuid, ttl_secs: u64) -> Result<(), RepositoryError> {
         // Past-expiry tokens need no entry, and Redis rejects SET EX 0.
         if ttl_secs == 0 {
@@ -49,11 +50,13 @@ impl TokenRevocation for RedisTokenRevocation {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn is_revoked(&self, jti: Uuid) -> Result<bool, RepositoryError> {
         let mut conn = self.conn.clone();
         conn.exists(denylist_key(jti)).await.map_err(backend)
     }
 
+    #[tracing::instrument(skip_all, fields(user = ?user))]
     async fn version(&self, user: UserId) -> Result<u64, RepositoryError> {
         let mut conn = self.conn.clone();
         Script::new(GET_WITH_TTL)
@@ -64,6 +67,7 @@ impl TokenRevocation for RedisTokenRevocation {
             .map_err(backend)
     }
 
+    #[tracing::instrument(skip_all, fields(user = ?user))]
     async fn bump_version(&self, user: UserId) -> Result<u64, RepositoryError> {
         let mut conn = self.conn.clone();
         Script::new(INCR_WITH_TTL)

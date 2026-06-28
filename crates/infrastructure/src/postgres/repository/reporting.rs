@@ -144,6 +144,7 @@ impl TryFrom<ReportRow> for Report {
 
 #[async_trait]
 impl ReportStatsRepository for PgReportingRepo {
+    #[tracing::instrument(skip_all)]
     async fn project_stats_by_group(
         &self,
         period: Period,
@@ -201,6 +202,7 @@ impl ReportStatsRepository for PgReportingRepo {
             .collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn request_stats_by_group(
         &self,
         period: Period,
@@ -239,6 +241,7 @@ impl ReportStatsRepository for PgReportingRepo {
             .collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn ticket_stats(&self, period: Period) -> Result<TicketStats, RepositoryError> {
         let r = sqlx::query_as!(
             TicketStatsRow,
@@ -292,6 +295,7 @@ impl ReportStatsRepository for PgReportingRepo {
         })
     }
 
+    #[tracing::instrument(skip_all)]
     async fn staff_stats_by_group(
         &self,
         period: Period,
@@ -328,6 +332,7 @@ impl ReportStatsRepository for PgReportingRepo {
             .collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn company_staff_stats(
         &self,
         period: Period,
@@ -356,6 +361,7 @@ impl ReportStatsRepository for PgReportingRepo {
         })
     }
 
+    #[tracing::instrument(skip_all)]
     async fn monthly_growth(&self, year: i32) -> Result<Vec<MonthlyBucket>, RepositoryError> {
         let year_start = Date::from_calendar_date(year, Month::January, 1)
             .map_err(|e| RepositoryError::Backend(e.to_string()))?
@@ -434,6 +440,7 @@ impl ReportStatsRepository for PgReportingRepo {
 
 #[async_trait]
 impl ReportArchiveRepository for PgReportingRepo {
+    #[tracing::instrument(skip_all)]
     async fn insert(&self, report: &Report) -> Result<(), RepositoryError> {
         let kind = SqlReportKind::from(report.kind);
         let scope = SqlReportScope::from(report.scope);
@@ -463,6 +470,7 @@ impl ReportArchiveRepository for PgReportingRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(limit = ?limit))]
     async fn list(&self, limit: u32) -> Result<Vec<Report>, RepositoryError> {
         let rows = sqlx::query_as!(
             ReportRow,
@@ -489,6 +497,7 @@ impl ReportArchiveRepository for PgReportingRepo {
         rows.into_iter().map(Report::try_from).collect()
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn find_by_id(&self, id: ReportId) -> Result<Option<Report>, RepositoryError> {
         let row = sqlx::query_as!(
             ReportRow,
@@ -514,6 +523,7 @@ impl ReportArchiveRepository for PgReportingRepo {
         row.map(Report::try_from).transpose()
     }
 
+    #[tracing::instrument(skip_all)]
     async fn find_by_period(
         &self,
         kind: ReportKind,
@@ -545,6 +555,7 @@ impl ReportArchiveRepository for PgReportingRepo {
         row.map(Report::try_from).transpose()
     }
 
+    #[tracing::instrument(skip_all)]
     async fn list_all_storage_keys(&self) -> Result<Vec<String>, RepositoryError> {
         let rows = sqlx::query!(r#"SELECT storage_key FROM reporting.reports"#)
             .fetch_all(&self.pool)

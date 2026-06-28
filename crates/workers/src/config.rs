@@ -3,6 +3,24 @@ use std::{path::PathBuf, time::Duration as StdDuration};
 use anyhow::Context;
 use time::Duration;
 
+use infrastructure::telemetry::{LogFormat, TelemetryConfig};
+
+/// Telemetry settings, read separately so the log sinks stand up before the rest
+/// of config is parsed. The service name is fixed for this binary; `LOG_FORMAT`
+/// and the OTLP endpoint come from the env. Never fails.
+#[must_use]
+pub fn telemetry_config() -> TelemetryConfig {
+    TelemetryConfig {
+        log_dir: PathBuf::from("logs"),
+        file_prefix: "workers".to_owned(),
+        service_name: "portal-workers".to_owned(),
+        format: LogFormat::from_env(&optional("LOG_FORMAT", "tree")),
+        otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+            .ok()
+            .filter(|s| !s.is_empty()),
+    }
+}
+
 /// Worker configuration, parsed once from the environment at startup. Adds the
 /// maintenance-job intervals and retention windows on top of the server's backends.
 pub struct Config {

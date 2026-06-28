@@ -48,6 +48,7 @@ impl CommentRow {
 
 #[async_trait]
 impl CommentRepository for PgCommentRepo {
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn find_by_id(
         &self,
         entity: CommentEntity,
@@ -83,6 +84,7 @@ impl CommentRepository for PgCommentRepo {
         Ok(row.map(|r| r.into_comment(entity)))
     }
 
+    #[tracing::instrument(skip_all, fields(limit = ?limit))]
     async fn list_for_entity(
         &self,
         entity: CommentEntity,
@@ -127,6 +129,7 @@ impl CommentRepository for PgCommentRepo {
         Ok(rows.into_iter().map(|r| r.into_comment(entity)).collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save(&self, comment: &Comment) -> Result<(), RepositoryError> {
         // Author/parent/created_at never change; only the grace-window edit does.
         match comment.entity {
@@ -141,6 +144,7 @@ impl CommentRepository for PgCommentRepo {
         }
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn delete(&self, entity: CommentEntity, id: CommentId) -> Result<(), RepositoryError> {
         match entity {
             CommentEntity::Request { request_id } => {

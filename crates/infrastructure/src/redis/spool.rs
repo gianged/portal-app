@@ -37,6 +37,7 @@ impl RedisSpool {
 
 #[async_trait]
 impl Spool for RedisSpool {
+    #[tracing::instrument(skip_all)]
     async fn push(&self, batch: &[u8]) -> Result<(), SpoolError> {
         let mut conn = self.conn.clone();
         redis::cmd("RPUSH")
@@ -48,6 +49,7 @@ impl Spool for RedisSpool {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn drain(&self, max: usize) -> Result<Vec<SpoolEntry>, SpoolError> {
         if max == 0 {
             return Ok(Vec::new());
@@ -72,6 +74,7 @@ impl Spool for RedisSpool {
         Ok(entries)
     }
 
+    #[tracing::instrument(skip_all)]
     async fn ack(&self, ids: &[SpoolId]) -> Result<(), SpoolError> {
         if ids.is_empty() {
             return Ok(());

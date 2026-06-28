@@ -275,6 +275,7 @@ async fn write_message_batch(
 
 #[async_trait]
 impl ChatRepository for ScyllaChatRepo {
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn find_channel(&self, id: ChannelId) -> Result<Option<Channel>, RepositoryError> {
         let result = self
             .session
@@ -288,6 +289,7 @@ impl ChatRepository for ScyllaChatRepo {
         }
     }
 
+    #[tracing::instrument(skip_all, fields(a = ?a, b = ?b))]
     async fn find_direct_channel(
         &self,
         a: UserId,
@@ -306,6 +308,7 @@ impl ChatRepository for ScyllaChatRepo {
         self.find_channel(ChannelId(channel_id)).await
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save_channel(&self, channel: &Channel) -> Result<(), RepositoryError> {
         match channel {
             Channel::Group(c) => {
@@ -359,6 +362,7 @@ impl ChatRepository for ScyllaChatRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(group_id = ?group_id))]
     async fn find_group_channel(
         &self,
         group_id: GroupId,
@@ -375,6 +379,7 @@ impl ChatRepository for ScyllaChatRepo {
         self.find_channel(ChannelId(channel_id)).await
     }
 
+    #[tracing::instrument(skip_all)]
     async fn find_general_channel(&self) -> Result<Option<Channel>, RepositoryError> {
         let result = self
             .session
@@ -388,6 +393,7 @@ impl ChatRepository for ScyllaChatRepo {
         self.find_channel(ChannelId(channel_id)).await
     }
 
+    #[tracing::instrument(skip_all, fields(user_id = ?user_id, channel_id = ?channel_id))]
     async fn subscribe_member(
         &self,
         user_id: UserId,
@@ -409,6 +415,7 @@ impl ChatRepository for ScyllaChatRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(user_id = ?user_id, channel_id = ?channel_id))]
     async fn unsubscribe_member(
         &self,
         user_id: UserId,
@@ -424,6 +431,7 @@ impl ChatRepository for ScyllaChatRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(user_id = ?user_id))]
     async fn list_channels_for_user(
         &self,
         user_id: UserId,
@@ -441,6 +449,7 @@ impl ChatRepository for ScyllaChatRepo {
         Ok(out)
     }
 
+    #[tracing::instrument(skip_all, fields(user_id = ?user_id, channel_id = ?channel_id))]
     async fn update_last_read(
         &self,
         user_id: UserId,
@@ -454,6 +463,7 @@ impl ChatRepository for ScyllaChatRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(channel_id = ?channel_id, limit = ?limit))]
     async fn list_messages(
         &self,
         channel_id: ChannelId,
@@ -484,6 +494,7 @@ impl ChatRepository for ScyllaChatRepo {
         Ok(out)
     }
 
+    #[tracing::instrument(skip_all, fields(channel_id = ?channel_id, message_id = ?message_id))]
     async fn find_message(
         &self,
         channel_id: ChannelId,
@@ -501,6 +512,7 @@ impl ChatRepository for ScyllaChatRepo {
             .map(|row| row_to_message(channel_id, row)))
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save_message(&self, message: &Message) -> Result<(), RepositoryError> {
         let mentions: HashSet<Uuid> = message.mentions.iter().map(|u| u.0).collect();
         self.session
@@ -523,6 +535,7 @@ impl ChatRepository for ScyllaChatRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save_messages(&self, messages: &[Message]) -> Result<(), RepositoryError> {
         // Scylla batches are only efficient within one partition, so group by channel_id then chunk under the per-batch statement limit.
         const MAX_BATCH_STATEMENTS: usize = 100;
@@ -557,6 +570,7 @@ impl ChatRepository for ScyllaChatRepo {
             .await
     }
 
+    #[tracing::instrument(skip_all, fields(channel_id = ?channel_id, message_id = ?message_id))]
     async fn find_announcement(
         &self,
         channel_id: ChannelId,
@@ -574,6 +588,7 @@ impl ChatRepository for ScyllaChatRepo {
         }
     }
 
+    #[tracing::instrument(skip_all, fields(channel_id = ?channel_id))]
     async fn list_announcements(
         &self,
         channel_id: ChannelId,
@@ -591,6 +606,7 @@ impl ChatRepository for ScyllaChatRepo {
         Ok(out)
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save_announcement(&self, announcement: &Announcement) -> Result<(), RepositoryError> {
         self.session
             .execute_unpaged(
@@ -608,6 +624,7 @@ impl ChatRepository for ScyllaChatRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(channel_id = ?channel_id, message_id = ?message_id))]
     async fn delete_announcement(
         &self,
         channel_id: ChannelId,

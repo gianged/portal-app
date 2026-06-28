@@ -20,6 +20,7 @@ impl PresenceStore {
 #[async_trait]
 impl Presence for PresenceStore {
     /// Mark the user online for `ttl_secs` seconds; call again before expiry to heartbeat.
+    #[tracing::instrument(skip_all, fields(user = ?user, ttl_secs = ?ttl_secs))]
     async fn set_online(&self, user: UserId, ttl_secs: u64) -> Result<(), RepositoryError> {
         let key = presence_key(user);
         let mut conn = self.conn.clone();
@@ -29,6 +30,7 @@ impl Presence for PresenceStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(user = ?user))]
     async fn is_online(&self, user: UserId) -> Result<bool, RepositoryError> {
         let key = presence_key(user);
         let mut conn = self.conn.clone();

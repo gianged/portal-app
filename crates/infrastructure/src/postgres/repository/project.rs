@@ -107,6 +107,7 @@ impl From<InviteRow> for ProjectInvite {
 
 #[async_trait]
 impl ProjectRepository for PgProjectRepo {
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn find_by_id(&self, id: ProjectId) -> Result<Option<Project>, RepositoryError> {
         sqlx::query_as!(
             ProjectRow,
@@ -131,6 +132,7 @@ impl ProjectRepository for PgProjectRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    #[tracing::instrument(skip_all, fields(group_id = ?group_id))]
     async fn list_for_owner_group(
         &self,
         group_id: GroupId,
@@ -164,6 +166,7 @@ impl ProjectRepository for PgProjectRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all, fields(group_id = ?group_id))]
     async fn list_for_collaborator_group(
         &self,
         group_id: GroupId,
@@ -194,6 +197,7 @@ impl ProjectRepository for PgProjectRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save_project(&self, project: &Project) -> Result<(), RepositoryError> {
         let status = SqlProjectStatus::from(project.status);
         sqlx::query!(
@@ -225,6 +229,7 @@ impl ProjectRepository for PgProjectRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(project_id = ?project_id))]
     async fn list_collaborators(
         &self,
         project_id: ProjectId,
@@ -243,6 +248,7 @@ impl ProjectRepository for PgProjectRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save_collaborator(&self, c: &ProjectCollaborator) -> Result<(), RepositoryError> {
         // fn_no_self_collab trigger blocks owner-as-collaborator, surfacing as a CheckViolation.
         sqlx::query!(
@@ -263,6 +269,7 @@ impl ProjectRepository for PgProjectRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn delete_collaborator(&self, id: ProjectCollaboratorId) -> Result<(), RepositoryError> {
         sqlx::query!(
             r#"DELETE FROM project.project_collaborators WHERE id = $1"#,
@@ -274,6 +281,7 @@ impl ProjectRepository for PgProjectRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn find_invite(
         &self,
         id: ProjectInviteId,
@@ -300,6 +308,7 @@ impl ProjectRepository for PgProjectRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    #[tracing::instrument(skip_all, fields(group_id = ?group_id))]
     async fn list_pending_invites_for_group(
         &self,
         group_id: GroupId,
@@ -330,6 +339,7 @@ impl ProjectRepository for PgProjectRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all, fields(project_id = ?project_id))]
     async fn list_pending_invites_for_project(
         &self,
         project_id: ProjectId,
@@ -359,6 +369,7 @@ impl ProjectRepository for PgProjectRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save_invite(&self, invite: &ProjectInvite) -> Result<(), RepositoryError> {
         let status = SqlInviteStatus::from(invite.status);
         sqlx::query!(

@@ -73,6 +73,7 @@ impl CommentService {
     /// # Errors
     /// Returns `Forbidden` if the actor cannot view the parent, `NotFound` if
     /// the parent does not exist, or a repository/event error.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn add(&self, actor: UserId, entity: CommentEntity, body: String) -> Result<Comment> {
         self.require_can_view(actor, entity).await?;
         let now = OffsetDateTime::now_utc();
@@ -102,6 +103,7 @@ impl CommentService {
     /// # Errors
     /// Returns `Forbidden` if the actor cannot view the parent, `NotFound` if
     /// the parent does not exist, or a repository error.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, limit))]
     pub async fn list(
         &self,
         actor: UserId,
@@ -119,6 +121,7 @@ impl CommentService {
     /// Returns `NotFound` if the comment is missing, `Forbidden` for a
     /// non-author, `Transition` past the grace window, or a repository/event
     /// error.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, comment_id = ?comment_id))]
     pub async fn edit(
         &self,
         actor: UserId,
@@ -156,6 +159,7 @@ impl CommentService {
     /// # Errors
     /// Returns `NotFound` if the comment is missing, `Forbidden` for a
     /// non-author or past the grace window, or a repository/event error.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, comment_id = ?comment_id))]
     pub async fn remove(
         &self,
         actor: UserId,

@@ -57,6 +57,7 @@ impl MaintenanceService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all)]
     pub async fn prune_read_notifications(
         &self,
         retention: Duration,
@@ -73,6 +74,7 @@ impl MaintenanceService {
     /// # Errors
     /// Returns a repository error if the datastore is unavailable, or an event
     /// error if the event bus fails.
+    #[tracing::instrument(skip_all)]
     pub async fn auto_close_resolved_tickets(
         &self,
         window: Duration,
@@ -114,6 +116,7 @@ impl MaintenanceService {
     /// # Errors
     /// Returns a repository error if the datastore is unavailable, or a `Storage`
     /// error if listing or deleting stored objects fails.
+    #[tracing::instrument(skip_all)]
     pub async fn sweep_orphan_uploads(&self, grace: Duration, now: OffsetDateTime) -> Result<u64> {
         let mut referenced: HashSet<String> = HashSet::new();
         referenced.extend(self.requests.list_all_attachment_keys().await?);

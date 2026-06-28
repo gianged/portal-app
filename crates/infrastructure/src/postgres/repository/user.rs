@@ -64,6 +64,7 @@ impl From<UserRow> for User {
 
 #[async_trait]
 impl UserRepository for PgUserRepo {
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn find_by_id(&self, id: UserId) -> Result<Option<User>, RepositoryError> {
         sqlx::query_as!(
             UserRow,
@@ -91,6 +92,7 @@ impl UserRepository for PgUserRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    #[tracing::instrument(skip_all)]
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, RepositoryError> {
         sqlx::query_as!(
             UserRow,
@@ -118,6 +120,7 @@ impl UserRepository for PgUserRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    #[tracing::instrument(skip_all, fields(limit = ?limit, offset = ?offset))]
     async fn list_active(
         &self,
         limit: u32,
@@ -159,6 +162,7 @@ impl UserRepository for PgUserRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save(&self, user: &User) -> Result<(), RepositoryError> {
         let status = SqlUserStatus::from(user.status);
         let system_role: Option<SqlSystemRole> = user.system_role.map(Into::into);
@@ -198,6 +202,7 @@ impl UserRepository for PgUserRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn list_avatar_keys(&self) -> Result<Vec<String>, RepositoryError> {
         let rows = sqlx::query!(
             r#"SELECT avatar_storage_key AS "avatar_storage_key!"
@@ -210,6 +215,7 @@ impl UserRepository for PgUserRepo {
         Ok(rows.into_iter().map(|r| r.avatar_storage_key).collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn list_with_system_role(&self) -> Result<Vec<User>, RepositoryError> {
         let rows = sqlx::query_as!(
             UserRow,

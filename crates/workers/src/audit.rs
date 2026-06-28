@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use apalis::prelude::{BoxDynError, Data, Error};
+use tracing::Span;
 
 use application::{AuditProjector, DomainEvent, resilience::CircuitBreaker};
 use domain::health::HealthStatus;
-use infrastructure::jobs::AuditEnvelope;
+use infrastructure::{jobs::AuditEnvelope, telemetry};
 
 /// apalis handler for the `audit` queue: decodes the event and hands it to
 /// [`AuditProjector`]. Returns [`Error::Failed`] on bad payload or append error so apalis retries.
@@ -17,6 +18,9 @@ pub async fn handle(
     projector: Data<Arc<AuditProjector>>,
     breaker: Data<Arc<CircuitBreaker>>,
 ) -> Result<(), Error> {
+    if let Some(traceparent) = &envelope.traceparent {
+        telemetry::set_parent_traceparent(&Span::current(), traceparent);
+    }
     if breaker.status() == HealthStatus::Down {
         return Err(retryable("postgres circuit open"));
     }

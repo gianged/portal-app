@@ -29,6 +29,7 @@ impl AuditProjector {
     ///
     /// # Errors
     /// Returns a repository error if appending the audit row fails.
+    #[tracing::instrument(skip_all)]
     pub async fn handle(&self, event: &DomainEvent) -> Result<()> {
         use AuditAction::{Assign, Create, Delete, StatusChange, Transfer, Update};
         use DomainEvent as E;

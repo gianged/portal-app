@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use apalis::prelude::{BoxDynError, Data, Error};
+use tracing::Span;
 
 use application::{DomainEvent, NotificationFanout, resilience::CircuitBreaker};
 use domain::health::HealthStatus;
-use infrastructure::jobs::NotificationEnvelope;
+use infrastructure::{jobs::NotificationEnvelope, telemetry};
 
 /// apalis handler for the `notifications` queue: decodes the event and hands it to
 /// [`NotificationFanout`]. Returns [`Error::Failed`] on bad payload or fan-out error so apalis retries.
@@ -18,6 +19,9 @@ pub async fn handle(
     fanout: Data<Arc<NotificationFanout>>,
     breaker: Data<Arc<CircuitBreaker>>,
 ) -> Result<(), Error> {
+    if let Some(traceparent) = &envelope.traceparent {
+        telemetry::set_parent_traceparent(&Span::current(), traceparent);
+    }
     if breaker.status() == HealthStatus::Down {
         return Err(retryable("postgres circuit open"));
     }

@@ -45,6 +45,7 @@ impl From<NotificationRow> for Notification {
 
 #[async_trait]
 impl NotificationRepository for PgNotificationRepo {
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn find_by_id(
         &self,
         id: NotificationId,
@@ -67,6 +68,7 @@ impl NotificationRepository for PgNotificationRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    #[tracing::instrument(skip_all, fields(user_id = ?user_id, unread_only = ?unread_only, limit = ?limit))]
     async fn list_for_user(
         &self,
         user_id: UserId,
@@ -97,6 +99,7 @@ impl NotificationRepository for PgNotificationRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all, fields(user_id = ?user_id))]
     async fn count_unread(&self, user_id: UserId) -> Result<u64, RepositoryError> {
         let row = sqlx::query!(
             r#"SELECT COUNT(*) AS "count!"
@@ -110,6 +113,7 @@ impl NotificationRepository for PgNotificationRepo {
         u64::try_from(row.count).map_err(|_| RepositoryError::Backend("negative count".into()))
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save(&self, n: &Notification) -> Result<(), RepositoryError> {
         let kind = SqlNotificationKind::from(n.kind());
         let payload = Json(&n.payload);
@@ -135,6 +139,7 @@ impl NotificationRepository for PgNotificationRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn mark_read(
         &self,
         id: NotificationId,
@@ -154,6 +159,7 @@ impl NotificationRepository for PgNotificationRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn delete_read_before(&self, cutoff: OffsetDateTime) -> Result<u64, RepositoryError> {
         let result = sqlx::query!(
             r#"DELETE FROM notification.notifications

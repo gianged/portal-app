@@ -54,6 +54,7 @@ impl TryFrom<AttachmentRow> for ChatAttachment {
 
 #[async_trait]
 impl ChatAttachmentRepository for PgChatAttachmentRepo {
+    #[tracing::instrument(skip_all)]
     async fn save(&self, a: &ChatAttachment) -> Result<(), RepositoryError> {
         // Write-once metadata; the CHECK constraint catches non-positive sizes.
         let size_bytes = i64::try_from(a.size_bytes)
@@ -85,6 +86,7 @@ impl ChatAttachmentRepository for PgChatAttachmentRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn find_by_keys(&self, keys: &[String]) -> Result<Vec<ChatAttachment>, RepositoryError> {
         if keys.is_empty() {
             return Ok(Vec::new());
@@ -103,6 +105,7 @@ impl ChatAttachmentRepository for PgChatAttachmentRepo {
         rows.into_iter().map(ChatAttachment::try_from).collect()
     }
 
+    #[tracing::instrument(skip_all)]
     async fn list_all_keys(&self) -> Result<Vec<String>, RepositoryError> {
         let rows = sqlx::query!(r#"SELECT storage_key FROM chat.message_attachments"#)
             .fetch_all(&self.pool)

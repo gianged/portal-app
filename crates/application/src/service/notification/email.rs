@@ -90,6 +90,7 @@ impl EmailNotifier {
 
     /// Enqueues one email per active recipient. Every failure (lookup, render,
     /// enqueue) is logged and swallowed.
+    #[tracing::instrument(skip_all)]
     pub async fn notify(&self, recipients: &[UserId], payload: &NotificationPayload) {
         // TODO: per-user email preference check goes here.
         if !Self::wants_email(payload.kind()) {

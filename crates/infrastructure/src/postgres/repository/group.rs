@@ -76,6 +76,7 @@ impl From<MembershipRow> for Membership {
 
 #[async_trait]
 impl GroupRepository for PgGroupRepo {
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn find_group(&self, id: GroupId) -> Result<Option<Group>, RepositoryError> {
         sqlx::query_as!(
             GroupRow,
@@ -96,6 +97,7 @@ impl GroupRepository for PgGroupRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    #[tracing::instrument(skip_all)]
     async fn list_all(&self) -> Result<Vec<Group>, RepositoryError> {
         let rows = sqlx::query_as!(
             GroupRow,
@@ -115,6 +117,7 @@ impl GroupRepository for PgGroupRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn find_it_group(&self) -> Result<Option<Group>, RepositoryError> {
         // The uq_groups_one_it partial unique index guarantees at most one row.
         let it = SqlGroupKind::from(GroupKind::It);
@@ -138,6 +141,7 @@ impl GroupRepository for PgGroupRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save_group(&self, group: &Group) -> Result<(), RepositoryError> {
         let kind = SqlGroupKind::from(group.kind);
         sqlx::query!(
@@ -160,6 +164,7 @@ impl GroupRepository for PgGroupRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(group_id = ?group_id, user_id = ?user_id))]
     async fn find_membership(
         &self,
         group_id: GroupId,
@@ -187,6 +192,7 @@ impl GroupRepository for PgGroupRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    #[tracing::instrument(skip_all, fields(group_id = ?group_id))]
     async fn list_memberships_for_group(
         &self,
         group_id: GroupId,
@@ -213,6 +219,7 @@ impl GroupRepository for PgGroupRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all, fields(user_id = ?user_id))]
     async fn list_active_memberships_for_user(
         &self,
         user_id: UserId,
@@ -240,6 +247,7 @@ impl GroupRepository for PgGroupRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn list_active_memberships_for_users(
         &self,
         user_ids: &[UserId],
@@ -267,6 +275,7 @@ impl GroupRepository for PgGroupRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save_membership(&self, m: &Membership) -> Result<(), RepositoryError> {
         let role = SqlGroupRole::from(m.role);
         sqlx::query!(

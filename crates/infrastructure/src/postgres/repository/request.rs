@@ -92,6 +92,7 @@ impl TryFrom<AttachmentRow> for RequestAttachment {
 
 #[async_trait]
 impl RequestRepository for PgRequestRepo {
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn find_by_id(&self, id: RequestId) -> Result<Option<Request>, RepositoryError> {
         sqlx::query_as!(
             RequestRow,
@@ -118,6 +119,7 @@ impl RequestRepository for PgRequestRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    #[tracing::instrument(skip_all, fields(project_id = ?project_id))]
     async fn list_for_project(
         &self,
         project_id: ProjectId,
@@ -157,6 +159,7 @@ impl RequestRepository for PgRequestRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all, fields(assignee = ?assignee))]
     async fn list_for_assignee(
         &self,
         assignee: UserId,
@@ -196,6 +199,7 @@ impl RequestRepository for PgRequestRepo {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save(&self, request: &Request) -> Result<(), RepositoryError> {
         let status = SqlRequestStatus::from(request.status);
         let priority = SqlRequestPriority::from(request.priority);
@@ -232,6 +236,7 @@ impl RequestRepository for PgRequestRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(request_id = ?request_id))]
     async fn list_attachments(
         &self,
         request_id: RequestId,
@@ -258,6 +263,7 @@ impl RequestRepository for PgRequestRepo {
         rows.into_iter().map(RequestAttachment::try_from).collect()
     }
 
+    #[tracing::instrument(skip_all)]
     async fn save_attachment(&self, a: &RequestAttachment) -> Result<(), RepositoryError> {
         // Write-once metadata (no updated_at); CHECK rejects non-positive sizes.
         let size_bytes = i64::try_from(a.size_bytes)
@@ -289,6 +295,7 @@ impl RequestRepository for PgRequestRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn list_all_attachment_keys(&self) -> Result<Vec<String>, RepositoryError> {
         let rows = sqlx::query!(r#"SELECT storage_key FROM project.request_attachments"#)
             .fetch_all(&self.pool)

@@ -41,6 +41,7 @@ impl AnnouncementService {
     /// Returns `Forbidden` if the actor is not active or cannot announce in the
     /// channel, `NotFound` if the channel does not exist, a repository error if
     /// the datastore is unavailable, or an event error if the event bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn post(&self, actor: UserId, cmd: PostAnnouncementCommand) -> Result<Announcement> {
         self.perms.require_active(actor).await?;
         let channel = self
@@ -96,6 +97,7 @@ impl AnnouncementService {
     /// `NotFound` if the announcement does not exist, `Transition` if the edit
     /// grace period has elapsed, a repository error if the datastore is
     /// unavailable, or an event error if the event bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id, announcement_id = ?announcement_id))]
     pub async fn edit(
         &self,
         actor: UserId,
@@ -134,6 +136,7 @@ impl AnnouncementService {
     /// nor HR, `NotFound` if the announcement does not exist, a repository error
     /// if the datastore or authz backend is unavailable, or an event error if the
     /// event bus fails.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id, announcement_id = ?announcement_id))]
     pub async fn delete(
         &self,
         actor: UserId,
@@ -170,6 +173,7 @@ impl AnnouncementService {
     /// Returns `Forbidden` if the actor is not active or cannot view the channel,
     /// `NotFound` if the channel does not exist, or a repository error if the
     /// datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id))]
     pub async fn list_for_channel(
         &self,
         actor: UserId,

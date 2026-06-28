@@ -49,6 +49,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not active or cannot view the project, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn create(&self, actor: UserId, cmd: CreateRequestCommand) -> Result<Request> {
         self.perms.require_active(actor).await?;
         self.perms
@@ -86,6 +87,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the creator, `Transition` if the request is not in a submittable state, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn submit(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let mut request = self.load(request_id).await?;
         if request.creator_user_id != actor {
@@ -103,6 +105,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `NotFound` if the request or its project does not exist, `Forbidden` if the actor cannot assign requests on the project, `Conflict` if the assignee is inactive or not a member of the owner or a collaborator group, `Transition` if the request is not in an assignable state, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id, assignee = ?assignee))]
     pub async fn assign(
         &self,
         actor: UserId,
@@ -136,6 +139,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the assignee, `Transition` if the request is not in a startable state, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn start(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let mut request = self.load(request_id).await?;
         if request.assignee_user_id != Some(actor) {
@@ -153,6 +157,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the assignee, `Transition` if the request is not in a reviewable state, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn send_for_review(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let mut request = self.load(request_id).await?;
         if request.assignee_user_id != Some(actor) {
@@ -170,6 +175,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is neither the creator nor able to assign requests on the project, `Transition` if the request is not under review, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn approve(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let mut request = self.load(request_id).await?;
         self.require_approver(actor, &request).await?;
@@ -185,6 +191,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is neither the creator nor able to assign requests on the project, `Transition` if the request is not under review, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn reject(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let mut request = self.load(request_id).await?;
         self.require_approver(actor, &request).await?;
@@ -200,6 +207,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is none of the creator, assignee, or an assigner on the project, `Transition` if the request cannot be cancelled from its current state, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn cancel(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let mut request = self.load(request_id).await?;
         let is_creator = request.creator_user_id == actor;
@@ -221,6 +229,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor cannot view the project, `Validation` if the attachment size exceeds the representable limit, `Storage` if writing the file fails, or a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn add_attachment(
         &self,
         actor: UserId,
@@ -260,6 +269,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor cannot view the project, or a repository or authz-backed repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id))]
     pub async fn list_for_project(
         &self,
         actor: UserId,
@@ -280,6 +290,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not active, or a repository or authz-backed repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn list_for_assignee(
         &self,
         actor: UserId,
@@ -294,6 +305,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor cannot view the project, or a repository or authz-backed repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn find(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         let request = self.load(request_id).await?;
         self.perms
@@ -306,6 +318,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor cannot view the project, or a repository or authz-backed repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn list_attachments(
         &self,
         actor: UserId,
@@ -323,6 +336,7 @@ impl RequestService {
     ///
     /// # Errors
     /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the creator, `Conflict` if the request is no longer editable (past `Draft`/`Submitted`), or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn update_metadata(
         &self,
         actor: UserId,

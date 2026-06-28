@@ -10,10 +10,11 @@ mod report_schedule;
 mod ticket_autoclose;
 mod uploads;
 
-use std::{path::Path, time::Duration};
+use std::time::Duration;
 
 use apalis::prelude::*;
 use application::resilience;
+use infrastructure::telemetry;
 
 use crate::bootstrap::WorkerContext;
 
@@ -39,8 +40,8 @@ async fn run() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
     // Capture panics as structured logs, then stand up the log sinks. The guard
     // keeps the file-writer flush thread alive for the process lifetime.
-    infrastructure::telemetry::install_panic_hook();
-    let _log_guard = infrastructure::telemetry::init(Path::new("logs"), "workers");
+    telemetry::install_panic_hook();
+    let _log_guard = telemetry::init(&config::telemetry_config());
 
     let cfg = config::from_env()?;
     let WorkerContext {
