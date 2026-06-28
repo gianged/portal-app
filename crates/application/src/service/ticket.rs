@@ -241,7 +241,7 @@ impl TicketService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not an IT member, or a repository or authz-backed repository error if the datastore is unavailable.
-    #[tracing::instrument(skip_all, fields(actor = ?actor, limit))]
+    #[tracing::instrument(skip_all, fields(actor = ?actor, limit = ?limit))]
     pub async fn list_open_for_triage(
         &self,
         actor: UserId,

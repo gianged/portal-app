@@ -30,7 +30,7 @@ impl AuditService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not an admin, `NotFound` if the actor
     /// does not exist, or a repository error if the datastore is unavailable.
-    #[tracing::instrument(skip_all, fields(actor = ?actor, limit))]
+    #[tracing::instrument(skip_all, fields(actor = ?actor, limit = ?limit))]
     pub async fn list_recent(
         &self,
         actor: UserId,
@@ -46,7 +46,7 @@ impl AuditService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not an admin, `NotFound` if the actor
     /// does not exist, or a repository error if the datastore is unavailable.
-    #[tracing::instrument(skip_all, fields(actor = ?actor, limit))]
+    #[tracing::instrument(skip_all, fields(actor = ?actor, limit = ?limit))]
     pub async fn list_for_entity(
         &self,
         actor: UserId,

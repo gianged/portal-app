@@ -103,7 +103,7 @@ impl CommentService {
     /// # Errors
     /// Returns `Forbidden` if the actor cannot view the parent, `NotFound` if
     /// the parent does not exist, or a repository error.
-    #[tracing::instrument(skip_all, fields(actor = ?actor, limit))]
+    #[tracing::instrument(skip_all, fields(actor = ?actor, limit = ?limit))]
     pub async fn list(
         &self,
         actor: UserId,

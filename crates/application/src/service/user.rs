@@ -438,7 +438,7 @@ impl UserService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
-    #[tracing::instrument(skip_all, fields(limit, offset))]
+    #[tracing::instrument(skip_all, fields(limit = ?limit, offset = ?offset))]
     pub async fn list_active(&self, limit: u32, offset: u32, q: Option<&str>) -> Result<Vec<User>> {
         Ok(self.users.list_active(limit, offset, q).await?)
     }

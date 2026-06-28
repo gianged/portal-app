@@ -37,7 +37,7 @@ impl NotificationService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not active, or a repository error if
     /// the datastore is unavailable.
-    #[tracing::instrument(skip_all, fields(actor = ?actor, unread_only, limit))]
+    #[tracing::instrument(skip_all, fields(actor = ?actor, unread_only = ?unread_only, limit = ?limit))]
     pub async fn list_for_user(
         &self,
         actor: UserId,

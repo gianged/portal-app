@@ -171,7 +171,7 @@ impl ChatService {
     /// Returns `Forbidden` if the actor is not active or cannot view the channel,
     /// `NotFound` if the channel does not exist, or a repository error if the
     /// datastore is unavailable.
-    #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id, limit))]
+    #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id, limit = ?limit))]
     pub async fn list_messages(
         &self,
         actor: UserId,

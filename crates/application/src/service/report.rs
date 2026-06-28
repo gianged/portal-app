@@ -123,7 +123,7 @@ impl ReportService {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
-    #[tracing::instrument(skip_all, fields(limit))]
+    #[tracing::instrument(skip_all, fields(limit = ?limit))]
     pub async fn list_reports(&self, limit: u32) -> Result<Vec<Report>> {
         Ok(self.archive.list(limit).await?)
     }
