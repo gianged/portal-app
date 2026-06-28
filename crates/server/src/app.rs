@@ -17,7 +17,7 @@ use tower_http::{
 use application::{
     events::EventBus,
     permissions::Permissions,
-    resilience::{HealthRegistry, supervise},
+    resilience::{self, HealthRegistry},
     service::{
         AnnouncementService, AuditService, ChatIngest, ChatIngestConfig, ChatService,
         CommentService, GroupService, NotificationService, ProjectService, ReportService,
@@ -263,7 +263,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
         let registry = health.clone();
         let checks = health_checks;
         let interval = cfg.health_probe_interval;
-        supervise("health-prober", move || {
+        resilience::supervise("health-prober", move || {
             registry.clone().run_prober(checks.clone(), interval)
         });
     }
