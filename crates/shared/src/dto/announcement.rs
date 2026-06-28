@@ -7,7 +7,7 @@ use crate::dto::{
 };
 
 /// Announcements are editable only within this many minutes of posting; past
-/// that they are immutable. Mirrors `domain::model::announcement::EDIT_GRACE`.
+/// that they are immutable. Mirrors `domain::model::EDIT_GRACE`.
 pub const EDIT_GRACE_MINUTES: i64 = 15;
 
 /// An announcement is a message with the `is_announcement` flag; it reuses

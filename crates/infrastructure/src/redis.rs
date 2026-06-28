@@ -1,8 +1,8 @@
-pub mod presence;
-pub mod pubsub;
-pub mod rate_limit;
-pub mod spool;
-pub mod token_revocation;
+mod presence;
+mod pubsub;
+mod rate_limit;
+mod spool;
+mod token_revocation;
 
 pub use presence::PresenceStore;
 pub use pubsub::{RedisEventPublisher, subscribe};

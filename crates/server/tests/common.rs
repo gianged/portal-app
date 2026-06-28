@@ -25,17 +25,9 @@ use application::{
     permissions::Permissions,
     resilience::HealthRegistry,
     service::{
-        announcement::AnnouncementService,
-        audit::AuditService,
-        chat::{ChatIngest, ChatIngestConfig, ChatService},
-        comment::CommentService,
-        group::GroupService,
-        notification::NotificationService,
-        project::ProjectService,
-        report::ReportService,
-        request::RequestService,
-        ticket::TicketService,
-        user::UserService,
+        AnnouncementService, AuditService, ChatIngest, ChatIngestConfig, ChatService,
+        CommentService, GroupService, NotificationService, ProjectService, ReportService,
+        RequestService, TicketService, UserService,
     },
 };
 use domain::{

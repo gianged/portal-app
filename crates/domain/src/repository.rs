@@ -1,14 +1,14 @@
-pub mod audit;
-pub mod chat;
-pub mod chat_attachment;
-pub mod comment;
-pub mod group;
-pub mod notification;
-pub mod project;
-pub mod report;
-pub mod request;
-pub mod ticket;
-pub mod user;
+mod audit;
+mod chat;
+mod chat_attachment;
+mod comment;
+mod group;
+mod notification;
+mod project;
+mod report;
+mod request;
+mod ticket;
+mod user;
 
 pub use audit::AuditRepository;
 pub use chat::ChatRepository;

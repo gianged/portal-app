@@ -1,3 +1,3 @@
-pub mod chat;
+mod chat;
 
 pub use chat::ScyllaChatRepo;

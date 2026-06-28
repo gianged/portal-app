@@ -2,11 +2,11 @@
 //! breaking, health tracking, and the chat-spool drainer. Pure orchestration -
 //! the concrete probes/spool live in `infrastructure` behind `domain` ports.
 
-pub mod backoff;
-pub mod circuit;
-pub mod drainer;
-pub mod health_registry;
-pub mod supervisor;
+mod backoff;
+mod circuit;
+mod drainer;
+mod health_registry;
+mod supervisor;
 
 pub use backoff::Backoff;
 pub use circuit::{CircuitBreaker, CircuitConfig, guarded};
