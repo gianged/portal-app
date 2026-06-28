@@ -12,7 +12,7 @@ use domain::{
 
 use crate::postgres::{
     enums::{SqlInviteStatus, SqlProjectStatus},
-    mappers::{like_pattern, map_pg_error},
+    mappers,
 };
 
 pub struct PgProjectRepo {
@@ -127,7 +127,7 @@ impl ProjectRepository for PgProjectRepo {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(map_pg_error)
+        .map_err(mappers::map_pg_error)
         .map(|opt| opt.map(Into::into))
     }
 
@@ -137,7 +137,7 @@ impl ProjectRepository for PgProjectRepo {
         q: Option<&str>,
     ) -> Result<Vec<Project>, RepositoryError> {
         // Matches idx_projects_owner_group_id_status.
-        let pattern: Option<String> = q.map(like_pattern);
+        let pattern: Option<String> = q.map(mappers::like_pattern);
         let rows = sqlx::query_as!(
             ProjectRow,
             r#"SELECT
@@ -160,7 +160,7 @@ impl ProjectRepository for PgProjectRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -190,7 +190,7 @@ impl ProjectRepository for PgProjectRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -221,7 +221,7 @@ impl ProjectRepository for PgProjectRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -239,7 +239,7 @@ impl ProjectRepository for PgProjectRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -259,7 +259,7 @@ impl ProjectRepository for PgProjectRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -270,7 +270,7 @@ impl ProjectRepository for PgProjectRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -296,7 +296,7 @@ impl ProjectRepository for PgProjectRepo {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(map_pg_error)
+        .map_err(mappers::map_pg_error)
         .map(|opt| opt.map(Into::into))
     }
 
@@ -326,7 +326,7 @@ impl ProjectRepository for PgProjectRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -355,7 +355,7 @@ impl ProjectRepository for PgProjectRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -384,7 +384,7 @@ impl ProjectRepository for PgProjectRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 }

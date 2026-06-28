@@ -1,11 +1,11 @@
 //! The open channel's transcript: REST history merged with live [`ServerFrame`]s from the WebSocket, plus a typing indicator.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 
 use shared::dto::chat::{EditMessageRequest, MessageDto};
 use shared::dto::ids::{ChannelId, MessageId, UserId};
 use shared::dto::ws::ClientFrame;
-use shared::validation::chat::validate_message_body;
+use shared::validation::chat;
 
 use crate::api::ws::WsClient;
 use crate::features::chat::api;
@@ -50,7 +50,7 @@ pub fn MessageThread(
     };
     // The WS echo (apply_server_frame) folds the delete back into messages, so no optimistic update here.
     let do_delete = move |cid: ChannelId, mid: MessageId| {
-        spawn_local(async move {
+        task::spawn_local(async move {
             if let Err(e) = api::delete(cid, mid).await {
                 toast.error_from(&e);
             }
@@ -64,7 +64,7 @@ pub fn MessageThread(
         typing.set(false);
         oldest.set(None);
         ws.send(ClientFrame::Subscribe { channel_id: cid });
-        spawn_local(async move {
+        task::spawn_local(async move {
             if let Ok(mut history) = api::messages(cid, None, PAGE).await {
                 history.reverse();
                 oldest.set(history.first().map(|m| m.id));
@@ -91,7 +91,7 @@ pub fn MessageThread(
             return;
         };
         loading_older.set(true);
-        spawn_local(async move {
+        task::spawn_local(async move {
             if let Ok(mut older) = api::messages(cid, Some(before), PAGE).await {
                 older.reverse();
                 if let Some(first) = older.first() {
@@ -326,13 +326,13 @@ fn MessageEditDialog(
             return;
         };
         let b = body.get_untracked();
-        if let Err(e) = validate_message_body(&b) {
+        if let Err(e) = chat::validate_message_body(&b) {
             toast.error(e.to_string());
             return;
         }
         submitting.set(true);
         let req = EditMessageRequest { body: b };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::edit(cid, mid, &req).await {
                 Ok(_) => {
                     toast.success("Message updated");

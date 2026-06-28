@@ -4,7 +4,7 @@ use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{get, post},
+    routing,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -15,18 +15,18 @@ use shared::{
         CreateUserRequest, ResetPasswordRequest, UpdateProfileRequest, UserDto, UserProfileDto,
         UserRole,
     },
-    validation::user::{validate_create_user, validate_reset_password, validate_update_profile},
+    validation::user,
 };
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/users", post(create).get(list))
-        .route("/users/{id}", get(get_one).patch(update))
-        .route("/users/{id}/deactivate", post(deactivate))
-        .route("/users/{id}/reactivate", post(reactivate))
-        .route("/users/{id}/reset-password", post(reset_password))
+        .route("/users", routing::post(create).get(list))
+        .route("/users/{id}", routing::get(get_one).patch(update))
+        .route("/users/{id}/deactivate", routing::post(deactivate))
+        .route("/users/{id}/reactivate", routing::post(reactivate))
+        .route("/users/{id}/reset-password", routing::post(reset_password))
 }
 
 #[derive(Deserialize)]
@@ -42,7 +42,7 @@ async fn create(
     auth: AuthUser,
     Json(body): Json<CreateUserRequest>,
 ) -> Result<Json<UserProfileDto>, AppError> {
-    validate_create_user(&body).map_err(|e| AppError::Validation(e.to_string()))?;
+    user::validate_create_user(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     let user = state
         .user
         .create_user(auth.user_id, dto::create_user_command(body))
@@ -89,7 +89,7 @@ async fn update(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateProfileRequest>,
 ) -> Result<Json<UserProfileDto>, AppError> {
-    validate_update_profile(&body).map_err(|e| AppError::Validation(e.to_string()))?;
+    user::validate_update_profile(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     let user = state
         .user
         .update_profile(auth.user_id, UserId(id), dto::update_profile_command(body))
@@ -122,7 +122,7 @@ async fn reset_password(
     Path(id): Path<Uuid>,
     Json(body): Json<ResetPasswordRequest>,
 ) -> Result<StatusCode, AppError> {
-    validate_reset_password(&body).map_err(|e| AppError::Validation(e.to_string()))?;
+    user::validate_reset_password(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     state
         .user
         .admin_reset_password(auth.user_id, UserId(id), body.new_password)

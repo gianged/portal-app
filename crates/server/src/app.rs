@@ -6,7 +6,7 @@ use axum::{
     extract::State,
     http::{HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
-    routing::get,
+    routing,
 };
 use tower_http::{
     catch_panic::CatchPanicLayer,
@@ -431,8 +431,8 @@ pub fn router(state: AppState) -> Router {
     let api = public.merge(protected).merge(files);
 
     Router::new()
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
+        .route("/healthz", routing::get(healthz))
+        .route("/readyz", routing::get(readyz))
         .nest("/api/v1", api)
         // Applied outermost-to-innermost: trace, request-id, security headers, body
         // limit, catch-panic, then the router (its protected sub-tree adds auth +

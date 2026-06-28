@@ -1,4 +1,4 @@
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 use leptos_router::{
     components::{Route, Router, Routes},
     path,
@@ -19,9 +19,10 @@ use crate::features::requests::routes::{RequestDetailPage, RequestsPage};
 use crate::features::tickets::routes::{TicketDetailPage, TicketsPage};
 use crate::features::users::routes::{UserDetailPage, UsersPage};
 use crate::primitives::toast::ToastHost;
+use crate::state;
 use crate::state::auth::AuthState;
 use crate::state::notifications::NotificationsState;
-use crate::state::theme::{ThemeState, apply_theme};
+use crate::state::theme::ThemeState;
 use crate::state::toast::ToastState;
 use crate::theme;
 
@@ -37,7 +38,7 @@ pub fn App() -> impl IntoView {
     provide_context(theme);
     // Reflect the theme onto `<html data-theme>` + localStorage; runs on first
     // paint (seeding the stored/OS preference) and on every toggle.
-    Effect::new(move |_| apply_theme(theme.theme.get()));
+    Effect::new(move |_| state::theme::apply_theme(theme.theme.get()));
 
     // The chat socket is created up front but only dials once the session is
     // authenticated, so a logged-out client never reconnect-loops a 401 upgrade.
@@ -51,7 +52,7 @@ pub fn App() -> impl IntoView {
 
     // Resolve the session once on load, then mark auth as resolved so route
     // guards can act without a flash-redirect on refresh.
-    spawn_local(async move {
+    task::spawn_local(async move {
         if let Ok(user) = auth::api::me().await {
             auth.set_user(user);
             if let Ok(count) = api::unread_count().await {

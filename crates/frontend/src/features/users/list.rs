@@ -1,10 +1,10 @@
 //! The people directory: a searchable index of users with an HR create-user dialog.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 use leptos_router::components::A;
 
 use shared::dto::user::{CreateUserRequest, SystemRole, UserDto};
-use shared::validation::user::validate_create_user;
+use shared::validation::user;
 
 use crate::features::ui;
 use crate::features::users::api;
@@ -163,12 +163,12 @@ fn CreateUserDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl Into
             timezone: timezone.get_untracked(),
             system_role: system_role.get_untracked(),
         };
-        if let Err(e) = validate_create_user(&req) {
+        if let Err(e) = user::validate_create_user(&req) {
             toast.error(e.to_string());
             return;
         }
         submitting.set(true);
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::create(&req).await {
                 Ok(_) => {
                     toast.success("User created");

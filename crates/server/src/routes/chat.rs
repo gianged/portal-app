@@ -8,7 +8,7 @@ use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::StatusCode,
-    routing::{delete, get, post},
+    routing,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -24,10 +24,7 @@ use shared::{
         ChannelDto, ChannelSummaryDto, ChatAttachmentDto, EditMessageRequest, MessageDto,
         SendMessageRequest,
     },
-    validation::{
-        chat::{validate_message_body, validate_message_extras},
-        file::sanitize_filename,
-    },
+    validation::{chat, file},
 };
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
@@ -40,20 +37,20 @@ const DOWNLOAD_URL_TTL: Duration = Duration::from_hours(1);
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/chat/direct", post(open_direct))
-        .route("/chat/channels", get(list_channels))
+        .route("/chat/direct", routing::post(open_direct))
+        .route("/chat/channels", routing::get(list_channels))
         .route(
             "/chat/channels/{id}/messages",
-            get(list_messages).post(post_message),
+            routing::get(list_messages).post(post_message),
         )
         .route(
             "/chat/channels/{id}/messages/{message_id}",
-            delete(delete_message).patch(edit_message),
+            routing::delete(delete_message).patch(edit_message),
         )
-        .route("/chat/channels/{id}/read", post(mark_read))
+        .route("/chat/channels/{id}/read", routing::post(mark_read))
         .route(
             "/chat/channels/{id}/attachments",
-            post(upload_attachment).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)),
+            routing::post(upload_attachment).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)),
         )
 }
 
@@ -120,8 +117,8 @@ async fn post_message(
     Path(id): Path<Uuid>,
     Json(body): Json<SendMessageRequest>,
 ) -> Result<Json<MessageDto>, AppError> {
-    validate_message_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
-    validate_message_extras(body.mentions.len(), &body.attachment_keys)
+    chat::validate_message_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
+    chat::validate_message_extras(body.mentions.len(), &body.attachment_keys)
         .map_err(|e| AppError::Validation(e.to_string()))?;
     let message = state
         .chat
@@ -136,7 +133,7 @@ async fn edit_message(
     Path((id, message_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<EditMessageRequest>,
 ) -> Result<Json<MessageDto>, AppError> {
-    validate_message_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
+    chat::validate_message_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
     let message = state
         .chat
         .edit_message(
@@ -185,7 +182,7 @@ async fn upload_attachment(
         .ok_or_else(|| AppError::Validation("no file field in upload".into()))?;
     let filename = field
         .file_name()
-        .map(sanitize_filename)
+        .map(file::sanitize_filename)
         .ok_or_else(|| AppError::Validation("upload field has no filename".into()))?
         .map_err(|e| AppError::Validation(e.to_string()))?;
     let content_type = field

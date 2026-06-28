@@ -15,7 +15,7 @@ use domain::{
 
 use crate::postgres::{
     enums::{SqlGroupKind, SqlReportKind, SqlReportScope},
-    mappers::map_pg_error,
+    mappers,
 };
 
 pub struct PgReportingRepo {
@@ -181,7 +181,7 @@ impl ReportStatsRepository for PgReportingRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
 
         Ok(rows
             .into_iter()
@@ -225,7 +225,7 @@ impl ReportStatsRepository for PgReportingRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
 
         Ok(rows
             .into_iter()
@@ -265,7 +265,7 @@ impl ReportStatsRepository for PgReportingRepo {
         )
         .fetch_one(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
 
         let by_status = vec![
             (TicketStatus::Open, count(r.open)),
@@ -315,7 +315,7 @@ impl ReportStatsRepository for PgReportingRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
 
         Ok(rows
             .into_iter()
@@ -347,7 +347,7 @@ impl ReportStatsRepository for PgReportingRepo {
         )
         .fetch_one(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
 
         Ok(CompanyStaffStats {
             active_users: count(r.active_users),
@@ -414,7 +414,7 @@ impl ReportStatsRepository for PgReportingRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
 
         Ok(rows
             .into_iter()
@@ -459,7 +459,7 @@ impl ReportArchiveRepository for PgReportingRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -485,7 +485,7 @@ impl ReportArchiveRepository for PgReportingRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         rows.into_iter().map(Report::try_from).collect()
     }
 
@@ -510,7 +510,7 @@ impl ReportArchiveRepository for PgReportingRepo {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         row.map(Report::try_from).transpose()
     }
 
@@ -541,7 +541,7 @@ impl ReportArchiveRepository for PgReportingRepo {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         row.map(Report::try_from).transpose()
     }
 
@@ -549,7 +549,7 @@ impl ReportArchiveRepository for PgReportingRepo {
         let rows = sqlx::query!(r#"SELECT storage_key FROM reporting.reports"#)
             .fetch_all(&self.pool)
             .await
-            .map_err(map_pg_error)?;
+            .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(|r| r.storage_key).collect())
     }
 }

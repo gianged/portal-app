@@ -5,7 +5,7 @@ use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{get, patch, post},
+    routing,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -19,32 +19,29 @@ use shared::{
         comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest},
         ticket::{AssignTicketRequest, RaiseTicketRequest, TicketDto, TriageTicketRequest},
     },
-    validation::{
-        comment::validate_comment_body,
-        ticket::{validate_ticket_description, validate_ticket_title},
-    },
+    validation::{comment, ticket},
 };
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/tickets", post(raise).get(list))
-        .route("/tickets/{id}", get(get_one))
-        .route("/tickets/{id}/triage", post(triage))
-        .route("/tickets/{id}/assign", post(assign))
-        .route("/tickets/{id}/start", post(start))
-        .route("/tickets/{id}/resolve", post(resolve_ticket))
-        .route("/tickets/{id}/reject", post(reject))
-        .route("/tickets/{id}/close", post(close))
-        .route("/tickets/{id}/reopen", post(reopen))
+        .route("/tickets", routing::post(raise).get(list))
+        .route("/tickets/{id}", routing::get(get_one))
+        .route("/tickets/{id}/triage", routing::post(triage))
+        .route("/tickets/{id}/assign", routing::post(assign))
+        .route("/tickets/{id}/start", routing::post(start))
+        .route("/tickets/{id}/resolve", routing::post(resolve_ticket))
+        .route("/tickets/{id}/reject", routing::post(reject))
+        .route("/tickets/{id}/close", routing::post(close))
+        .route("/tickets/{id}/reopen", routing::post(reopen))
         .route(
             "/tickets/{id}/comments",
-            get(list_comments).post(add_comment),
+            routing::get(list_comments).post(add_comment),
         )
         .route(
             "/tickets/{id}/comments/{comment_id}",
-            patch(edit_comment).delete(delete_comment),
+            routing::patch(edit_comment).delete(delete_comment),
         )
 }
 
@@ -79,7 +76,7 @@ async fn add_comment(
     Path(id): Path<Uuid>,
     Json(body): Json<CreateCommentRequest>,
 ) -> Result<Json<CommentDto>, AppError> {
-    validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
+    comment::validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
     let entity = CommentEntity::Ticket {
         ticket_id: TicketId(id),
     };
@@ -93,7 +90,7 @@ async fn edit_comment(
     Path((id, comment_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateCommentRequest>,
 ) -> Result<Json<CommentDto>, AppError> {
-    validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
+    comment::validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
     let entity = CommentEntity::Ticket {
         ticket_id: TicketId(id),
     };
@@ -178,8 +175,8 @@ async fn raise(
     auth: AuthUser,
     Json(body): Json<RaiseTicketRequest>,
 ) -> Result<Json<TicketDto>, AppError> {
-    validate_ticket_title(&body.title).map_err(|e| AppError::Validation(e.to_string()))?;
-    validate_ticket_description(&body.description)
+    ticket::validate_ticket_title(&body.title).map_err(|e| AppError::Validation(e.to_string()))?;
+    ticket::validate_ticket_description(&body.description)
         .map_err(|e| AppError::Validation(e.to_string()))?;
     let ticket = state
         .ticket

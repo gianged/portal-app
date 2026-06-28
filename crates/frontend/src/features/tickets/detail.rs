@@ -2,7 +2,7 @@
 
 use futures::FutureExt;
 use futures::future::LocalBoxFuture;
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 
 use shared::dto::ids::{TicketId, UserId};
 use shared::dto::ticket::{
@@ -90,7 +90,7 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
         let Some(tid) = id.get_untracked() else {
             return;
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match action_future(action, tid).await {
                 Ok(_) => {
                     toast.success("Ticket updated");
@@ -109,7 +109,7 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
         let req = TriageTicketRequest {
             priority: triage_priority.get_untracked(),
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::triage(tid, &req).await {
                 Ok(_) => {
                     toast.success("Ticket triaged");
@@ -129,7 +129,7 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
             return;
         };
         assign_open.set(false);
-        spawn_local(async move {
+        task::spawn_local(async move {
             let req = AssignTicketRequest {
                 assignee_user_id: uid,
             };

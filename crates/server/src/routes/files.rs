@@ -14,7 +14,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderValue, StatusCode, header},
     response::Response,
-    routing::get,
+    routing,
 };
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -28,7 +28,7 @@ use crate::{
 };
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/files/{*key}", get(download))
+    Router::new().route("/files/{*key}", routing::get(download))
 }
 
 /// Query string carried by a presigned download URL.

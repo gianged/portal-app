@@ -5,7 +5,7 @@ use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{patch, post},
+    routing,
 };
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -18,16 +18,16 @@ use domain::{
 use shared::dto::announcement::{
     AnnouncementDto, EditAnnouncementRequest, PostAnnouncementRequest,
 };
-use shared::validation::announcement::validate_announcement_body;
+use shared::validation::announcement;
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/announcements", post(post_announcement).get(list))
+        .route("/announcements", routing::post(post_announcement).get(list))
         .route(
             "/announcements/{channel_id}/{announcement_id}",
-            patch(edit).delete(remove),
+            routing::patch(edit).delete(remove),
         )
 }
 
@@ -41,7 +41,8 @@ async fn post_announcement(
     auth: AuthUser,
     Json(body): Json<PostAnnouncementRequest>,
 ) -> Result<Json<AnnouncementDto>, AppError> {
-    validate_announcement_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
+    announcement::validate_announcement_body(&body.body)
+        .map_err(|e| AppError::Validation(e.to_string()))?;
     let announcement = state
         .announcement
         .post(auth.user_id, dto::post_announcement_command(body))
@@ -74,7 +75,8 @@ async fn edit(
     Path((channel_id, announcement_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<EditAnnouncementRequest>,
 ) -> Result<Json<AnnouncementDto>, AppError> {
-    validate_announcement_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
+    announcement::validate_announcement_body(&body.body)
+        .map_err(|e| AppError::Validation(e.to_string()))?;
     let announcement = state
         .announcement
         .edit(

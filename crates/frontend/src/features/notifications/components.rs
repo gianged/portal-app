@@ -1,7 +1,7 @@
 //! Inbox UI: the notification list with an unread filter, mark-read on click, mark-all, and navigation to the referenced item.
 
-use leptos::{prelude::*, task::spawn_local};
-use leptos_router::{NavigateOptions, hooks::use_navigate};
+use leptos::{prelude::*, task};
+use leptos_router::{NavigateOptions, hooks};
 
 use shared::dto::notification::{NotificationDto, NotificationPayloadDto};
 
@@ -96,7 +96,7 @@ fn payload_summary(p: &NotificationPayloadDto) -> String {
 pub fn InboxIndex() -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
     let notifications = use_context::<NotificationsState>().expect("NotificationsState context");
-    let navigate = use_navigate();
+    let navigate = hooks::use_navigate();
 
     let unread_only = RwSignal::new(false);
     let items: Loadable<Vec<NotificationDto>> = RwSignal::new(None);
@@ -109,7 +109,7 @@ pub fn InboxIndex() -> impl IntoView {
 
     // Pull a fresh unread count into the topbar badge after a mutation.
     let refresh_badge = move || {
-        spawn_local(async move {
+        task::spawn_local(async move {
             if let Ok(c) = api::unread_count().await {
                 notifications.set_unread(c);
             }
@@ -117,7 +117,7 @@ pub fn InboxIndex() -> impl IntoView {
     };
 
     let mark_all = Callback::new(move |_| {
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::mark_read(Vec::new()).await {
                 Ok(()) => {
                     toast.success("All caught up");
@@ -216,7 +216,7 @@ fn notification_row(
     let on_click = move |_| {
         let navigate = navigate.clone();
         let href = href.clone();
-        spawn_local(async move {
+        task::spawn_local(async move {
             let _ = api::mark_read(vec![id]).await;
             if let Ok(c) = api::unread_count().await {
                 notifications.set_unread(c);

@@ -9,7 +9,7 @@ use std::time::Duration;
 use axum::{
     Json, Router,
     extract::{Query, State},
-    routing::{get, post},
+    routing,
 };
 use serde::Deserialize;
 
@@ -26,11 +26,11 @@ const MAX_LIMIT: u32 = 200;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/reports", get(list))
-        .route("/reports/monthly", get(monthly_stats))
-        .route("/reports/yearly", get(yearly_stats))
-        .route("/reports/monthly/generate", post(generate_monthly))
-        .route("/reports/yearly/generate", post(generate_yearly))
+        .route("/reports", routing::get(list))
+        .route("/reports/monthly", routing::get(monthly_stats))
+        .route("/reports/yearly", routing::get(yearly_stats))
+        .route("/reports/monthly/generate", routing::post(generate_monthly))
+        .route("/reports/yearly/generate", routing::post(generate_yearly))
 }
 
 #[derive(Deserialize)]

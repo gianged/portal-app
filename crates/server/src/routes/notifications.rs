@@ -4,7 +4,7 @@ use axum::{
     Json, Router,
     extract::{Query, State},
     http::StatusCode,
-    routing::{get, post},
+    routing,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use domain::ids::NotificationId;
 use shared::{
     dto::notification::{MarkReadRequest, NotificationDto},
-    validation::common::{NOTIFICATION_BATCH_MAX, max_items},
+    validation::common::{self, NOTIFICATION_BATCH_MAX},
 };
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser};
@@ -22,9 +22,9 @@ const MARK_ALL_LIMIT: u32 = 500;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/notifications", get(list))
-        .route("/notifications/unread-count", get(unread_count))
-        .route("/notifications/mark-read", post(mark_read))
+        .route("/notifications", routing::get(list))
+        .route("/notifications/unread-count", routing::get(unread_count))
+        .route("/notifications/mark-read", routing::post(mark_read))
 }
 
 #[derive(Deserialize)]
@@ -62,7 +62,7 @@ async fn mark_read(
     auth: AuthUser,
     Json(body): Json<MarkReadRequest>,
 ) -> Result<StatusCode, AppError> {
-    max_items(
+    common::max_items(
         "Notification ids",
         body.notification_ids.len(),
         NOTIFICATION_BATCH_MAX,

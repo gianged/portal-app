@@ -43,39 +43,45 @@ pub fn sanitize_filename(raw: &str) -> Result<String, SharedError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FILENAME_MAX, sanitize_filename};
+    use super::FILENAME_MAX;
 
     #[test]
     fn plain_name_passes_through() {
-        assert_eq!(sanitize_filename("report.pdf").unwrap(), "report.pdf");
+        assert_eq!(
+            super::sanitize_filename("report.pdf").unwrap(),
+            "report.pdf"
+        );
     }
 
     #[test]
     fn path_components_are_stripped() {
         assert_eq!(
-            sanitize_filename("C:\\Users\\x\\evil.exe").unwrap(),
+            super::sanitize_filename("C:\\Users\\x\\evil.exe").unwrap(),
             "evil.exe"
         );
-        assert_eq!(sanitize_filename("../../etc/passwd").unwrap(), "passwd");
+        assert_eq!(
+            super::sanitize_filename("../../etc/passwd").unwrap(),
+            "passwd"
+        );
     }
 
     #[test]
     fn control_chars_and_quotes_are_removed() {
-        assert_eq!(sanitize_filename("a\"b\r\n.txt").unwrap(), "ab.txt");
+        assert_eq!(super::sanitize_filename("a\"b\r\n.txt").unwrap(), "ab.txt");
     }
 
     #[test]
     fn empty_and_dot_names_are_rejected() {
-        assert!(sanitize_filename("").is_err());
-        assert!(sanitize_filename("   ").is_err());
-        assert!(sanitize_filename("..").is_err());
-        assert!(sanitize_filename("uploads/").is_err());
+        assert!(super::sanitize_filename("").is_err());
+        assert!(super::sanitize_filename("   ").is_err());
+        assert!(super::sanitize_filename("..").is_err());
+        assert!(super::sanitize_filename("uploads/").is_err());
     }
 
     #[test]
     fn long_names_keep_their_extension() {
         let long = format!("{}.tar.gz", "a".repeat(300));
-        let out = sanitize_filename(&long).unwrap();
+        let out = super::sanitize_filename(&long).unwrap();
         assert_eq!(out.chars().count(), FILENAME_MAX);
         assert!(out.ends_with(".gz"));
     }

@@ -5,7 +5,7 @@
 use axum::{
     Json, Router,
     extract::{Query, State},
-    routing::get,
+    routing,
 };
 use serde::Deserialize;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -21,8 +21,8 @@ const MAX_LIMIT: u32 = 200;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/audit/feed", get(feed))
-        .route("/audit", get(for_entity))
+        .route("/audit/feed", routing::get(feed))
+        .route("/audit", routing::get(for_entity))
 }
 
 #[derive(Deserialize)]

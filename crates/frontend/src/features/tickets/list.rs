@@ -1,11 +1,11 @@
 //! IT-ticket index: a scope-filtered table (Mine / Assigned / Triage queue) with a raise dialog.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 use leptos_router::components::A;
 use uuid::Uuid;
 
 use shared::dto::ticket::{RaiseTicketRequest, TicketCategory, TicketDto};
-use shared::validation::ticket::{validate_ticket_description, validate_ticket_title};
+use shared::validation::ticket;
 
 use crate::features::tickets::api::{self, Scope};
 use crate::primitives::avatar::{Avatar, AvatarSize};
@@ -197,11 +197,11 @@ fn RaiseTicketDialog(open: RwSignal<bool>, on_raised: Callback<()>) -> impl Into
         let t = title.get_untracked();
         let d = description.get_untracked();
         let mut ok = true;
-        if let Err(e) = validate_ticket_title(&t) {
+        if let Err(e) = ticket::validate_ticket_title(&t) {
             title_err.set(Some(e.to_string()));
             ok = false;
         }
-        if let Err(e) = validate_ticket_description(&d) {
+        if let Err(e) = ticket::validate_ticket_description(&d) {
             desc_err.set(Some(e.to_string()));
             ok = false;
         }
@@ -214,7 +214,7 @@ fn RaiseTicketDialog(open: RwSignal<bool>, on_raised: Callback<()>) -> impl Into
             description: d,
             category: category.get_untracked(),
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::raise(&req).await {
                 Ok(_) => {
                     toast.success("Ticket raised");

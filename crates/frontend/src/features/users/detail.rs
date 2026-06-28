@@ -1,15 +1,13 @@
 //! The user profile detail: identity card with status, edit, deactivate/reactivate, and password change/reset dialogs.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 
 use shared::dto::ids::UserId;
 use shared::dto::user::{
     ChangePasswordRequest, ResetPasswordRequest, UpdateProfileRequest, UserProfileDto, UserRole,
     UserStatus,
 };
-use shared::validation::user::{
-    validate_change_password, validate_reset_password, validate_update_profile,
-};
+use shared::validation::user;
 
 use crate::features::auth::api as auth_api;
 use crate::features::ui;
@@ -58,7 +56,7 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
         let Some(uid) = id.get_untracked() else {
             return;
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             let result = if activate {
                 api::reactivate(uid).await.map(|_| ())
             } else {
@@ -185,12 +183,12 @@ fn ChangePasswordDialog(open: RwSignal<bool>) -> impl IntoView {
             current_password: current.get_untracked(),
             new_password: new_pw.get_untracked(),
         };
-        if let Err(e) = validate_change_password(&req) {
+        if let Err(e) = user::validate_change_password(&req) {
             toast.error(e.to_string());
             return;
         }
         submitting.set(true);
-        spawn_local(async move {
+        task::spawn_local(async move {
             match auth_api::change_password(&req).await {
                 Ok(()) => {
                     toast.success("Password changed — sign in with the new password");
@@ -257,12 +255,12 @@ fn ResetPasswordDialog(
         let req = ResetPasswordRequest {
             new_password: password.get_untracked(),
         };
-        if let Err(e) = validate_reset_password(&req) {
+        if let Err(e) = user::validate_reset_password(&req) {
             toast.error(e.to_string());
             return;
         }
         submitting.set(true);
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::reset_password(uid, &req).await {
                 Ok(()) => {
                     toast.success("Temporary password set — share it securely");
@@ -366,12 +364,12 @@ fn EditProfileDialog(
             timezone: Some(tz.get_untracked()),
             avatar_storage_key: None,
         };
-        if let Err(e) = validate_update_profile(&req) {
+        if let Err(e) = user::validate_update_profile(&req) {
             toast.error(e.to_string());
             return;
         }
         submitting.set(true);
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::update(uid, &req).await {
                 Ok(_) => {
                     toast.success("Profile updated");

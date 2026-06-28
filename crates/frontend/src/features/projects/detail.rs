@@ -1,6 +1,6 @@
 //! Project detail: status transitions, collaborator management, group invitations, and the project's requests.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 use leptos_router::components::A;
 use uuid::Uuid;
 
@@ -77,7 +77,7 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
         let req = ChangeProjectStatusRequest {
             status: target.status(),
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::change_status(pid, &req).await {
                 Ok(_) => {
                     toast.success("Project updated");
@@ -92,7 +92,7 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
         let Some(pid) = id.get_untracked() else {
             return;
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::remove_collaborator(pid, gid).await {
                 Ok(()) => {
                     toast.success("Collaborator removed");
@@ -104,7 +104,7 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
     };
 
     let revoke = move |iid: ProjectInviteId| {
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::revoke_invite(iid).await {
                 Ok(_) => {
                     toast.success("Invite revoked");
@@ -363,7 +363,7 @@ fn InviteGroupDialog(
         };
         open.set(false);
         let req = InviteGroupRequest { group_id: gid };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::invite_group(pid, &req).await {
                 Ok(_) => {
                     toast.success("Group invited");
@@ -436,7 +436,7 @@ fn ProgressEditor(id: ProjectId, initial: u8, reload: RwSignal<u32>) -> impl Int
             return;
         }
         saving.set(true);
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::set_progress(id, p).await {
                 Ok(_) => {
                     toast.success("Progress updated");

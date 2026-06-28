@@ -1,7 +1,7 @@
-use leptos::{prelude::*, task::spawn_local};
-use leptos_router::{NavigateOptions, hooks::use_navigate};
+use leptos::{prelude::*, task};
+use leptos_router::{NavigateOptions, hooks};
 use shared::dto::user::LoginRequest;
-use shared::validation::user::{validate_email, validate_password};
+use shared::validation::user;
 
 use crate::api::display::ErrorDisplay;
 use crate::features::auth::api;
@@ -24,7 +24,7 @@ pub fn LoginForm() -> impl IntoView {
     let submitting = RwSignal::new(false);
 
     let auth = use_context::<AuthState>().expect("AuthState context");
-    let navigate = use_navigate();
+    let navigate = hooks::use_navigate();
 
     let on_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
@@ -40,11 +40,11 @@ pub fn LoginForm() -> impl IntoView {
         let password_val = password.get();
 
         let mut has_error = false;
-        if let Err(e) = validate_email(&email_val) {
+        if let Err(e) = user::validate_email(&email_val) {
             email_error.set(Some(e.to_string()));
             has_error = true;
         }
-        if let Err(e) = validate_password(&password_val) {
+        if let Err(e) = user::validate_password(&password_val) {
             password_error.set(Some(e.to_string()));
             has_error = true;
         }
@@ -54,7 +54,7 @@ pub fn LoginForm() -> impl IntoView {
 
         submitting.set(true);
         let navigate = navigate.clone();
-        spawn_local(async move {
+        task::spawn_local(async move {
             let req = LoginRequest {
                 email: email_val,
                 password: password_val,
@@ -129,7 +129,7 @@ pub fn LoginForm() -> impl IntoView {
 #[component]
 pub fn RequireAuth(children: ChildrenFn) -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");
-    let navigate = use_navigate();
+    let navigate = hooks::use_navigate();
 
     Effect::new(move |_| {
         if auth.loaded.get() && !auth.is_authenticated() {

@@ -1,6 +1,6 @@
 //! Message composer: sends over the WebSocket when connected, else falls back to a REST post; emits typing signals and attaches files by storage key on send.
 
-use leptos::{html::Input as HtmlInputEl, prelude::*, task::spawn_local};
+use leptos::{html::Input as HtmlInputEl, prelude::*, task};
 use web_sys::FormData;
 
 use shared::dto::chat::{ChatAttachmentDto, MessageDto, SendMessageRequest};
@@ -58,7 +58,7 @@ pub fn Composer(
                 attachment_keys,
             });
         } else {
-            spawn_local(async move {
+            task::spawn_local(async move {
                 let req = SendMessageRequest {
                     body,
                     mentions: Vec::new(),
@@ -88,7 +88,7 @@ pub fn Composer(
         let form = FormData::new().expect("FormData is constructible in the browser");
         let blob: &web_sys::Blob = file.as_ref();
         let _ = form.append_with_blob_and_filename("file", blob, &file.name());
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::upload_attachment(cid, form).await {
                 Ok(attachment) => pending.update(|v| v.push(attachment)),
                 Err(e) => toast.error_from(&e),

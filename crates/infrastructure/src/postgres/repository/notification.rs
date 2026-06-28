@@ -10,7 +10,7 @@ use domain::{
     repository::NotificationRepository,
 };
 
-use crate::postgres::{enums::SqlNotificationKind, mappers::map_pg_error};
+use crate::postgres::{enums::SqlNotificationKind, mappers};
 
 pub struct PgNotificationRepo {
     pool: PgPool,
@@ -63,7 +63,7 @@ impl NotificationRepository for PgNotificationRepo {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(map_pg_error)
+        .map_err(mappers::map_pg_error)
         .map(|opt| opt.map(Into::into))
     }
 
@@ -93,7 +93,7 @@ impl NotificationRepository for PgNotificationRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -106,7 +106,7 @@ impl NotificationRepository for PgNotificationRepo {
         )
         .fetch_one(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         u64::try_from(row.count).map_err(|_| RepositoryError::Backend("negative count".into()))
     }
 
@@ -131,7 +131,7 @@ impl NotificationRepository for PgNotificationRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -150,7 +150,7 @@ impl NotificationRepository for PgNotificationRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -162,7 +162,7 @@ impl NotificationRepository for PgNotificationRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(result.rows_affected())
     }
 }

@@ -10,7 +10,7 @@ use domain::{
     repository::AuditRepository,
 };
 
-use crate::postgres::{enums::SqlAuditAction, mappers::map_pg_error};
+use crate::postgres::{enums::SqlAuditAction, mappers};
 
 pub struct PgAuditRepo {
     pool: PgPool,
@@ -75,7 +75,7 @@ impl AuditRepository for PgAuditRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -110,7 +110,7 @@ impl AuditRepository for PgAuditRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -141,7 +141,7 @@ impl AuditRepository for PgAuditRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 }

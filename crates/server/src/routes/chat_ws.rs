@@ -28,11 +28,11 @@ use axum::{
         ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade},
     },
     response::Response,
-    routing::get,
+    routing,
 };
 use futures::{
     SinkExt, Stream, StreamExt,
-    stream::{SelectAll, SplitSink, select_all},
+    stream::{self, SelectAll, SplitSink},
 };
 
 use application::{DomainEvent, commands::chat::PostMessageCommand};
@@ -47,7 +47,7 @@ use shared::{
         chat::MessageDto,
         ws::{ClientFrame, ServerFrame},
     },
-    validation::chat::{validate_message_body, validate_message_extras},
+    validation::chat,
 };
 
 use crate::{
@@ -69,7 +69,7 @@ const DOWNLOAD_URL_TTL: Duration = Duration::from_hours(1);
 type ByteStream = Pin<Box<dyn Stream<Item = Vec<u8>> + Send>>;
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/chat/ws", get(ws))
+    Router::new().route("/chat/ws", routing::get(ws))
 }
 
 async fn ws(State(state): State<AppState>, auth: AuthUser, upgrade: WebSocketUpgrade) -> Response {
@@ -142,7 +142,7 @@ async fn open_streams(state: &AppState) -> Result<SelectAll<ByteStream>, EventEr
     // Revocation planes: deactivation closes the socket, membership changes re-validate subscriptions (see `on_domain_event`).
     let user = state.realtime.subscribe("portal.user").await?;
     let group = state.realtime.subscribe("portal.group").await?;
-    Ok(select_all(vec![chat, ephemeral, user, group]))
+    Ok(stream::select_all(vec![chat, ephemeral, user, group]))
 }
 
 /// Handles one client frame. Returns `false` when the connection should close.
@@ -212,8 +212,8 @@ async fn on_client_frame(
             attachment_keys,
         } => {
             // Same validation as the REST path; the WS plane is not a bypass.
-            if let Err(e) = validate_message_body(&body)
-                .and_then(|()| validate_message_extras(mentions.len(), &attachment_keys))
+            if let Err(e) = chat::validate_message_body(&body)
+                .and_then(|()| chat::validate_message_extras(mentions.len(), &attachment_keys))
             {
                 return send(
                     sink,

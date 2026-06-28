@@ -12,7 +12,7 @@ use domain::{
 
 use crate::postgres::{
     enums::{SqlTicketCategory, SqlTicketPriority, SqlTicketStatus},
-    mappers::{like_pattern, map_pg_error},
+    mappers,
 };
 
 pub struct PgTicketRepo {
@@ -87,7 +87,7 @@ impl TicketRepository for PgTicketRepo {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(map_pg_error)
+        .map_err(mappers::map_pg_error)
         .map(|opt| opt.map(Into::into))
     }
 
@@ -97,7 +97,7 @@ impl TicketRepository for PgTicketRepo {
         q: Option<&str>,
     ) -> Result<Vec<Ticket>, RepositoryError> {
         // Matches idx_tickets_status_priority_open; NULLS LAST sinks un-triaged tickets, created_at breaks ties.
-        let pattern: Option<String> = q.map(like_pattern);
+        let pattern: Option<String> = q.map(mappers::like_pattern);
         let rows = sqlx::query_as!(
             TicketRow,
             r#"SELECT
@@ -124,7 +124,7 @@ impl TicketRepository for PgTicketRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -134,7 +134,7 @@ impl TicketRepository for PgTicketRepo {
         q: Option<&str>,
     ) -> Result<Vec<Ticket>, RepositoryError> {
         // Matches idx_tickets_assignee_user_id (partial: assignee_user_id IS NOT NULL).
-        let pattern: Option<String> = q.map(like_pattern);
+        let pattern: Option<String> = q.map(mappers::like_pattern);
         let rows = sqlx::query_as!(
             TicketRow,
             r#"SELECT
@@ -160,7 +160,7 @@ impl TicketRepository for PgTicketRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -169,7 +169,7 @@ impl TicketRepository for PgTicketRepo {
         requester: UserId,
         q: Option<&str>,
     ) -> Result<Vec<Ticket>, RepositoryError> {
-        let pattern: Option<String> = q.map(like_pattern);
+        let pattern: Option<String> = q.map(mappers::like_pattern);
         let rows = sqlx::query_as!(
             TicketRow,
             r#"SELECT
@@ -195,7 +195,7 @@ impl TicketRepository for PgTicketRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -231,7 +231,7 @@ impl TicketRepository for PgTicketRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -271,7 +271,7 @@ impl TicketRepository for PgTicketRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 }

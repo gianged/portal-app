@@ -12,7 +12,7 @@ use domain::{
 
 use crate::postgres::{
     enums::{SqlSystemRole, SqlUserStatus},
-    mappers::{like_pattern, map_pg_error},
+    mappers,
 };
 
 pub struct PgUserRepo {
@@ -87,7 +87,7 @@ impl UserRepository for PgUserRepo {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(map_pg_error)
+        .map_err(mappers::map_pg_error)
         .map(|opt| opt.map(Into::into))
     }
 
@@ -114,7 +114,7 @@ impl UserRepository for PgUserRepo {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(map_pg_error)
+        .map_err(mappers::map_pg_error)
         .map(|opt| opt.map(Into::into))
     }
 
@@ -125,7 +125,7 @@ impl UserRepository for PgUserRepo {
         q: Option<&str>,
     ) -> Result<Vec<User>, RepositoryError> {
         let active = SqlUserStatus::from(UserStatus::Active);
-        let pattern: Option<String> = q.map(like_pattern);
+        let pattern: Option<String> = q.map(mappers::like_pattern);
         let rows = sqlx::query_as!(
             UserRow,
             r#"SELECT
@@ -155,7 +155,7 @@ impl UserRepository for PgUserRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -194,7 +194,7 @@ impl UserRepository for PgUserRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -206,7 +206,7 @@ impl UserRepository for PgUserRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(|r| r.avatar_storage_key).collect())
     }
 
@@ -233,7 +233,7 @@ impl UserRepository for PgUserRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 }

@@ -6,7 +6,7 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    routing::{get, patch, post},
+    routing,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -17,23 +17,23 @@ use shared::{
         AddMemberRequest, ChangeMemberRoleRequest, CreateGroupRequest, GroupDetailDto, GroupDto,
         MembershipDto, UpdateGroupRequest,
     },
-    validation::group::{validate_group_description, validate_group_name},
+    validation::group,
 };
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/groups", post(create).get(list))
-        .route("/groups/{id}", get(detail).patch(update))
-        .route("/groups/{id}/members", post(add_member))
+        .route("/groups", routing::post(create).get(list))
+        .route("/groups/{id}", routing::get(detail).patch(update))
+        .route("/groups/{id}/members", routing::post(add_member))
         .route(
             "/groups/{id}/members/{user_id}",
-            patch(change_role).delete(remove_member),
+            routing::patch(change_role).delete(remove_member),
         )
         .route(
             "/groups/{id}/transfer-leadership",
-            post(transfer_leadership),
+            routing::post(transfer_leadership),
         )
 }
 
@@ -42,8 +42,8 @@ async fn create(
     auth: AuthUser,
     Json(body): Json<CreateGroupRequest>,
 ) -> Result<Json<GroupDto>, AppError> {
-    validate_group_name(&body.name).map_err(|e| AppError::Validation(e.to_string()))?;
-    validate_group_description(&body.description)
+    group::validate_group_name(&body.name).map_err(|e| AppError::Validation(e.to_string()))?;
+    group::validate_group_description(&body.description)
         .map_err(|e| AppError::Validation(e.to_string()))?;
     let group = state
         .group
@@ -73,10 +73,11 @@ async fn update(
     Json(body): Json<UpdateGroupRequest>,
 ) -> Result<Json<GroupDto>, AppError> {
     if let Some(name) = &body.name {
-        validate_group_name(name).map_err(|e| AppError::Validation(e.to_string()))?;
+        group::validate_group_name(name).map_err(|e| AppError::Validation(e.to_string()))?;
     }
     if let Some(description) = &body.description {
-        validate_group_description(description).map_err(|e| AppError::Validation(e.to_string()))?;
+        group::validate_group_description(description)
+            .map_err(|e| AppError::Validation(e.to_string()))?;
     }
     let group = state
         .group

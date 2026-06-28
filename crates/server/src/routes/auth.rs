@@ -1,17 +1,12 @@
 //! Authentication endpoints: login + logout (public) and `/me` (protected).
 
-use axum::{
-    Json, Router,
-    extract::State,
-    http::StatusCode,
-    routing::{get, post},
-};
+use axum::{Json, Router, extract::State, http::StatusCode, routing};
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use time::OffsetDateTime;
 
 use shared::{
     dto::user::{ChangePasswordRequest, LoginRequest, LoginResponse, UserDto},
-    validation::user::validate_change_password,
+    validation::user,
 };
 
 use crate::{
@@ -26,15 +21,15 @@ use crate::{
 /// Unauthenticated endpoints. Mounted outside the auth layer.
 pub fn public_router() -> Router<AppState> {
     Router::new()
-        .route("/login", post(login))
-        .route("/logout", post(logout))
+        .route("/login", routing::post(login))
+        .route("/logout", routing::post(logout))
 }
 
 /// Authenticated identity endpoints, mounted under the protected router.
 pub fn me_router() -> Router<AppState> {
     Router::new()
-        .route("/me", get(me))
-        .route("/me/password", post(change_password))
+        .route("/me", routing::get(me))
+        .route("/me/password", routing::post(change_password))
 }
 
 async fn login(
@@ -98,7 +93,7 @@ async fn change_password(
     auth: AuthUser,
     Json(body): Json<ChangePasswordRequest>,
 ) -> Result<StatusCode, AppError> {
-    validate_change_password(&body).map_err(|e| AppError::Validation(e.to_string()))?;
+    user::validate_change_password(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     state
         .user
         .change_password(auth.user_id, &body.current_password, body.new_password)

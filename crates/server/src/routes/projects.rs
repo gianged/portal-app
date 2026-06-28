@@ -7,7 +7,7 @@ use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{delete, get, post},
+    routing,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -22,27 +22,28 @@ use shared::{
         ProjectDto, ProjectInviteDto, ProjectStatus as WireProjectStatus, RespondInviteRequest,
         SetProjectProgressRequest, UpdateProjectMetadataRequest,
     },
-    validation::project::{
-        validate_project_description, validate_project_name, validate_project_progress,
-    },
+    validation::project,
 };
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/projects", post(create).get(list))
-        .route("/projects/{id}", get(detail).patch(update))
-        .route("/projects/{id}/status", post(change_status))
-        .route("/projects/{id}/progress", post(set_progress))
-        .route("/projects/{id}/invites", post(invite))
+        .route("/projects", routing::post(create).get(list))
+        .route("/projects/{id}", routing::get(detail).patch(update))
+        .route("/projects/{id}/status", routing::post(change_status))
+        .route("/projects/{id}/progress", routing::post(set_progress))
+        .route("/projects/{id}/invites", routing::post(invite))
         .route(
             "/projects/{id}/collaborators/{group_id}",
-            delete(remove_collaborator),
+            routing::delete(remove_collaborator),
         )
-        .route("/project-invites", get(list_invites))
-        .route("/project-invites/{invite_id}/respond", post(respond))
-        .route("/project-invites/{invite_id}/revoke", post(revoke))
+        .route("/project-invites", routing::get(list_invites))
+        .route(
+            "/project-invites/{invite_id}/respond",
+            routing::post(respond),
+        )
+        .route("/project-invites/{invite_id}/revoke", routing::post(revoke))
 }
 
 #[derive(Deserialize)]
@@ -62,8 +63,8 @@ async fn create(
     auth: AuthUser,
     Json(body): Json<CreateProjectRequest>,
 ) -> Result<Json<ProjectDto>, AppError> {
-    validate_project_name(&body.name).map_err(|e| AppError::Validation(e.to_string()))?;
-    validate_project_description(&body.description)
+    project::validate_project_name(&body.name).map_err(|e| AppError::Validation(e.to_string()))?;
+    project::validate_project_description(&body.description)
         .map_err(|e| AppError::Validation(e.to_string()))?;
     let project = state
         .project
@@ -129,10 +130,10 @@ async fn update(
     Json(body): Json<UpdateProjectMetadataRequest>,
 ) -> Result<Json<ProjectDto>, AppError> {
     if let Some(name) = &body.name {
-        validate_project_name(name).map_err(|e| AppError::Validation(e.to_string()))?;
+        project::validate_project_name(name).map_err(|e| AppError::Validation(e.to_string()))?;
     }
     if let Some(description) = &body.description {
-        validate_project_description(description)
+        project::validate_project_description(description)
             .map_err(|e| AppError::Validation(e.to_string()))?;
     }
     let project = state
@@ -181,7 +182,8 @@ async fn set_progress(
     Path(id): Path<Uuid>,
     Json(body): Json<SetProjectProgressRequest>,
 ) -> Result<Json<ProjectDto>, AppError> {
-    validate_project_progress(body.progress).map_err(|e| AppError::Validation(e.to_string()))?;
+    project::validate_project_progress(body.progress)
+        .map_err(|e| AppError::Validation(e.to_string()))?;
     let project = state
         .project
         .set_progress(auth.user_id, ProjectId(id), body.progress)

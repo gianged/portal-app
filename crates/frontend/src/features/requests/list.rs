@@ -1,6 +1,6 @@
 //! Work-request index: the "assigned to me" table with a create dialog and a group to project cascade picker.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 use leptos_router::components::A;
 use uuid::Uuid;
 
@@ -8,7 +8,7 @@ use shared::dto::group::GroupDto;
 use shared::dto::ids::{GroupId, ProjectId};
 use shared::dto::project::ProjectDto;
 use shared::dto::request::{CreateRequestRequest, RequestDto, RequestPriority, RequestStatus};
-use shared::validation::request::{validate_request_description, validate_request_title};
+use shared::validation::request;
 
 use crate::features::groups::api as groups_api;
 use crate::features::projects::api as projects_api;
@@ -239,11 +239,11 @@ fn CreateRequestDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl I
         let t = title.get_untracked();
         let d = description.get_untracked();
         let mut ok = true;
-        if let Err(e) = validate_request_title(&t) {
+        if let Err(e) = request::validate_request_title(&t) {
             title_err.set(Some(e.to_string()));
             ok = false;
         }
-        if let Err(e) = validate_request_description(&d) {
+        if let Err(e) = request::validate_request_description(&d) {
             desc_err.set(Some(e.to_string()));
             ok = false;
         }
@@ -262,7 +262,7 @@ fn CreateRequestDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl I
             priority: priority.get_untracked(),
             due_at: None,
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::create(&req).await {
                 Ok(_) => {
                     toast.success("Request created");

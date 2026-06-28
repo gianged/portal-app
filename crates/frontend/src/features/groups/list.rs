@@ -1,10 +1,10 @@
 //! Group index: the org directory of group cards with a create dialog.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 use leptos_router::components::A;
 
 use shared::dto::group::{CreateGroupRequest, GroupDto, GroupKind};
-use shared::validation::group::{validate_group_description, validate_group_name};
+use shared::validation::group;
 
 use crate::features::groups::api;
 use crate::features::ui;
@@ -141,11 +141,11 @@ fn CreateGroupDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl Int
         let n = name.get_untracked();
         let d = description.get_untracked();
         let mut ok = true;
-        if let Err(e) = validate_group_name(&n) {
+        if let Err(e) = group::validate_group_name(&n) {
             name_err.set(Some(e.to_string()));
             ok = false;
         }
-        if let Err(e) = validate_group_description(&d) {
+        if let Err(e) = group::validate_group_description(&d) {
             desc_err.set(Some(e.to_string()));
             ok = false;
         }
@@ -158,7 +158,7 @@ fn CreateGroupDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl Int
             description: d,
             kind: kind.get_untracked(),
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::create(&req).await {
                 Ok(_) => {
                     toast.success("Group created");

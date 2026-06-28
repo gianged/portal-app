@@ -86,25 +86,23 @@ pub fn len_range(field: &str, value: &str, min: usize, max: usize) -> Result<(),
 
 #[cfg(test)]
 mod tests {
-    use super::{len_range, max_len, non_empty};
-
     #[test]
     fn non_empty_rejects_blank() {
-        assert!(non_empty("X", "   ").is_err());
-        assert!(non_empty("X", "a").is_ok());
+        assert!(super::non_empty("X", "   ").is_err());
+        assert!(super::non_empty("X", "a").is_ok());
     }
 
     #[test]
     fn max_len_boundary() {
-        assert!(max_len("X", "abc", 3).is_ok());
-        assert!(max_len("X", "abcd", 3).is_err());
+        assert!(super::max_len("X", "abc", 3).is_ok());
+        assert!(super::max_len("X", "abcd", 3).is_err());
     }
 
     #[test]
     fn len_range_boundaries() {
-        assert!(len_range("X", "", 1, 3).is_err());
-        assert!(len_range("X", "a", 1, 3).is_ok());
-        assert!(len_range("X", "abc", 1, 3).is_ok());
-        assert!(len_range("X", "abcd", 1, 3).is_err());
+        assert!(super::len_range("X", "", 1, 3).is_err());
+        assert!(super::len_range("X", "a", 1, 3).is_ok());
+        assert!(super::len_range("X", "abc", 1, 3).is_ok());
+        assert!(super::len_range("X", "abcd", 1, 3).is_err());
     }
 }

@@ -1,7 +1,7 @@
 //! Work-request detail: status-gated lifecycle actions, the assignee picker, and attachment upload, plus the comment thread and audit trail.
 
 use futures::{FutureExt, future::LocalBoxFuture};
-use leptos::{html::Input as HtmlInputEl, prelude::*, task::spawn_local};
+use leptos::{html::Input as HtmlInputEl, prelude::*, task};
 use web_sys::FormData;
 
 use shared::dto::ids::{RequestId, UserId};
@@ -81,7 +81,7 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
         let Some(rid) = id.get_untracked() else {
             return;
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match action_future(action, rid).await {
                 Ok(_) => {
                     toast.success("Request updated");
@@ -101,7 +101,7 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
             return;
         };
         assign_open.set(false);
-        spawn_local(async move {
+        task::spawn_local(async move {
             let req = AssignRequestRequest {
                 assignee_user_id: uid,
             };
@@ -128,7 +128,7 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
         let form = FormData::new().expect("FormData is constructible in the browser");
         let blob: &web_sys::Blob = file.as_ref();
         let _ = form.append_with_blob_and_filename("file", blob, &file.name());
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::upload_attachment(rid, form).await {
                 Ok(_) => {
                     toast.success("Attachment uploaded");

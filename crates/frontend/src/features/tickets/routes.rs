@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use leptos_router::hooks::use_params_map;
+use leptos_router::hooks;
 use uuid::Uuid;
 
 use shared::dto::ids::TicketId;
@@ -19,7 +19,7 @@ pub fn TicketsPage() -> impl IntoView {
 
 #[component]
 pub fn TicketDetailPage() -> impl IntoView {
-    let params = use_params_map();
+    let params = hooks::use_params_map();
     let id = Memo::new(move |_| {
         params
             .read()

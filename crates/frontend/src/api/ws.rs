@@ -12,7 +12,7 @@ use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded},
 };
 use gloo::timers::future::TimeoutFuture;
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 use reqwasm::websocket::{Message, futures::WebSocket};
 
 use shared::dto::ws::{ClientFrame, ServerFrame};
@@ -66,10 +66,10 @@ impl WsClient {
             return;
         };
         self.started.set(true);
-        spawn_local(run(rx, self.last_frame, self.connected));
+        task::spawn_local(run(rx, self.last_frame, self.connected));
 
         let heartbeat_tx = self.tx.get_value();
-        spawn_local(async move {
+        task::spawn_local(async move {
             loop {
                 TimeoutFuture::new(HEARTBEAT_MS).await;
                 if heartbeat_tx.unbounded_send(ClientFrame::Ping).is_err() {

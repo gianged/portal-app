@@ -1,11 +1,7 @@
 #![allow(dead_code)] // TODO: UserCard unused, I will see it
 
-use leptos::{prelude::*, task::spawn_local};
-use leptos_router::{
-    NavigateOptions,
-    components::A,
-    hooks::{use_location, use_navigate},
-};
+use leptos::{prelude::*, task};
+use leptos_router::{NavigateOptions, components::A, hooks};
 
 use crate::features::auth::api as auth_api;
 use crate::primitives::avatar::{Avatar, AvatarSize};
@@ -173,7 +169,7 @@ pub fn Wordmark() -> impl IntoView {
 
 #[component]
 pub fn SidebarNav() -> impl IntoView {
-    let pathname = use_location().pathname;
+    let pathname = hooks::use_location().pathname;
     let notifications = use_context::<NotificationsState>().expect("NotificationsState context");
 
     let header_cls = theme::class(format!(
@@ -414,7 +410,7 @@ fn NotificationsBell() -> impl IntoView {
 #[component]
 fn UserMenu() -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");
-    let navigate = use_navigate();
+    let navigate = hooks::use_navigate();
 
     let trigger_cls = theme::class(format!(
         "display: inline-flex; align-items: center; gap: {g}; padding: 4px 6px; \
@@ -468,7 +464,7 @@ fn UserMenu() -> impl IntoView {
 
     let on_logout = Callback::new(move |_| {
         let navigate = navigate.clone();
-        spawn_local(async move {
+        task::spawn_local(async move {
             let _ = auth_api::logout().await;
             auth.clear();
             navigate("/login", NavigateOptions::default());

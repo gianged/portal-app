@@ -1,6 +1,6 @@
 //! Project index: an owner-group selector with the group's project cards, an incoming-invites inbox, and a create dialog.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 use leptos_router::components::A;
 use uuid::Uuid;
 
@@ -9,7 +9,7 @@ use shared::dto::ids::{GroupId, ProjectInviteId};
 use shared::dto::project::{
     CreateProjectRequest, ProjectDto, ProjectInviteDto, RespondInviteRequest,
 };
-use shared::validation::project::{validate_project_description, validate_project_name};
+use shared::validation::project;
 
 use crate::features::groups::api as groups_api;
 use crate::features::projects::api;
@@ -190,7 +190,7 @@ fn InvitesInbox(
 ) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
     let respond = move |invite: ProjectInviteId, accept: bool| {
-        spawn_local(async move {
+        task::spawn_local(async move {
             let req = RespondInviteRequest { accept };
             match api::respond_invite(invite, &req).await {
                 Ok(_) => {
@@ -265,11 +265,11 @@ fn CreateProjectDialog(
         let n = name.get_untracked();
         let d = description.get_untracked();
         let mut ok = true;
-        if let Err(e) = validate_project_name(&n) {
+        if let Err(e) = project::validate_project_name(&n) {
             name_err.set(Some(e.to_string()));
             ok = false;
         }
-        if let Err(e) = validate_project_description(&d) {
+        if let Err(e) = project::validate_project_description(&d) {
             desc_err.set(Some(e.to_string()));
             ok = false;
         }
@@ -282,7 +282,7 @@ fn CreateProjectDialog(
             name: n,
             description: d,
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::create(&req).await {
                 Ok(_) => {
                     toast.success("Project created");

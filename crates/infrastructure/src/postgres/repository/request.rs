@@ -12,7 +12,7 @@ use domain::{
 
 use crate::postgres::{
     enums::{SqlRequestPriority, SqlRequestStatus},
-    mappers::{like_pattern, map_pg_error},
+    mappers,
 };
 
 pub struct PgRequestRepo {
@@ -114,7 +114,7 @@ impl RequestRepository for PgRequestRepo {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(map_pg_error)
+        .map_err(mappers::map_pg_error)
         .map(|opt| opt.map(Into::into))
     }
 
@@ -126,7 +126,7 @@ impl RequestRepository for PgRequestRepo {
     ) -> Result<Vec<Request>, RepositoryError> {
         // Matches idx_requests_project_id_status when status filter is provided.
         let status_filter: Option<SqlRequestStatus> = status.map(Into::into);
-        let pattern: Option<String> = q.map(like_pattern);
+        let pattern: Option<String> = q.map(mappers::like_pattern);
         let rows = sqlx::query_as!(
             RequestRow,
             r#"SELECT
@@ -153,7 +153,7 @@ impl RequestRepository for PgRequestRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -165,7 +165,7 @@ impl RequestRepository for PgRequestRepo {
     ) -> Result<Vec<Request>, RepositoryError> {
         // Matches idx_requests_assignee_user_id_status (partial: assignee NOT NULL).
         let status_filter: Option<SqlRequestStatus> = status.map(Into::into);
-        let pattern: Option<String> = q.map(like_pattern);
+        let pattern: Option<String> = q.map(mappers::like_pattern);
         let rows = sqlx::query_as!(
             RequestRow,
             r#"SELECT
@@ -192,7 +192,7 @@ impl RequestRepository for PgRequestRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -228,7 +228,7 @@ impl RequestRepository for PgRequestRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -254,7 +254,7 @@ impl RequestRepository for PgRequestRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         rows.into_iter().map(RequestAttachment::try_from).collect()
     }
 
@@ -285,7 +285,7 @@ impl RequestRepository for PgRequestRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -293,7 +293,7 @@ impl RequestRepository for PgRequestRepo {
         let rows = sqlx::query!(r#"SELECT storage_key FROM project.request_attachments"#)
             .fetch_all(&self.pool)
             .await
-            .map_err(map_pg_error)?;
+            .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(|r| r.storage_key).collect())
     }
 }

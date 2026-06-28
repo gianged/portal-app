@@ -1,4 +1,4 @@
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 use leptos_router::components::A;
 use shared::dto::{
     chat::ChannelSummaryDto, group::GroupDto, request::RequestDto, ticket::TicketDto,
@@ -89,10 +89,10 @@ fn DashboardContent() -> impl IntoView {
     let channels: Loadable<Vec<ChannelSummaryDto>> = RwSignal::new(None);
     let groups: Loadable<Vec<GroupDto>> = RwSignal::new(None);
 
-    spawn_local(async move { requests.set(Some(home_api::my_requests().await)) });
-    spawn_local(async move { tickets.set(Some(home_api::my_tickets().await)) });
-    spawn_local(async move { channels.set(Some(home_api::channels().await)) });
-    spawn_local(async move { groups.set(Some(home_api::groups().await)) });
+    task::spawn_local(async move { requests.set(Some(home_api::my_requests().await)) });
+    task::spawn_local(async move { tickets.set(Some(home_api::my_tickets().await)) });
+    task::spawn_local(async move { channels.set(Some(home_api::channels().await)) });
+    task::spawn_local(async move { groups.set(Some(home_api::groups().await)) });
 
     let greeting = auth.user.with(|u| {
         u.as_ref().map_or_else(

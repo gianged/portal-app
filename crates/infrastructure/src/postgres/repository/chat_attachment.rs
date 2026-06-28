@@ -10,7 +10,7 @@ use domain::{
     repository::ChatAttachmentRepository,
 };
 
-use crate::postgres::mappers::map_pg_error;
+use crate::postgres::mappers;
 
 pub struct PgChatAttachmentRepo {
     pool: PgPool,
@@ -81,7 +81,7 @@ impl ChatAttachmentRepository for PgChatAttachmentRepo {
         )
         .execute(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -99,7 +99,7 @@ impl ChatAttachmentRepository for PgChatAttachmentRepo {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         rows.into_iter().map(ChatAttachment::try_from).collect()
     }
 
@@ -107,7 +107,7 @@ impl ChatAttachmentRepository for PgChatAttachmentRepo {
         let rows = sqlx::query!(r#"SELECT storage_key FROM chat.message_attachments"#)
             .fetch_all(&self.pool)
             .await
-            .map_err(map_pg_error)?;
+            .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(|r| r.storage_key).collect())
     }
 }

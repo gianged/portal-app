@@ -1,6 +1,6 @@
 //! Group detail: the org-tree roster (leader, sub-leaders, members) plus member administration: add, change role, remove, transfer leadership.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 
 use shared::dto::group::{
     AddMemberRequest, ChangeMemberRoleRequest, GroupDetailDto, GroupKind, GroupRole, MembershipDto,
@@ -61,7 +61,7 @@ pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
             return;
         };
         let req = ChangeMemberRoleRequest { role };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::change_role(gid, uid, &req).await {
                 Ok(_) => {
                     toast.success("Role updated");
@@ -75,7 +75,7 @@ pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
         let Some(gid) = id.get_untracked() else {
             return;
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::remove_member(gid, uid).await {
                 Ok(()) => {
                     toast.success("Member removed");
@@ -258,7 +258,7 @@ fn AddMemberDialog(
             user_id: uid,
             role: role.get_untracked(),
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::add_member(gid, &req).await {
                 Ok(_) => {
                     toast.success("Member added");
@@ -323,7 +323,7 @@ fn TransferDialog(
             return;
         };
         open.set(false);
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::transfer_leadership(gid, from, to).await {
                 Ok(()) => {
                     toast.success("Leadership transferred");

@@ -1,4 +1,4 @@
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 use time::OffsetDateTime;
 
 use shared::dto::report::YearlyReportDto;
@@ -47,7 +47,7 @@ pub fn YearlyTab() -> impl IntoView {
         }
         generating.set(true);
         let y = year.get_untracked();
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::generate_yearly(y).await {
                 Ok(summary) => download.set(Some(summary.download_url)),
                 Err(e) => toast.error_from(&e),

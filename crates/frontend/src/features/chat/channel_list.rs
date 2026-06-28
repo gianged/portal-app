@@ -1,6 +1,6 @@
 //! Chat left rail: the caller's channels with unread dots, plus a New DM action that opens (or finds) a direct channel and selects it.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 
 use shared::dto::chat::{ChannelDto, ChannelKind, ChannelSummaryDto};
 use shared::dto::ids::{ChannelId, UserId};
@@ -158,7 +158,7 @@ fn NewDmDialog(open: RwSignal<bool>, on_opened: Callback<ChannelId>) -> impl Int
             return;
         };
         open.set(false);
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::open_direct(uid).await {
                 Ok(channel) => {
                     target.set(None);

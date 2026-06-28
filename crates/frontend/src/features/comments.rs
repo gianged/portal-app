@@ -1,10 +1,10 @@
 //! Discussion comments on requests and tickets: one shared API + thread component parameterized by [`CommentTarget`].
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 
 use shared::dto::comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest};
 use shared::dto::ids::{CommentId, RequestId, TicketId};
-use shared::validation::comment::validate_comment_body;
+use shared::validation::comment;
 
 use crate::api::client;
 use crate::api::error::FrontendError;
@@ -101,7 +101,7 @@ pub fn CommentThread(#[prop(into)] target: Signal<Option<CommentTarget>>) -> imp
     Effect::new(move |_| {
         let _ = reload.get();
         let Some(t) = target.get() else { return };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match list(t, None, PAGE).await {
                 Ok(mut page) => {
                     page.reverse();
@@ -121,7 +121,7 @@ pub fn CommentThread(#[prop(into)] target: Signal<Option<CommentTarget>>) -> imp
             return;
         };
         loading_older.set(true);
-        spawn_local(async move {
+        task::spawn_local(async move {
             if let Ok(mut older) = list(t, Some(before), PAGE).await {
                 older.reverse();
                 if let Some(first) = older.first() {
@@ -147,12 +147,12 @@ pub fn CommentThread(#[prop(into)] target: Signal<Option<CommentTarget>>) -> imp
             return;
         };
         let body = draft.get_untracked();
-        if let Err(e) = validate_comment_body(&body) {
+        if let Err(e) = comment::validate_comment_body(&body) {
             toast.error(e.to_string());
             return;
         }
         submitting.set(true);
-        spawn_local(async move {
+        task::spawn_local(async move {
             match add(t, &CreateCommentRequest { body }).await {
                 Ok(_) => {
                     draft.set(String::new());
@@ -173,7 +173,7 @@ pub fn CommentThread(#[prop(into)] target: Signal<Option<CommentTarget>>) -> imp
         let Some(t) = target.get_untracked() else {
             return;
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match remove(t, cid).await {
                 Ok(()) => reload.update(|n| *n += 1),
                 Err(e) => toast.error_from(&e),
@@ -320,13 +320,13 @@ fn CommentEditDialog(
             return;
         };
         let b = body.get_untracked();
-        if let Err(e) = validate_comment_body(&b) {
+        if let Err(e) = comment::validate_comment_body(&b) {
             toast.error(e.to_string());
             return;
         }
         submitting.set(true);
         let req = UpdateCommentRequest { body: b };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match edit(t, cid, &req).await {
                 Ok(_) => {
                     open.set(false);

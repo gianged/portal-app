@@ -1,6 +1,6 @@
 //! Announcement UI: a channel-scoped feed (defaulting to General) with a broadcast composer and grace-window edit/delete on your own posts.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -9,7 +9,7 @@ use shared::dto::announcement::{
 };
 use shared::dto::chat::{ChannelKind, ChannelSummaryDto};
 use shared::dto::ids::{ChannelId, MessageId};
-use shared::validation::announcement::validate_announcement_body;
+use shared::validation::announcement;
 
 use crate::features::announcements::api;
 use crate::features::chat::api as chat_api;
@@ -86,7 +86,7 @@ pub fn AnnouncementsIndex() -> impl IntoView {
         edit_open.set(true);
     };
     let do_delete = move |cid: ChannelId, mid: MessageId| {
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::delete(cid, mid).await {
                 Ok(()) => {
                     toast.success("Announcement deleted");
@@ -234,7 +234,7 @@ fn PostAnnouncementDialog(
             return;
         };
         let b = body.get_untracked();
-        if let Err(e) = validate_announcement_body(&b) {
+        if let Err(e) = announcement::validate_announcement_body(&b) {
             toast.error(e.to_string());
             return;
         }
@@ -243,7 +243,7 @@ fn PostAnnouncementDialog(
             channel_id: cid,
             body: b,
         };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::post(&req).await {
                 Ok(_) => {
                     toast.success("Announcement broadcast");
@@ -294,13 +294,13 @@ fn EditAnnouncementDialog(
             return;
         };
         let b = body.get_untracked();
-        if let Err(e) = validate_announcement_body(&b) {
+        if let Err(e) = announcement::validate_announcement_body(&b) {
             toast.error(e.to_string());
             return;
         }
         submitting.set(true);
         let req = EditAnnouncementRequest { body: b };
-        spawn_local(async move {
+        task::spawn_local(async move {
             match api::edit(cid, mid, &req).await {
                 Ok(_) => {
                     toast.success("Announcement updated");

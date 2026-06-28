@@ -10,7 +10,7 @@ use domain::{
     repository::CommentRepository,
 };
 
-use crate::postgres::mappers::map_pg_error;
+use crate::postgres::mappers;
 
 /// One repo over both comment tables; each method matches the entity to pick the table.
 pub struct PgCommentRepo {
@@ -79,7 +79,7 @@ impl CommentRepository for PgCommentRepo {
                 .await
             }
         }
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(row.map(|r| r.into_comment(entity)))
     }
 
@@ -123,7 +123,7 @@ impl CommentRepository for PgCommentRepo {
                 .await
             }
         }
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(rows.into_iter().map(|r| r.into_comment(entity)).collect())
     }
 
@@ -133,11 +133,11 @@ impl CommentRepository for PgCommentRepo {
             CommentEntity::Request { request_id } => self
                 .save_request_comment(comment, request_id)
                 .await
-                .map_err(map_pg_error),
+                .map_err(mappers::map_pg_error),
             CommentEntity::Ticket { ticket_id } => self
                 .save_ticket_comment(comment, ticket_id)
                 .await
-                .map_err(map_pg_error),
+                .map_err(mappers::map_pg_error),
         }
     }
 
@@ -162,7 +162,7 @@ impl CommentRepository for PgCommentRepo {
                 .await
             }
         }
-        .map_err(map_pg_error)?;
+        .map_err(mappers::map_pg_error)?;
         Ok(())
     }
 }

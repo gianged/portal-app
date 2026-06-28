@@ -2,7 +2,7 @@
 //! one-shot fetch is in flight, then `Ok`/`Err`. [`load`] kicks off the fetch;
 //! [`note`] renders the loading / error / empty status lines pages share.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{prelude::*, task};
 
 use crate::api::display::ErrorDisplay;
 use crate::api::error::FrontendError;
@@ -21,7 +21,7 @@ where
     Fut: Future<Output = Result<T, FrontendError>> + 'static,
 {
     signal.set(None);
-    spawn_local(async move {
+    task::spawn_local(async move {
         signal.set(Some(fut.await));
     });
 }

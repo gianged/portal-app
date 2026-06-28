@@ -4,7 +4,7 @@
 
 use gloo::timers::future::TimeoutFuture;
 use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::task;
 
 /// Returns a signal that follows `source` with an `ms`-millisecond debounce.
 /// Each change bumps a generation counter; only the timer that still matches
@@ -16,7 +16,7 @@ pub fn debounced(source: Signal<String>, ms: u32) -> Signal<String> {
         let value = source.get();
         let mine = generation.with_value(|g| g + 1);
         generation.set_value(mine);
-        spawn_local(async move {
+        task::spawn_local(async move {
             TimeoutFuture::new(ms).await;
             if generation.get_value() == mine {
                 out.set(value);

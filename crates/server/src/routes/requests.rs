@@ -8,7 +8,7 @@ use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::StatusCode,
-    routing::{get, patch, post},
+    routing,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -27,11 +27,7 @@ use shared::{
             RequestDto, RequestStatus as WireRequestStatus, UpdateRequestRequest,
         },
     },
-    validation::{
-        comment::validate_comment_body,
-        file::sanitize_filename,
-        request::{validate_request_description, validate_request_title},
-    },
+    validation::{comment, file, request},
 };
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
@@ -44,26 +40,26 @@ const DOWNLOAD_URL_TTL: Duration = Duration::from_hours(1);
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/requests", post(create).get(list))
-        .route("/requests/{id}", get(detail).patch(update))
-        .route("/requests/{id}/submit", post(submit))
-        .route("/requests/{id}/assign", post(assign))
-        .route("/requests/{id}/start", post(start))
-        .route("/requests/{id}/review", post(review))
-        .route("/requests/{id}/approve", post(approve))
-        .route("/requests/{id}/reject", post(reject))
-        .route("/requests/{id}/cancel", post(cancel))
+        .route("/requests", routing::post(create).get(list))
+        .route("/requests/{id}", routing::get(detail).patch(update))
+        .route("/requests/{id}/submit", routing::post(submit))
+        .route("/requests/{id}/assign", routing::post(assign))
+        .route("/requests/{id}/start", routing::post(start))
+        .route("/requests/{id}/review", routing::post(review))
+        .route("/requests/{id}/approve", routing::post(approve))
+        .route("/requests/{id}/reject", routing::post(reject))
+        .route("/requests/{id}/cancel", routing::post(cancel))
         .route(
             "/requests/{id}/attachments",
-            post(add_attachment).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)),
+            routing::post(add_attachment).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)),
         )
         .route(
             "/requests/{id}/comments",
-            get(list_comments).post(add_comment),
+            routing::get(list_comments).post(add_comment),
         )
         .route(
             "/requests/{id}/comments/{comment_id}",
-            patch(edit_comment).delete(delete_comment),
+            routing::patch(edit_comment).delete(delete_comment),
         )
 }
 
@@ -98,7 +94,7 @@ async fn add_comment(
     Path(id): Path<Uuid>,
     Json(body): Json<CreateCommentRequest>,
 ) -> Result<Json<CommentDto>, AppError> {
-    validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
+    comment::validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
     let entity = CommentEntity::Request {
         request_id: RequestId(id),
     };
@@ -112,7 +108,7 @@ async fn edit_comment(
     Path((id, comment_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateCommentRequest>,
 ) -> Result<Json<CommentDto>, AppError> {
-    validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
+    comment::validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
     let entity = CommentEntity::Request {
         request_id: RequestId(id),
     };
@@ -191,8 +187,9 @@ async fn create(
     auth: AuthUser,
     Json(body): Json<CreateRequestRequest>,
 ) -> Result<Json<RequestDto>, AppError> {
-    validate_request_title(&body.title).map_err(|e| AppError::Validation(e.to_string()))?;
-    validate_request_description(&body.description)
+    request::validate_request_title(&body.title)
+        .map_err(|e| AppError::Validation(e.to_string()))?;
+    request::validate_request_description(&body.description)
         .map_err(|e| AppError::Validation(e.to_string()))?;
     let request = state
         .request
@@ -265,10 +262,10 @@ async fn update(
     Json(body): Json<UpdateRequestRequest>,
 ) -> Result<Json<RequestDto>, AppError> {
     if let Some(title) = &body.title {
-        validate_request_title(title).map_err(|e| AppError::Validation(e.to_string()))?;
+        request::validate_request_title(title).map_err(|e| AppError::Validation(e.to_string()))?;
     }
     if let Some(description) = &body.description {
-        validate_request_description(description)
+        request::validate_request_description(description)
             .map_err(|e| AppError::Validation(e.to_string()))?;
     }
     let request = state
@@ -365,7 +362,7 @@ async fn add_attachment(
         .ok_or_else(|| AppError::Validation("no file field in upload".into()))?;
     let filename = field
         .file_name()
-        .map(sanitize_filename)
+        .map(file::sanitize_filename)
         .ok_or_else(|| AppError::Validation("upload field has no filename".into()))?
         .map_err(|e| AppError::Validation(e.to_string()))?;
     let content_type = field
