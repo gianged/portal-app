@@ -14,8 +14,6 @@ use time::OffsetDateTime;
 
 use super::{channel_id, chat_attachment_id, group_id, message_id, unknown_user_summary};
 
-// --- channels ---
-
 #[must_use]
 pub fn channel_kind_dto(kind: model::ChannelKind) -> WireChannelKind {
     match kind {
@@ -60,8 +58,6 @@ pub fn channel_summary_dto(
         last_message_at,
     }
 }
-
-// --- messages ---
 
 /// Recovers a message's creation time from its time-ordered (v7) id, mirroring
 /// how the application layer derives it (the `Message` row stores no timestamp).
@@ -116,8 +112,6 @@ pub fn message_dto(
     }
 }
 
-// --- announcements ---
-
 #[must_use]
 pub fn announcement_dto(
     announcement: &model::Announcement,
@@ -134,8 +128,6 @@ pub fn announcement_dto(
         editable: announcement.within_edit_grace(now),
     }
 }
-
-// --- commands ---
 
 #[must_use]
 pub fn post_message_command(

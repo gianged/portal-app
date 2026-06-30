@@ -8,7 +8,6 @@ use crate::{error::HealthError, health::BackendId};
 /// hung backend reports `Down` quickly rather than blocking the prober.
 #[async_trait]
 pub trait HealthCheck: Send + Sync {
-    /// Which backend this probe covers.
     fn backend(&self) -> BackendId;
 
     /// Succeeds when the backend answers a trivial request in time.

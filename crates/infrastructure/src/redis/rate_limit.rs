@@ -38,7 +38,6 @@ impl RateLimiter {
 
 #[async_trait]
 impl RateLimit for RateLimiter {
-    /// Increment the bucket's counter for the current window and return the resulting count.
     #[tracing::instrument(skip_all)]
     async fn incr(&self, bucket: &str) -> Result<u64, RepositoryError> {
         let now = OffsetDateTime::now_utc().unix_timestamp();

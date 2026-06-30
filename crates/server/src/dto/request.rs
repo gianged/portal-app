@@ -16,8 +16,6 @@ use shared::dto::{
 
 use super::{project_id, request_attachment_id, request_id};
 
-// --- enums ---
-
 #[must_use]
 pub fn request_status_dto(status: model::RequestStatus) -> WireRequestStatus {
     match status {
@@ -64,8 +62,6 @@ pub fn request_priority_domain(priority: WireRequestPriority) -> model::RequestP
     }
 }
 
-// --- views ---
-
 #[must_use]
 pub fn request_dto(
     request: &model::Request,
@@ -104,8 +100,6 @@ pub fn request_attachment_dto(
         created_at: attachment.created_at,
     }
 }
-
-// --- commands ---
 
 #[must_use]
 pub fn create_request_command(req: CreateRequestRequest) -> CreateRequestCommand {

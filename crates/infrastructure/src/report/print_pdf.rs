@@ -243,7 +243,6 @@ impl Canvas {
         self.ensure(box_h + 8.0);
         let x0 = MARGIN;
         let base = self.y - box_h;
-        // axes
         self.polyline(&[(x0, base), (x0 + box_w, base)], hairline(), 0.5);
         let max = data
             .iter()
@@ -303,7 +302,6 @@ impl Canvas {
             }
         }
         self.advance(box_h + 12.0);
-        // legend
         let mut lx = x0;
         for (name, _, color) in series {
             self.rect(lx, self.y, 3.0, 3.0, color.clone());
@@ -343,7 +341,6 @@ const COL_REQ: f64 = MARGIN + 116.0;
 const COL_STAFF: f64 = MARGIN + 150.0;
 
 fn group_table(c: &mut Canvas, groups: &[GroupReportRow]) {
-    // header row
     c.ensure(8.0);
     c.text(COL_GROUP, c.y, 8.0, muted(), "Group");
     c.text(COL_PROJ, c.y, 8.0, muted(), "Projects");

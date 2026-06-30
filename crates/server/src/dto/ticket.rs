@@ -12,8 +12,6 @@ use shared::dto::{
 
 use super::ticket_id;
 
-// --- enums ---
-
 #[must_use]
 pub fn ticket_status_dto(status: model::TicketStatus) -> WireTicketStatus {
     match status {
@@ -67,8 +65,6 @@ pub fn ticket_category_domain(category: WireTicketCategory) -> model::TicketCate
     }
 }
 
-// --- views ---
-
 /// Builds a `TicketDto` from a ticket plus its already-resolved user summaries.
 #[must_use]
 pub fn ticket_dto(
@@ -92,8 +88,6 @@ pub fn ticket_dto(
         updated_at: ticket.updated_at,
     }
 }
-
-// --- commands ---
 
 #[must_use]
 pub fn raise_ticket_command(req: RaiseTicketRequest) -> RaiseTicketCommand {

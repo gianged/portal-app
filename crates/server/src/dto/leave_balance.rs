@@ -9,8 +9,6 @@ use shared::dto::leave_balance::{
 
 use super::{daily_report::fmt_date, day_off_id, leave_grant_id, leave_transaction_id};
 
-// --- enums ---
-
 #[must_use]
 pub fn leave_txn_kind_dto(kind: model::LeaveTxnKind) -> WireKind {
     match kind {
@@ -21,8 +19,6 @@ pub fn leave_txn_kind_dto(kind: model::LeaveTxnKind) -> WireKind {
         model::LeaveTxnKind::Expire => WireKind::Expire,
     }
 }
-
-// --- views ---
 
 #[must_use]
 pub fn leave_grant_dto(grant: &model::LeaveGrant) -> LeaveGrantDto {
@@ -66,8 +62,6 @@ pub fn leave_statement_dto(
         transactions: txns.iter().map(leave_transaction_dto).collect(),
     }
 }
-
-// --- commands ---
 
 #[must_use]
 pub fn set_leave_grant_command(user_id: UserId, req: SetLeaveGrantRequest) -> SetLeaveGrantCommand {

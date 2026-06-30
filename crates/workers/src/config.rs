@@ -6,8 +6,7 @@ use time::Duration;
 use infrastructure::telemetry::{LogFormat, TelemetryConfig};
 
 /// Telemetry settings, read separately so the log sinks stand up before the rest
-/// of config is parsed. The service name is fixed for this binary; `LOG_FORMAT`
-/// and the OTLP endpoint come from the env. Never fails.
+/// of config is parsed.
 #[must_use]
 pub fn telemetry_config() -> TelemetryConfig {
     TelemetryConfig {

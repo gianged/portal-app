@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn below_daily_min_rejected() {
         let policy = AttendancePolicy::default();
-        // Covers core (10-15) but only 5h, under the 4h min? No: 5 >= 4. Use 10-13 = 3h.
+        // 10-13 = 3h, under the 4h daily min.
         let f = flex(vec![seg((10, 0), (13, 0))]);
         // Fails core coverage (core ends 15) before the band check.
         assert_eq!(f.validate_day(&policy), Err(FlexError::CoreNotCovered));

@@ -12,8 +12,6 @@ use time::Date;
 
 use super::{daily_report::fmt_date, overtime_id};
 
-// --- enums ---
-
 #[must_use]
 pub fn overtime_status_dto(status: model::OvertimeStatus) -> WireStatus {
     match status {
@@ -24,8 +22,6 @@ pub fn overtime_status_dto(status: model::OvertimeStatus) -> WireStatus {
         model::OvertimeStatus::Cancelled => WireStatus::Cancelled,
     }
 }
-
-// --- views ---
 
 #[must_use]
 pub fn overtime_dto(
@@ -50,8 +46,6 @@ pub fn overtime_dto(
         updated_at: overtime.updated_at,
     }
 }
-
-// --- commands ---
 
 #[must_use]
 pub fn create_overtime_command(

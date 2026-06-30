@@ -77,7 +77,6 @@ pub use self::{
     },
 };
 
-// --- id projections ---
 //
 // Domain and wire id newtypes mirror each other one-for-one; both wrap `Uuid`.
 // Not every id is projected by a current route, so the maps carry `allow(dead_code)`.

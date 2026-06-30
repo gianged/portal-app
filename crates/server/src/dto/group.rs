@@ -14,8 +14,6 @@ use shared::dto::{
 
 use super::{group_id, membership_id};
 
-// --- enums ---
-
 #[must_use]
 pub fn group_kind_dto(kind: model::GroupKind) -> WireGroupKind {
     match kind {
@@ -49,8 +47,6 @@ pub fn group_role_domain(role: WireGroupRole) -> model::GroupRole {
         WireGroupRole::Member => model::GroupRole::Member,
     }
 }
-
-// --- views ---
 
 #[must_use]
 pub fn group_dto(group: &model::Group, member_count: u32) -> GroupDto {
@@ -92,8 +88,6 @@ pub fn unknown_group_summary(id: ids::GroupId) -> GroupSummaryDto {
         kind: WireGroupKind::Standard,
     }
 }
-
-// --- commands ---
 
 #[must_use]
 pub fn create_group_command(req: CreateGroupRequest) -> CreateGroupCommand {

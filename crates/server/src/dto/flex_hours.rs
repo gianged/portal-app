@@ -26,8 +26,6 @@ fn to_time(s: &str, field: &str) -> Result<Time, SharedError> {
         .map_err(|_| SharedError::Validation(format!("{field} is not a valid time")))
 }
 
-// --- enums ---
-
 #[must_use]
 pub fn flex_status_dto(status: model::FlexStatus) -> WireStatus {
     match status {
@@ -37,8 +35,6 @@ pub fn flex_status_dto(status: model::FlexStatus) -> WireStatus {
         model::FlexStatus::Cancelled => WireStatus::Cancelled,
     }
 }
-
-// --- views ---
 
 #[must_use]
 pub fn flex_segment_dto(seg: &model::FlexSegment) -> FlexSegmentDto {
@@ -76,8 +72,6 @@ pub fn flex_hours_dto(
         updated_at: flex.updated_at,
     }
 }
-
-// --- commands ---
 
 /// # Errors
 /// Returns [`SharedError::Validation`] when a block time is malformed.

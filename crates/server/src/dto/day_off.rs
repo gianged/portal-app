@@ -13,8 +13,6 @@ use time::Date;
 
 use super::{daily_report::fmt_date, day_off_id};
 
-// --- enums ---
-
 #[must_use]
 pub fn day_off_kind_dto(kind: model::DayOffKind) -> WireKind {
     match kind {
@@ -48,8 +46,6 @@ pub fn day_off_status_dto(status: model::DayOffStatus) -> WireStatus {
     }
 }
 
-// --- views ---
-
 #[must_use]
 pub fn day_off_dto(
     day_off: &model::DayOff,
@@ -77,8 +73,6 @@ pub fn day_off_dto(
         updated_at: day_off.updated_at,
     }
 }
-
-// --- commands ---
 
 #[must_use]
 pub fn create_day_off_command(

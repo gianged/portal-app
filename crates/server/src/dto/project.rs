@@ -13,8 +13,6 @@ use shared::dto::{
 
 use super::{project_collaborator_id, project_id, project_invite_id};
 
-// --- enums ---
-
 #[must_use]
 pub fn project_status_dto(status: model::ProjectStatus) -> WireProjectStatus {
     match status {
@@ -35,8 +33,6 @@ pub fn project_invite_status_dto(status: model::ProjectInviteStatus) -> WireProj
         model::ProjectInviteStatus::Revoked => WireProjectInviteStatus::Revoked,
     }
 }
-
-// --- views ---
 
 #[must_use]
 pub fn project_dto(
@@ -87,8 +83,6 @@ pub fn project_invite_dto(
         created_at: invite.created_at,
     }
 }
-
-// --- commands ---
 
 #[must_use]
 pub fn create_project_command(req: CreateProjectRequest) -> CreateProjectCommand {

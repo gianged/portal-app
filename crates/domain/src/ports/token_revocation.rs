@@ -12,7 +12,6 @@ pub trait TokenRevocation: Send + Sync {
     /// Denylist a single token id for the remainder of its lifetime.
     async fn revoke(&self, jti: Uuid, ttl_secs: u64) -> Result<(), RepositoryError>;
 
-    /// Whether a token id has been revoked.
     async fn is_revoked(&self, jti: Uuid) -> Result<bool, RepositoryError>;
 
     /// The user's current token version. Tokens minted with an older version

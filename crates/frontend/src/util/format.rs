@@ -125,7 +125,6 @@ mod tests {
 
     #[wasm_bindgen_test]
     fn tone_for_is_stable_and_bounded() {
-        // Same name -> same tone, always within the 0..6 avatar palette.
         assert!(tone_for("Ada Lovelace") < 6);
         assert_eq!(tone_for("Ada Lovelace"), tone_for("Ada Lovelace"));
     }

@@ -15,8 +15,6 @@ use time::Date;
 
 use super::{daily_report_entry_id, daily_report_id};
 
-// --- enums ---
-
 #[must_use]
 pub fn daily_report_status_dto(status: model::DailyReportStatus) -> WireStatus {
     match status {
@@ -44,8 +42,6 @@ pub fn daily_report_entry_kind_domain(kind: WireKind) -> model::DailyReportEntry
         WireKind::Other => model::DailyReportEntryKind::Other,
     }
 }
-
-// --- views ---
 
 #[must_use]
 pub fn daily_report_entry_dto(entry: &model::DailyReportEntry) -> DailyReportEntryDto {
@@ -91,8 +87,6 @@ pub fn daily_report_dto(
         updated_at: report.updated_at,
     }
 }
-
-// --- commands ---
 
 #[must_use]
 pub fn upsert_daily_report_command(

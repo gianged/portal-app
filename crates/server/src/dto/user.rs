@@ -12,8 +12,6 @@ use shared::dto::{
 
 use super::user_id;
 
-// --- enums ---
-
 #[must_use]
 pub fn system_role_dto(role: model::SystemRole) -> WireSystemRole {
     match role {
@@ -64,8 +62,6 @@ pub fn resolve_user_role(
     }
 }
 
-// --- views ---
-
 #[must_use]
 pub fn user_dto(user: &model::User, role: UserRole) -> UserDto {
     UserDto {
@@ -113,8 +109,6 @@ pub fn unknown_user_summary(id: ids::UserId) -> UserSummaryDto {
         role: UserRole::Member,
     }
 }
-
-// --- commands ---
 
 #[must_use]
 pub fn create_user_command(req: CreateUserRequest) -> CreateUserCommand {
