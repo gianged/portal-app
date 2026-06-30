@@ -17,7 +17,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use time::OffsetDateTime;
+use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
 use application::{
@@ -26,23 +26,27 @@ use application::{
     resilience::HealthRegistry,
     service::{
         AnnouncementService, AuditService, ChatIngest, ChatIngestConfig, ChatService,
-        CommentService, GroupService, NotificationService, ProjectService, ReportService,
-        RequestService, TicketService, UserService,
+        CommentService, DailyReportService, DayOffService, FlexHoursService, GroupService,
+        HolidayService, LeaveBalanceService, NotificationService, OvertimeService, PolicyProvider,
+        PolicyService, ProjectService, ReportService, RequestService, TicketService, UserService,
     },
 };
 use domain::{
     error::{AuthzError, EventError, JobError, RenderError, RepositoryError},
     health::BackendId,
     ids::{
-        ChannelId, CommentId, GroupId, MessageId, NotificationId, ProjectCollaboratorId, ProjectId,
-        ProjectInviteId, ReportId, RequestId, TicketId, UserId,
+        ChannelId, CommentId, DailyReportId, DayOffId, FlexHoursId, GroupId, LeaveGrantId,
+        MessageId, NotificationId, OvertimeId, ProjectCollaboratorId, ProjectId, ProjectInviteId,
+        ReportId, RequestId, TicketId, UserId,
     },
     model::{
-        Announcement, AuditLog, Channel, ChannelKind, ChannelMembership, ChatAttachment, Comment,
-        CommentEntity, CompanyStaffStats, Group, GroupProjectStats, GroupRequestStats,
-        GroupStaffStats, Membership, Message, MonthlyBucket, MonthlyReportData, Notification,
-        Period, Project, ProjectCollaborator, ProjectInvite, Report, ReportKind, Request,
-        RequestAttachment, RequestStatus, Ticket, TicketStats, User, UserStatus, YearlyReportData,
+        Announcement, AttendancePolicy, AuditLog, Channel, ChannelKind, ChannelMembership,
+        ChatAttachment, Comment, CommentEntity, CompanyStaffStats, DailyReport, DayOff, FlexHours,
+        Group, GroupProjectStats, GroupRequestStats, GroupStaffStats, Holiday, LeaveGrant,
+        LeaveTransaction, Membership, Message, MonthlyBucket, MonthlyReportData, Notification,
+        Overtime, Period, Project, ProjectCollaborator, ProjectInvite, Report, ReportKind, Request,
+        RequestAttachment, RequestStatus, StaffMonthlyStats, Ticket, TicketStats, User, UserStatus,
+        YearlyReportData,
     },
     ports::{
         authz_client::{AuthzClient, RelationTuple},
@@ -55,8 +59,10 @@ use domain::{
     },
     repository::{
         AuditRepository, ChatAttachmentRepository, ChatRepository, CommentRepository,
-        GroupRepository, NotificationRepository, ProjectRepository, ReportArchiveRepository,
-        ReportStatsRepository, RequestRepository, TicketRepository, UserRepository,
+        DailyReportRepository, DayOffRepository, FlexHoursRepository, GroupRepository,
+        HolidayRepository, LeaveBalanceRepository, NotificationRepository, OvertimeRepository,
+        PolicyRepository, ProjectRepository, ReportArchiveRepository, ReportStatsRepository,
+        RequestRepository, TicketRepository, UserRepository,
     },
 };
 use infrastructure::{local_storage::LocalStorage, signed_url::SignedUrl};
@@ -695,6 +701,266 @@ impl ReportStatsRepository for FakeReportStats {
     async fn monthly_growth(&self, _year: i32) -> Result<Vec<MonthlyBucket>, RepositoryError> {
         Ok(Vec::new())
     }
+    async fn staff_monthly_stats(
+        &self,
+        _user: UserId,
+        _period: Period,
+    ) -> Result<StaffMonthlyStats, RepositoryError> {
+        Ok(StaffMonthlyStats {
+            days_reported: 0,
+            hours_request_work: 0.0,
+            hours_learning: 0.0,
+            hours_other: 0.0,
+            leave_days_by_kind: Vec::new(),
+            overtime_hours: 0.0,
+            flex_days: 0,
+            balance_expiring_soon: 0.0,
+            requests_completed: 0,
+            requests_open: 0,
+            avg_request_progress: 0,
+        })
+    }
+}
+
+// --- attendance fakes ----------------------------------------------------------
+
+struct FakePolicy;
+
+#[async_trait]
+impl PolicyRepository for FakePolicy {
+    async fn load(&self) -> Result<AttendancePolicy, RepositoryError> {
+        Ok(AttendancePolicy::default())
+    }
+    async fn save(
+        &self,
+        _policy: &AttendancePolicy,
+        _updated_by: UserId,
+    ) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+}
+
+struct FakeDailyReports;
+
+#[async_trait]
+impl DailyReportRepository for FakeDailyReports {
+    async fn find_by_id(&self, _id: DailyReportId) -> Result<Option<DailyReport>, RepositoryError> {
+        Ok(None)
+    }
+    async fn find_by_user_date(
+        &self,
+        _user: UserId,
+        _date: Date,
+    ) -> Result<Option<DailyReport>, RepositoryError> {
+        Ok(None)
+    }
+    async fn list_for_user(
+        &self,
+        _user: UserId,
+        _from: Date,
+        _to: Date,
+    ) -> Result<Vec<DailyReport>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn list_for_group(
+        &self,
+        _group: GroupId,
+        _from: Date,
+        _to: Date,
+    ) -> Result<Vec<DailyReport>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn save(&self, _report: &DailyReport) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+}
+
+struct FakeHolidays;
+
+#[async_trait]
+impl HolidayRepository for FakeHolidays {
+    async fn list(&self, _from: Date, _to: Date) -> Result<Vec<Holiday>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn upsert(&self, _date: Date, _name: &str) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+    async fn delete(&self, _date: Date) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+}
+
+struct FakeLeaveBalance;
+
+#[async_trait]
+impl LeaveBalanceRepository for FakeLeaveBalance {
+    async fn list_grants(&self, _user: UserId) -> Result<Vec<LeaveGrant>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn available(&self, _user: UserId, _asof: Date) -> Result<f64, RepositoryError> {
+        Ok(0.0)
+    }
+    async fn upsert_grant(&self, _grant: &LeaveGrant) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+    async fn apply(
+        &self,
+        _grant_deltas: &[(LeaveGrantId, f64)],
+        _txns: &[LeaveTransaction],
+    ) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+    async fn list_expiring(
+        &self,
+        _asof: Date,
+        _within_days: i64,
+    ) -> Result<Vec<LeaveGrant>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn list_transactions(
+        &self,
+        _user: UserId,
+        _from: Date,
+        _to: Date,
+    ) -> Result<Vec<LeaveTransaction>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn transactions_for_dayoff(
+        &self,
+        _dayoff_id: DayOffId,
+    ) -> Result<Vec<LeaveTransaction>, RepositoryError> {
+        Ok(Vec::new())
+    }
+}
+
+struct FakeDayOff;
+
+#[async_trait]
+impl DayOffRepository for FakeDayOff {
+    async fn find_by_id(&self, _id: DayOffId) -> Result<Option<DayOff>, RepositoryError> {
+        Ok(None)
+    }
+    async fn list_for_user(
+        &self,
+        _user: UserId,
+        _from: Date,
+        _to: Date,
+    ) -> Result<Vec<DayOff>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn approved_days_in_month(
+        &self,
+        _user: UserId,
+        _year: i32,
+        _month: u32,
+    ) -> Result<f64, RepositoryError> {
+        Ok(0.0)
+    }
+    async fn list_pending_for_leader(
+        &self,
+        _group: GroupId,
+    ) -> Result<Vec<DayOff>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn list_pending_for_hr(&self) -> Result<Vec<DayOff>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn save(&self, _day_off: &DayOff) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+}
+
+struct FakeOvertime;
+
+#[async_trait]
+impl OvertimeRepository for FakeOvertime {
+    async fn find_by_id(&self, _id: OvertimeId) -> Result<Option<Overtime>, RepositoryError> {
+        Ok(None)
+    }
+    async fn list_for_user(
+        &self,
+        _user: UserId,
+        _from: Date,
+        _to: Date,
+    ) -> Result<Vec<Overtime>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn approved_hours_in_month(
+        &self,
+        _user: UserId,
+        _year: i32,
+        _month: u32,
+    ) -> Result<f64, RepositoryError> {
+        Ok(0.0)
+    }
+    async fn list_pending_for_leader(
+        &self,
+        _group: GroupId,
+    ) -> Result<Vec<Overtime>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn list_pending_for_hr(&self) -> Result<Vec<Overtime>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn save(&self, _overtime: &Overtime) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+}
+
+struct FakeFlexHours;
+
+#[async_trait]
+impl FlexHoursRepository for FakeFlexHours {
+    async fn find_by_id(&self, _id: FlexHoursId) -> Result<Option<FlexHours>, RepositoryError> {
+        Ok(None)
+    }
+    async fn find_by_user_date(
+        &self,
+        _user: UserId,
+        _date: Date,
+    ) -> Result<Option<FlexHours>, RepositoryError> {
+        Ok(None)
+    }
+    async fn list_for_user(
+        &self,
+        _user: UserId,
+        _from: Date,
+        _to: Date,
+    ) -> Result<Vec<FlexHours>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn approved_count_in_month(
+        &self,
+        _user: UserId,
+        _year: i32,
+        _month: u32,
+    ) -> Result<u32, RepositoryError> {
+        Ok(0)
+    }
+    async fn approved_hours_in_month(
+        &self,
+        _user: UserId,
+        _year: i32,
+        _month: u32,
+    ) -> Result<f64, RepositoryError> {
+        Ok(0.0)
+    }
+    async fn list_pending_for_leader(
+        &self,
+        _group: GroupId,
+    ) -> Result<Vec<FlexHours>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn users_with_approved_flex_in_month(
+        &self,
+        _year: i32,
+        _month: u32,
+    ) -> Result<Vec<UserId>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn save(&self, _flex: &FlexHours) -> Result<(), RepositoryError> {
+        Ok(())
+    }
 }
 
 struct FakeReportArchive;
@@ -817,6 +1083,59 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         ChatIngestConfig::default(),
     );
 
+    // Attendance policy: a fixed default snapshot; no repository load in tests.
+    let policy_repo: Arc<dyn PolicyRepository> = Arc::new(FakePolicy);
+    let policy_provider = Arc::new(PolicyProvider::new(AttendancePolicy::default()));
+
+    // Hoisted so the daily-report service can reuse it.
+    let request_service = Arc::new(RequestService::new(
+        requests.clone(),
+        projects.clone(),
+        groups.clone(),
+        storage.clone(),
+        perms.clone(),
+        events.clone(),
+    ));
+    let daily_report_repo: Arc<dyn DailyReportRepository> = Arc::new(FakeDailyReports);
+
+    // Leave subsystem, wired like app::build: leave depends on the day-off repo,
+    // day-off depends on the leave service.
+    let holiday_repo: Arc<dyn HolidayRepository> = Arc::new(FakeHolidays);
+    let leave_repo: Arc<dyn LeaveBalanceRepository> = Arc::new(FakeLeaveBalance);
+    let day_off_repo: Arc<dyn DayOffRepository> = Arc::new(FakeDayOff);
+    let holiday_service = Arc::new(HolidayService::new(holiday_repo.clone(), perms.clone()));
+    let leave_service = Arc::new(LeaveBalanceService::new(
+        leave_repo,
+        holiday_repo.clone(),
+        day_off_repo.clone(),
+        policy_provider.clone(),
+        perms.clone(),
+        events.clone(),
+    ));
+    let day_off_service = Arc::new(DayOffService::new(
+        day_off_repo,
+        holiday_repo,
+        leave_service.clone(),
+        perms.clone(),
+        events.clone(),
+    ));
+
+    let overtime_repo: Arc<dyn OvertimeRepository> = Arc::new(FakeOvertime);
+    let overtime_service = Arc::new(OvertimeService::new(
+        overtime_repo,
+        policy_provider.clone(),
+        perms.clone(),
+        events.clone(),
+    ));
+
+    let flex_repo: Arc<dyn FlexHoursRepository> = Arc::new(FakeFlexHours);
+    let flex_service = Arc::new(FlexHoursService::new(
+        flex_repo,
+        policy_provider.clone(),
+        perms.clone(),
+        events.clone(),
+    ));
+
     let state = AppState {
         user: Arc::new(UserService::new(
             users.clone(),
@@ -840,14 +1159,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
             perms.clone(),
             events.clone(),
         )),
-        request: Arc::new(RequestService::new(
-            requests.clone(),
-            projects,
-            groups.clone(),
-            storage.clone(),
-            perms.clone(),
-            events.clone(),
-        )),
+        request: request_service.clone(),
         ticket: Arc::new(TicketService::new(
             Arc::new(FakeTickets),
             perms.clone(),
@@ -877,7 +1189,28 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
             Arc::new(FakeRenderer),
             storage.clone(),
             users.clone(),
+            leave_service.clone(),
+            flex_service.clone(),
+            perms.clone(),
         )),
+        policy: Arc::new(PolicyService::new(
+            policy_repo.clone(),
+            policy_provider.clone(),
+            perms.clone(),
+            events.clone(),
+        )),
+        daily_report: Arc::new(DailyReportService::new(
+            daily_report_repo,
+            groups.clone(),
+            request_service.clone(),
+            perms.clone(),
+            events.clone(),
+        )),
+        holiday: holiday_service,
+        leave: leave_service,
+        day_off: day_off_service,
+        overtime: overtime_service,
+        flex: flex_service,
         perms,
         token: Arc::new(TokenService::new("test-secret", 3600, false)),
         revocation: revocation.clone(),

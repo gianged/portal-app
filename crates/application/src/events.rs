@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use domain::{
     ids::{
-        ChannelId, CommentId, GroupId, MembershipId, MessageId, ProjectId, ProjectInviteId,
-        RequestId, TicketId, UserId,
+        ChannelId, CommentId, DailyReportId, DayOffId, FlexHoursId, GroupId, LeaveGrantId,
+        MembershipId, MessageId, OvertimeId, ProjectId, ProjectInviteId, RequestId, TicketId,
+        UserId,
     },
     model::{
-        Announcement, Comment, CommentEntity, Group, GroupRole, Message, Project,
-        ProjectInviteStatus, ProjectStatus, Request, RequestStatus, Ticket, TicketPriority,
-        TicketStatus, User,
+        Announcement, Comment, CommentEntity, FlexStatus, Group, GroupRole, Message,
+        OvertimeStatus, Project, ProjectInviteStatus, ProjectStatus, Request, RequestStatus,
+        Ticket, TicketPriority, TicketStatus, User,
     },
     ports::{event_publisher::EventPublisher, job_queue::JobQueue},
 };
@@ -187,6 +188,12 @@ pub enum DomainEvent {
         actor: UserId,
         at: OffsetDateTime,
     },
+    RequestProgressUpdated {
+        request_id: RequestId,
+        project_id: ProjectId,
+        actor: UserId,
+        at: OffsetDateTime,
+    },
 
     TicketRaised {
         ticket_id: TicketId,
@@ -282,6 +289,85 @@ pub enum DomainEvent {
         actor: UserId,
         at: OffsetDateTime,
     },
+
+    AttendancePolicyUpdated {
+        actor: UserId,
+        at: OffsetDateTime,
+    },
+
+    DailyReportSubmitted {
+        report_id: DailyReportId,
+        user_id: UserId,
+        actor: UserId,
+        at: OffsetDateTime,
+    },
+    DailyReportReviewed {
+        report_id: DailyReportId,
+        user_id: UserId,
+        approved: bool,
+        actor: UserId,
+        at: OffsetDateTime,
+    },
+
+    LeaveBalanceAdjusted {
+        user_id: UserId,
+        actor: UserId,
+        at: OffsetDateTime,
+    },
+    /// System warning that a grant with a remainder is nearing expiry; no actor.
+    LeaveBalanceExpiring {
+        user_id: UserId,
+        grant_id: LeaveGrantId,
+        at: OffsetDateTime,
+    },
+
+    DayOffRequested {
+        dayoff_id: DayOffId,
+        user_id: UserId,
+        actor: UserId,
+        at: OffsetDateTime,
+    },
+    DayOffDecided {
+        dayoff_id: DayOffId,
+        user_id: UserId,
+        approved: bool,
+        actor: UserId,
+        at: OffsetDateTime,
+    },
+
+    OvertimeRequested {
+        overtime_id: OvertimeId,
+        requester: UserId,
+        at: OffsetDateTime,
+    },
+    OvertimeDecided {
+        overtime_id: OvertimeId,
+        requester: UserId,
+        status: OvertimeStatus,
+        actor: UserId,
+        at: OffsetDateTime,
+    },
+
+    FlexRequested {
+        flex_id: FlexHoursId,
+        user_id: UserId,
+        at: OffsetDateTime,
+    },
+    FlexDecided {
+        flex_id: FlexHoursId,
+        user_id: UserId,
+        status: FlexStatus,
+        actor: UserId,
+        at: OffsetDateTime,
+    },
+    /// System warning that a user's approved flex hours do not net to the monthly
+    /// expected total; no actor.
+    FlexMonthUnreconciled {
+        user_id: UserId,
+        year: i32,
+        month: u32,
+        at: OffsetDateTime,
+    },
 }
 
 impl DomainEvent {
@@ -311,7 +397,8 @@ impl DomainEvent {
             Self::RequestCreated { .. }
             | Self::RequestMetadataUpdated { .. }
             | Self::RequestAssigned { .. }
-            | Self::RequestStatusChanged { .. } => "portal.request",
+            | Self::RequestStatusChanged { .. }
+            | Self::RequestProgressUpdated { .. } => "portal.request",
             Self::TicketRaised { .. }
             | Self::TicketTriaged { .. }
             | Self::TicketAssigned { .. }
@@ -330,6 +417,18 @@ impl DomainEvent {
             Self::AnnouncementPosted { .. }
             | Self::AnnouncementEdited { .. }
             | Self::AnnouncementDeleted { .. } => "portal.announcement",
+            Self::AttendancePolicyUpdated { .. }
+            | Self::DailyReportSubmitted { .. }
+            | Self::DailyReportReviewed { .. }
+            | Self::LeaveBalanceAdjusted { .. }
+            | Self::LeaveBalanceExpiring { .. }
+            | Self::DayOffRequested { .. }
+            | Self::DayOffDecided { .. }
+            | Self::OvertimeRequested { .. }
+            | Self::OvertimeDecided { .. }
+            | Self::FlexRequested { .. }
+            | Self::FlexDecided { .. }
+            | Self::FlexMonthUnreconciled { .. } => "portal.attendance",
         }
     }
 }

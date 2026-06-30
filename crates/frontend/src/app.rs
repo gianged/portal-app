@@ -9,10 +9,17 @@ use crate::features::announcements::routes::AnnouncementsPage;
 use crate::features::audit::routes::AuditPage;
 use crate::features::auth::{self, routes::LoginPage};
 use crate::features::chat::routes::ChatPage;
+use crate::features::daily_reports::routes::{DailyReportPage, TeamReportsPage};
+use crate::features::day_off::routes::{LeaveApprovalsPage, TimeOffPage};
+use crate::features::flex_hours::routes::{FlexApprovalsPage, FlexHoursPage};
 use crate::features::groups::routes::{GroupDetailPage, GroupsPage};
+use crate::features::holidays::routes::HolidaysPage;
 use crate::features::home::routes::{DashboardPage, FilesPage, LandingPage, PermissionsPage};
+use crate::features::leave::routes::LeavePage;
 use crate::features::notifications::api;
 use crate::features::notifications::routes::InboxPage;
+use crate::features::overtime::routes::{OvertimeApprovalsPage, OvertimePage};
+use crate::features::policy::routes::PolicyPage;
 use crate::features::projects::routes::{ProjectDetailPage, ProjectsPage};
 use crate::features::reports::routes::ReportsPage;
 use crate::features::requests::routes::{RequestDetailPage, RequestsPage};
@@ -86,6 +93,17 @@ pub fn App() -> impl IntoView {
                 <Route path=path!("/permissions") view=PermissionsPage />
                 <Route path=path!("/audit") view=AuditPage />
                 <Route path=path!("/reports") view=ReportsPage />
+                <Route path=path!("/policy") view=PolicyPage />
+                <Route path=path!("/daily-reports") view=DailyReportPage />
+                <Route path=path!("/daily-reports/team") view=TeamReportsPage />
+                <Route path=path!("/leave") view=LeavePage />
+                <Route path=path!("/time-off") view=TimeOffPage />
+                <Route path=path!("/leave-approvals") view=LeaveApprovalsPage />
+                <Route path=path!("/holidays") view=HolidaysPage />
+                <Route path=path!("/overtime") view=OvertimePage />
+                <Route path=path!("/overtime-approvals") view=OvertimeApprovalsPage />
+                <Route path=path!("/flex-hours") view=FlexHoursPage />
+                <Route path=path!("/flex-approvals") view=FlexApprovalsPage />
             </Routes>
         </Router>
         <ToastHost />

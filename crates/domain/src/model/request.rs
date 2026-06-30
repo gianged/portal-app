@@ -16,6 +16,7 @@ pub struct Request {
     pub description: String,
     pub status: RequestStatus,
     pub priority: RequestPriority,
+    pub progress: u8,
     pub due_at: Option<OffsetDateTime>,
     /// Set when the request transitions into `Completed`; `None` otherwise.
     pub completed_at: Option<OffsetDateTime>,
@@ -188,6 +189,14 @@ impl Request {
         self.updated_at = now;
         Ok(())
     }
+
+    /// Set the assignee-reported completion percentage. Range is enforced at the
+    /// `shared`/DB boundary; here we only record the value and bump `updated_at`.
+    pub fn set_progress(&mut self, progress: u8, now: OffsetDateTime) {
+        debug_assert!(progress <= 100);
+        self.progress = progress;
+        self.updated_at = now;
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -219,6 +228,7 @@ mod tests {
             description: String::new(),
             status,
             priority: RequestPriority::Normal,
+            progress: 0,
             due_at: None,
             completed_at: None,
             created_at: t0,

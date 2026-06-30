@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 COALESCE(SUM(e.hours) FILTER (WHERE e.kind = 'request_work'), 0)::float8 AS \"request_work!\",\n                 COALESCE(SUM(e.hours) FILTER (WHERE e.kind = 'learning'), 0)::float8      AS \"learning!\",\n                 COALESCE(SUM(e.hours) FILTER (WHERE e.kind = 'other'), 0)::float8         AS \"other!\",\n                 COUNT(DISTINCT r.report_date)                                             AS \"days_reported!\"\n               FROM attendance.daily_reports r\n               LEFT JOIN attendance.daily_report_entries e ON e.daily_report_id = r.id\n               WHERE r.user_id = $1\n                 AND r.status = 'approved'\n                 AND r.report_date >= $2\n                 AND r.report_date <= $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "request_work!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "learning!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "other!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "days_reported!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2ed8692457093635f1ab72cc86aac0e4414f284143848e2a2f8fdd4a744546bc"
+}

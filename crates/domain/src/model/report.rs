@@ -3,7 +3,7 @@ use time::OffsetDateTime;
 
 use crate::{
     ids::{GroupId, ReportId, UserId},
-    model::{GroupKind, TicketCategory, TicketStatus},
+    model::{DayOffKind, GroupKind, TicketCategory, TicketStatus},
 };
 
 /// Half-open reporting window `[start, end)`. Boundaries are the first instant of the
@@ -183,6 +183,56 @@ pub struct YearlyReportData {
     pub year: i32,
     pub growth: GrowthSeries,
     pub totals: YearlyTotals,
+}
+
+// -----------------------------------------------------------------------------
+// Per-staff monthly report: aggregates one user's attendance + workload. The SQL
+// stats carry the query-derived parts; the application service fills the rest from
+// the leave/flex services.
+// -----------------------------------------------------------------------------
+
+/// SQL-derived parts of a staff member's monthly report. `work_percentage` and
+/// `flex_month_delta` are computed by the application service, not here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StaffMonthlyStats {
+    /// Distinct dates with an approved daily report in the month.
+    pub days_reported: u32,
+    pub hours_request_work: f64,
+    pub hours_learning: f64,
+    pub hours_other: f64,
+    /// Approved leave days summed per kind (only kinds with days are present).
+    pub leave_days_by_kind: Vec<(DayOffKind, f64)>,
+    pub overtime_hours: f64,
+    /// Count of approved flex days in the month.
+    pub flex_days: u32,
+    /// Remaining balance on grants expiring within the report month.
+    pub balance_expiring_soon: f64,
+    pub requests_completed: u32,
+    pub requests_open: u32,
+    pub avg_request_progress: u8,
+}
+
+/// A single staff member's monthly attendance + workload roll-up.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StaffMonthlyReport {
+    pub user_id: UserId,
+    pub period: Period,
+    pub days_reported: u32,
+    pub hours_request_work: f64,
+    pub hours_learning: f64,
+    pub hours_other: f64,
+    pub leave_days_by_kind: Vec<(DayOffKind, f64)>,
+    pub overtime_hours: f64,
+    pub flex_days: u32,
+    /// Net deviation of approved flex hours from the expected monthly total; 0 = reconciled.
+    pub flex_month_delta: f64,
+    /// Present working days over expected working days, as a percentage.
+    pub work_percentage: u8,
+    pub balance_remaining: f64,
+    pub balance_expiring_soon: f64,
+    pub requests_completed: u32,
+    pub requests_open: u32,
+    pub avg_request_progress: u8,
 }
 
 // -----------------------------------------------------------------------------

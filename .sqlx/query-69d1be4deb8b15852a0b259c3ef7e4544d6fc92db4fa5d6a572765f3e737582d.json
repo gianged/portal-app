@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(SUM(days_remaining), 0)::float8 AS \"soon!\"\n               FROM attendance.leave_grants\n               WHERE user_id = $1\n                 AND days_remaining > 0\n                 AND expires_on >= $2\n                 AND expires_on <= $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "soon!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "69d1be4deb8b15852a0b259c3ef7e4544d6fc92db4fa5d6a572765f3e737582d"
+}

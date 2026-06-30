@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) AS \"count!\"\n               FROM attendance.flex_hours\n               WHERE user_id = $1\n                 AND status = 'approved'\n                 AND work_date >= $2\n                 AND work_date <= $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "289f93792f4fc24f666441f824f7addcc6a22cfd11b2229556c8151e4180eb2c"
+}

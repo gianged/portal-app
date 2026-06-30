@@ -5,6 +5,8 @@ mod bootstrap;
 mod cleanup;
 mod config;
 mod emails;
+mod flex_reconciliation;
+mod leave_expiry;
 mod notifications;
 mod report_schedule;
 mod ticket_autoclose;
@@ -53,6 +55,8 @@ async fn run() -> anyhow::Result<()> {
         mailer,
         email_storage,
         report,
+        leave,
+        flex,
         email_queue,
         health_registry,
         health_checks,
@@ -107,6 +111,32 @@ async fn run() -> anyhow::Result<()> {
         drop((report, email_queue));
     }
 
+    // Daily leave-balance expiry sweep: warns on near-expiry grants and lapses
+    // expired ones (recording work % per policy). Supervised like the others.
+    if cfg.leave_expiry_enabled {
+        let leave = leave.clone();
+        let interval = cfg.leave_expiry_interval;
+        resilience::supervise("leave-expiry", move || {
+            leave_expiry::run(leave.clone(), interval)
+        });
+    } else {
+        tracing::info!("leave expiry sweep disabled (LEAVE_EXPIRY_ENABLED=false)");
+        drop(leave);
+    }
+
+    // Month-end flex reconciliation: warns users whose approved flex hours don't
+    // net to the expected monthly total. Supervised like the others.
+    if cfg.flex_recon_enabled {
+        let flex = flex.clone();
+        let interval = cfg.flex_recon_interval;
+        resilience::supervise("flex-reconciliation", move || {
+            flex_reconciliation::run(flex.clone(), interval)
+        });
+    } else {
+        tracing::info!("flex reconciliation sweep disabled (FLEX_RECON_ENABLED=false)");
+        drop(flex);
+    }
+
     // One worker per durable queue. Separate queues isolate the non-idempotent
     // notification fan-out from the audit projector so a retry never re-runs the other.
     // The Postgres breaker gates the two PG-writing handlers: while it is open they
@@ -127,7 +157,7 @@ async fn run() -> anyhow::Result<()> {
         .build_fn(emails::handle);
 
     tracing::info!(
-        "workers ready: notification + audit + email consumers + maintenance loops (cleanup, uploads, ticket auto-close, monthly report)"
+        "workers ready: notification + audit + email consumers + maintenance loops (cleanup, uploads, ticket auto-close, monthly report, leave-expiry, flex-reconciliation)"
     );
     // Guarantees Ctrl-C exits even if the Monitor's graceful shutdown stalls.
     tokio::spawn(force_exit_watchdog());

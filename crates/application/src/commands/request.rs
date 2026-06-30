@@ -22,6 +22,11 @@ pub struct UpdateRequestCommand {
     pub due_at: Option<OffsetDateTime>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SetRequestProgressCommand {
+    pub progress: u8,
+}
+
 pub struct AddAttachmentCommand {
     pub filename: String,
     pub content_type: String,

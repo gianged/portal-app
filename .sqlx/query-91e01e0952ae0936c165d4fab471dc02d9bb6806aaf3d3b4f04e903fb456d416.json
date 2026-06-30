@@ -1,0 +1,180 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 o.id, o.requester_user_id, o.work_date,\n                 o.hours::float8 AS \"hours!\",\n                 o.reason,\n                 o.status AS \"status: SqlOvertimeStatus\",\n                 o.leader_user_id, o.leader_decided_at, o.hr_user_id, o.hr_decided_at,\n                 o.decision_note, o.created_at, o.updated_at\n               FROM attendance.overtime o\n               JOIN org.memberships mem ON mem.user_id = o.requester_user_id\n               WHERE mem.group_id = $1\n                 AND mem.deactivated_at IS NULL\n                 AND o.status = 'pending'\n               ORDER BY o.created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "requester_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "requester_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "work_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "work_date"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "hours!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "reason"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "status: SqlOvertimeStatus",
+        "type_info": {
+          "Custom": {
+            "name": "attendance.overtime_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "leader_approved",
+                "approved",
+                "rejected",
+                "cancelled"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "leader_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "leader_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "leader_decided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "leader_decided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "hr_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "hr_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "hr_decided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "hr_decided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "decision_note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "decision_note"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "91e01e0952ae0936c165d4fab471dc02d9bb6806aaf3d3b4f04e903fb456d416"
+}

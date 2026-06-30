@@ -1,0 +1,162 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 r.id,\n                 r.user_id,\n                 r.report_date,\n                 r.status AS \"status: SqlDailyReportStatus\",\n                 r.summary,\n                 r.submitted_at,\n                 r.reviewed_by_user_id,\n                 r.reviewed_at,\n                 r.review_note,\n                 r.created_at,\n                 r.updated_at\n               FROM attendance.daily_reports r\n               JOIN org.memberships m ON m.user_id = r.user_id\n               WHERE m.group_id = $1\n                 AND m.deactivated_at IS NULL\n                 AND r.report_date BETWEEN $2 AND $3\n               ORDER BY r.report_date DESC, r.user_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_reports",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_reports",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "report_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_reports",
+            "name": "report_date"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "status: SqlDailyReportStatus",
+        "type_info": {
+          "Custom": {
+            "name": "attendance.daily_report_status",
+            "kind": {
+              "Enum": [
+                "draft",
+                "submitted",
+                "approved",
+                "returned"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_reports",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "summary",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_reports",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "submitted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_reports",
+            "name": "submitted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "reviewed_by_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_reports",
+            "name": "reviewed_by_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "reviewed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_reports",
+            "name": "reviewed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "review_note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_reports",
+            "name": "review_note"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_reports",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_reports",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "18b6f759cd7464256baabd9e68fd17987efacc3b82c8b99a8f459b641e276490"
+}

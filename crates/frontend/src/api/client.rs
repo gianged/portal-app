@@ -46,6 +46,21 @@ where
     handle_json(resp).await
 }
 
+/// `PUT` a JSON body for an idempotent upsert (policy, holiday, leave grant).
+pub async fn put_json<B, T>(path: &str, body: &B) -> Result<T, FrontendError>
+where
+    B: Serialize,
+    T: DeserializeOwned,
+{
+    let body_str = serde_json::to_string(body)?;
+    let resp = Request::put(&api_url(path))
+        .header("content-type", "application/json")
+        .body(body_str)
+        .send()
+        .await?;
+    handle_json(resp).await
+}
+
 /// `DELETE` (and other no-content actions): succeeds on any 2xx, ignoring the body.
 pub async fn del(path: &str) -> Result<(), FrontendError> {
     let resp = Request::delete(&api_url(path)).send().await?;

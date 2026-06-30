@@ -21,6 +21,38 @@ pub const STORAGE_KEY_MAX: usize = 512;
 pub const NOTIFICATION_BATCH_MAX: usize = 100;
 pub const COMMENT_BODY_MAX: usize = 4_000;
 
+/// Attendance leave/overtime/flex amounts are tracked in half-day / half-hour
+/// units. Mirrors `domain`'s `LEAVE_UNIT` (the two crates cannot share a const).
+pub const LEAVE_UNIT: f64 = 0.5;
+
+/// Rejects a value outside the inclusive `[min, max]` range.
+///
+/// # Errors
+///
+/// Returns [`SharedError::Validation`] when `value` is below `min` or above `max`.
+pub fn in_range(field: &str, value: f64, min: f64, max: f64) -> Result<(), SharedError> {
+    if value < min || value > max {
+        return Err(SharedError::Validation(format!(
+            "{field} must be between {min} and {max}"
+        )));
+    }
+    Ok(())
+}
+
+/// Rejects a value that is not a whole multiple of [`LEAVE_UNIT`].
+///
+/// # Errors
+///
+/// Returns [`SharedError::Validation`] when `value` is not a multiple of 0.5.
+pub fn half_step(field: &str, value: f64) -> Result<(), SharedError> {
+    if (value * 2.0).fract().abs() > 1e-6 {
+        return Err(SharedError::Validation(format!(
+            "{field} must be in steps of {LEAVE_UNIT}"
+        )));
+    }
+    Ok(())
+}
+
 /// Rejects a value that is empty after trimming.
 ///
 /// # Errors
@@ -82,6 +114,19 @@ pub fn len_range(field: &str, value: &str, min: usize, max: usize) -> Result<(),
         )));
     }
     Ok(())
+}
+
+/// Parses and range-checks a `"YYYY-MM-DD"` string into a comparable tuple.
+pub(crate) fn iso_date(field: &str, s: &str) -> Result<(i32, u8, u8), SharedError> {
+    let err = || SharedError::Validation(format!("{field} must be a date (YYYY-MM-DD)"));
+    let mut parts = s.split('-');
+    let year: i32 = parts.next().ok_or_else(err)?.parse().map_err(|_| err())?;
+    let month: u8 = parts.next().ok_or_else(err)?.parse().map_err(|_| err())?;
+    let day: u8 = parts.next().ok_or_else(err)?.parse().map_err(|_| err())?;
+    if parts.next().is_some() || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return Err(err());
+    }
+    Ok((year, month, day))
 }
 
 #[cfg(test)]

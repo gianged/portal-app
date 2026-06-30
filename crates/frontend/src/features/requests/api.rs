@@ -5,7 +5,7 @@ use web_sys::FormData;
 use shared::dto::ids::{ProjectId, RequestId};
 use shared::dto::request::{
     AssignRequestRequest, CreateRequestRequest, RequestAttachmentDto, RequestDetailDto, RequestDto,
-    RequestStatus, UpdateRequestRequest,
+    RequestStatus, SetRequestProgressRequest, UpdateRequestRequest,
 };
 
 use crate::api::client;
@@ -99,6 +99,12 @@ pub async fn reject(id: RequestId) -> Result<RequestDto, FrontendError> {
 
 pub async fn cancel(id: RequestId) -> Result<RequestDto, FrontendError> {
     client::post_empty(&format!("/requests/{}/cancel", id.0)).await
+}
+
+/// Set the assignee-reported completion percentage (assignee, while in progress).
+pub async fn set_progress(id: RequestId, progress: u8) -> Result<RequestDto, FrontendError> {
+    let req = SetRequestProgressRequest { progress };
+    client::post_json(&format!("/requests/{}/progress", id.0), &req).await
 }
 
 /// Upload one attachment (`POST /requests/{id}/attachments`, multipart).

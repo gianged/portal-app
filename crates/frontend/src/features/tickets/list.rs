@@ -258,7 +258,7 @@ fn RaiseTicketDialog(open: RwSignal<bool>, on_raised: Callback<()>) -> impl Into
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting.get()>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
                     {move || if submitting.get() { "Raising…" } else { "Raise ticket" }}
                 </Button>
             </DialogFooter>

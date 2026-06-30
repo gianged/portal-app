@@ -1,0 +1,39 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 COUNT(*) FILTER (\n                   WHERE status = 'completed' AND completed_at >= $2 AND completed_at < $3\n                 )                                                                          AS \"completed!\",\n                 COUNT(*) FILTER (\n                   WHERE status IN ('draft','submitted','assigned','in_progress','review')\n                 )                                                                          AS \"open!\",\n                 COALESCE(\n                   AVG(progress) FILTER (WHERE status NOT IN ('completed','cancelled')), 0\n                 )::float8                                                                  AS \"avg_progress!\"\n               FROM project.requests\n               WHERE assignee_user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "completed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "open!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "avg_progress!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "12da417ca8856dfdb3fdb1e5f86c0061f00a2563794bb574588bfc8ac7f12ddb"
+}

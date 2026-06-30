@@ -1,0 +1,137 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 id, user_id, work_date,\n                 status AS \"status: SqlFlexStatus\",\n                 leader_user_id, decided_at, decision_note, created_at, updated_at\n               FROM attendance.flex_hours\n               WHERE user_id = $1 AND work_date = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.flex_hours",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.flex_hours",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "work_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "attendance.flex_hours",
+            "name": "work_date"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "status: SqlFlexStatus",
+        "type_info": {
+          "Custom": {
+            "name": "attendance.flex_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "cancelled"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "attendance.flex_hours",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "leader_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.flex_hours",
+            "name": "leader_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "decided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.flex_hours",
+            "name": "decided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "decision_note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attendance.flex_hours",
+            "name": "decision_note"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.flex_hours",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.flex_hours",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "157f0a0d4f2e45d1faaa56a671248406153e4b7f19cdb4dab2f9f9c17f04a1c9"
+}

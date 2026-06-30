@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM attendance.holidays WHERE holiday_date = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Date"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a535946366331dd6d96aeeb2cd798b7117d9ab89952470daf036c0d07103a36e"
+}

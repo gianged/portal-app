@@ -2,7 +2,11 @@
 //! the dashboard; the `generate_*` calls render + store a PDF and return a signed
 //! download URL.
 
-use shared::dto::report::{MonthlyReportDto, ReportSummaryDto, YearlyReportDto};
+use uuid::Uuid;
+
+use shared::dto::report::{
+    MonthlyReportDto, ReportSummaryDto, StaffMonthlyReportDto, YearlyReportDto,
+};
 
 use crate::api::client;
 use crate::api::error::FrontendError;
@@ -17,6 +21,16 @@ pub async fn yearly(year: i32) -> Result<YearlyReportDto, FrontendError> {
     let y = year.to_string();
     let q = client::query(&[("year", &y)]);
     client::get_json(&format!("/reports/yearly{q}")).await
+}
+
+pub async fn staff_monthly(
+    user_id: Uuid,
+    year: i32,
+    month: u8,
+) -> Result<StaffMonthlyReportDto, FrontendError> {
+    let (y, m) = (year.to_string(), month.to_string());
+    let q = client::query(&[("year", &y), ("month", &m)]);
+    client::get_json(&format!("/reports/staff/{user_id}/monthly{q}")).await
 }
 
 pub async fn archive_list() -> Result<Vec<ReportSummaryDto>, FrontendError> {

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT user_id\n               FROM attendance.flex_hours\n               WHERE status = 'approved'\n                 AND work_date >= $1\n                 AND work_date <= $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.flex_hours",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cbddcec26b7dbbb0435516031c8cdd1a416d37ef434c50470e64c3005bfefaf5"
+}

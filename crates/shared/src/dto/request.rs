@@ -79,6 +79,7 @@ pub struct RequestDto {
     pub description: String,
     pub status: RequestStatus,
     pub priority: RequestPriority,
+    pub progress: u8,
     #[serde(with = "time::serde::rfc3339::option")]
     pub due_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
@@ -117,4 +118,10 @@ pub struct UpdateRequestRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssignRequestRequest {
     pub assignee_user_id: UserId,
+}
+
+/// New completion percentage (0-100); validated server-side.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SetRequestProgressRequest {
+    pub progress: u8,
 }

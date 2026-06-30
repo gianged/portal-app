@@ -111,7 +111,7 @@ pub fn LoginForm() -> impl IntoView {
                     variant=ButtonVariant::Primary
                     size=ButtonSize::Lg
                     type_="submit"
-                    disabled=submitting.get()
+                    disabled=Signal::derive(move || submitting.get())
                     full_width=true
                 >
                     {move || if submitting.get() {

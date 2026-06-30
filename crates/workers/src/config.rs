@@ -29,6 +29,9 @@ pub struct Config {
     pub redis_url: String,
     pub scylla_hosts: Vec<String>,
     pub scylla_keyspace: String,
+    pub openfga_api_url: String,
+    pub openfga_model_path: PathBuf,
+    pub openfga_bearer_token: Option<String>,
     pub storage_root: PathBuf,
     pub storage_public_base: String,
     /// Read notifications older than this are pruned.
@@ -64,6 +67,14 @@ pub struct Config {
     pub report_schedule_interval: StdDuration,
     /// How often the health prober pings each backend to drive its breaker.
     pub health_probe_interval: StdDuration,
+    /// When false, the daily leave-expiry sweep does not run.
+    pub leave_expiry_enabled: bool,
+    /// How often the leave-expiry sweep runs.
+    pub leave_expiry_interval: StdDuration,
+    /// When false, the month-end flex reconciliation sweep does not run.
+    pub flex_recon_enabled: bool,
+    /// How often the flex reconciliation sweep wakes to check the date.
+    pub flex_recon_interval: StdDuration,
 }
 
 /// Parses worker configuration from the process environment.
@@ -110,6 +121,34 @@ pub fn from_env() -> anyhow::Result<Config> {
         .parse()
         .context("invalid HEALTH_PROBE_INTERVAL_SECS")?;
 
+    // OpenFGA wiring, needed to construct the leave service for the expiry sweep.
+    // Mirrors the server so both binaries share the same store/model resolution.
+    let openfga_bearer_token = std::env::var("OPENFGA_BEARER_TOKEN")
+        .ok()
+        .filter(|s| !s.is_empty());
+    let openfga_allow_no_auth: bool = optional("OPENFGA_ALLOW_NO_AUTH", "false")
+        .parse()
+        .context("invalid OPENFGA_ALLOW_NO_AUTH (expected true/false)")?;
+    if openfga_bearer_token.is_none() && !openfga_allow_no_auth {
+        anyhow::bail!(
+            "OPENFGA_BEARER_TOKEN is required (or set OPENFGA_ALLOW_NO_AUTH=true for local dev)"
+        );
+    }
+
+    let leave_expiry_enabled: bool = optional("LEAVE_EXPIRY_ENABLED", "true")
+        .parse()
+        .context("invalid LEAVE_EXPIRY_ENABLED (expected true/false)")?;
+    let leave_expiry_interval_hours: u64 = optional("LEAVE_EXPIRY_INTERVAL_HOURS", "24")
+        .parse()
+        .context("invalid LEAVE_EXPIRY_INTERVAL_HOURS")?;
+
+    let flex_recon_enabled: bool = optional("FLEX_RECON_ENABLED", "true")
+        .parse()
+        .context("invalid FLEX_RECON_ENABLED (expected true/false)")?;
+    let flex_recon_interval_hours: u64 = optional("FLEX_RECON_INTERVAL_HOURS", "24")
+        .parse()
+        .context("invalid FLEX_RECON_INTERVAL_HOURS")?;
+
     let email_enabled: bool = optional("EMAIL_ENABLED", "false")
         .parse()
         .context("invalid EMAIL_ENABLED (expected true/false)")?;
@@ -134,6 +173,13 @@ pub fn from_env() -> anyhow::Result<Config> {
         redis_url: required("REDIS_URL")?,
         scylla_hosts,
         scylla_keyspace: optional("SCYLLA_KEYSPACE", "portal_chat"),
+        openfga_api_url: required("OPENFGA_API_URL")?,
+        openfga_model_path: optional(
+            "OPENFGA_MODEL_PATH",
+            "infra/openfga/authorization-model.json",
+        )
+        .into(),
+        openfga_bearer_token,
         storage_root: optional("STORAGE_ROOT", "./storage/uploads").into(),
         storage_public_base: optional("STORAGE_PUBLIC_BASE", "http://localhost:8080/api/v1"),
         notification_retention: Duration::days(retention_days),
@@ -160,6 +206,10 @@ pub fn from_env() -> anyhow::Result<Config> {
         report_schedule_day,
         report_schedule_interval: StdDuration::from_secs(report_schedule_interval_hours * 3600),
         health_probe_interval: StdDuration::from_secs(health_probe_interval_secs),
+        leave_expiry_enabled,
+        leave_expiry_interval: StdDuration::from_secs(leave_expiry_interval_hours * 3600),
+        flex_recon_enabled,
+        flex_recon_interval: StdDuration::from_secs(flex_recon_interval_hours * 3600),
     })
 }
 

@@ -24,7 +24,8 @@ use shared::{
         comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest},
         request::{
             AssignRequestRequest, CreateRequestRequest, RequestAttachmentDto, RequestDetailDto,
-            RequestDto, RequestStatus as WireRequestStatus, UpdateRequestRequest,
+            RequestDto, RequestStatus as WireRequestStatus, SetRequestProgressRequest,
+            UpdateRequestRequest,
         },
     },
     validation::{comment, file, request},
@@ -49,6 +50,7 @@ pub fn router() -> Router<AppState> {
         .route("/requests/{id}/approve", routing::post(approve))
         .route("/requests/{id}/reject", routing::post(reject))
         .route("/requests/{id}/cancel", routing::post(cancel))
+        .route("/requests/{id}/progress", routing::post(set_progress))
         .route(
             "/requests/{id}/attachments",
             routing::post(add_attachment).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)),
@@ -346,6 +348,21 @@ async fn cancel(
     Path(id): Path<Uuid>,
 ) -> Result<Json<RequestDto>, AppError> {
     let request = state.request.cancel(auth.user_id, RequestId(id)).await?;
+    Ok(Json(single(&state, &request).await?))
+}
+
+async fn set_progress(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<SetRequestProgressRequest>,
+) -> Result<Json<RequestDto>, AppError> {
+    request::validate_request_progress(body.progress)
+        .map_err(|e| AppError::Validation(e.to_string()))?;
+    let request = state
+        .request
+        .set_progress(auth.user_id, RequestId(id), body.progress)
+        .await?;
     Ok(Json(single(&state, &request).await?))
 }
 

@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(SUM(days), 0)::float8 AS \"days!\"\n               FROM attendance.dayoff\n               WHERE requester_user_id = $1\n                 AND status = 'approved'\n                 AND start_date <= $3\n                 AND end_date >= $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "days!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0729bce2c1170ee14a702ff1602c29679ed0abdb25320fd75fa49a99a8185984"
+}

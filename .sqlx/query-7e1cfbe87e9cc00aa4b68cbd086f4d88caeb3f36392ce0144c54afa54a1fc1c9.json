@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE attendance.policy SET\n                 workday_start                = $1,\n                 work_hours_per_day           = $2::float8::numeric,\n                 flex_core_start              = $3,\n                 flex_core_end                = $4,\n                 flex_daily_min               = $5::float8::numeric,\n                 flex_daily_max               = $6::float8::numeric,\n                 flex_earliest_start          = $7,\n                 flex_latest_end              = $8,\n                 flex_max_segments            = $9,\n                 flex_max_per_month           = $10,\n                 overtime_max_hours_per_month = $11::float8::numeric,\n                 balance_carry_years          = $12,\n                 balance_expiry_policy        = $13,\n                 balance_expiry_warn_days     = $14,\n                 updated_by_user_id           = $15\n               WHERE id = true",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Time",
+        "Float8",
+        "Time",
+        "Time",
+        "Float8",
+        "Float8",
+        "Time",
+        "Time",
+        "Int2",
+        "Int2",
+        "Float8",
+        "Int2",
+        {
+          "Custom": {
+            "name": "attendance.balance_expiry_policy",
+            "kind": {
+              "Enum": [
+                "warn",
+                "record_work_pct"
+              ]
+            }
+          }
+        },
+        "Int2",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7e1cfbe87e9cc00aa4b68cbd086f4d88caeb3f36392ce0144c54afa54a1fc1c9"
+}

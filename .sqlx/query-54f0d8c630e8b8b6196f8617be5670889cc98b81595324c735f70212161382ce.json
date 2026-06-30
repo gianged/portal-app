@@ -1,0 +1,141 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 id,\n                 user_id,\n                 grant_id,\n                 kind AS \"kind: SqlLeaveTxnKind\",\n                 delta::float8    AS \"delta!\",\n                 dayoff_id,\n                 work_pct::float8 AS \"work_pct?\",\n                 reason,\n                 created_by_user_id,\n                 created_at\n               FROM attendance.leave_transactions\n               WHERE user_id = $1 AND created_at::date BETWEEN $2 AND $3\n               ORDER BY created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_transactions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_transactions",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "grant_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_transactions",
+            "name": "grant_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "kind: SqlLeaveTxnKind",
+        "type_info": {
+          "Custom": {
+            "name": "attendance.leave_txn_kind",
+            "kind": {
+              "Enum": [
+                "grant",
+                "consume",
+                "refund",
+                "adjust",
+                "expire"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_transactions",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "delta!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "dayoff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_transactions",
+            "name": "dayoff_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "work_pct?",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_transactions",
+            "name": "reason"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_by_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_transactions",
+            "name": "created_by_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_transactions",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      true,
+      null,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "54f0d8c630e8b8b6196f8617be5670889cc98b81595324c735f70212161382ce"
+}

@@ -7,14 +7,15 @@ use domain::{
     error::RepositoryError,
     ids::{GroupId, ReportId, UserId},
     model::{
-        CompanyStaffStats, GroupProjectStats, GroupRequestStats, GroupStaffStats, MonthlyBucket,
-        Period, Report, ReportKind, TicketCategory, TicketStats, TicketStatus,
+        CompanyStaffStats, DayOffKind, GroupProjectStats, GroupRequestStats, GroupStaffStats,
+        MonthlyBucket, Period, Report, ReportKind, StaffMonthlyStats, TicketCategory, TicketStats,
+        TicketStatus,
     },
     repository::{ReportArchiveRepository, ReportStatsRepository},
 };
 
 use crate::postgres::{
-    enums::{SqlGroupKind, SqlReportKind, SqlReportScope},
+    enums::{SqlDayOffKind, SqlGroupKind, SqlReportKind, SqlReportScope},
     mappers,
 };
 
@@ -435,6 +436,152 @@ impl ReportStatsRepository for PgReportingRepo {
                 requests_completed: count(r.requests_completed),
             })
             .collect())
+    }
+
+    #[tracing::instrument(skip_all, fields(user = ?user))]
+    async fn staff_monthly_stats(
+        &self,
+        user: UserId,
+        period: Period,
+    ) -> Result<StaffMonthlyStats, RepositoryError> {
+        // Inclusive first/last day of the report month, for the DATE columns.
+        let first = period.start.date();
+        let last = period
+            .end
+            .date()
+            .previous_day()
+            .ok_or_else(|| RepositoryError::Backend("invalid report period".into()))?;
+
+        // Approved daily-report hours by kind + distinct reported dates.
+        let reports = sqlx::query!(
+            r#"SELECT
+                 COALESCE(SUM(e.hours) FILTER (WHERE e.kind = 'request_work'), 0)::float8 AS "request_work!",
+                 COALESCE(SUM(e.hours) FILTER (WHERE e.kind = 'learning'), 0)::float8      AS "learning!",
+                 COALESCE(SUM(e.hours) FILTER (WHERE e.kind = 'other'), 0)::float8         AS "other!",
+                 COUNT(DISTINCT r.report_date)                                             AS "days_reported!"
+               FROM attendance.daily_reports r
+               LEFT JOIN attendance.daily_report_entries e ON e.daily_report_id = r.id
+               WHERE r.user_id = $1
+                 AND r.status = 'approved'
+                 AND r.report_date >= $2
+                 AND r.report_date <= $3"#,
+            user.0,
+            first,
+            last,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(mappers::map_pg_error)?;
+
+        // Approved leave days by kind, over requests intersecting the month (same
+        // overlap rule the work-percentage denominator uses). Approximation: a
+        // request spanning two months is counted in full in each overlapping month.
+        let leave_rows = sqlx::query!(
+            r#"SELECT
+                 kind AS "kind: SqlDayOffKind",
+                 COALESCE(SUM(days), 0)::float8 AS "days!"
+               FROM attendance.dayoff
+               WHERE requester_user_id = $1
+                 AND status = 'approved'
+                 AND start_date <= $3
+                 AND end_date >= $2
+               GROUP BY kind"#,
+            user.0,
+            first,
+            last,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(mappers::map_pg_error)?;
+        let leave_days_by_kind: Vec<(DayOffKind, f64)> = leave_rows
+            .into_iter()
+            .map(|r| (DayOffKind::from(r.kind), r.days))
+            .collect();
+
+        // Approved overtime hours worked in the month.
+        let overtime = sqlx::query!(
+            r#"SELECT COALESCE(SUM(hours), 0)::float8 AS "hours!"
+               FROM attendance.overtime
+               WHERE requester_user_id = $1
+                 AND status = 'approved'
+                 AND work_date >= $2
+                 AND work_date <= $3"#,
+            user.0,
+            first,
+            last,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(mappers::map_pg_error)?;
+
+        // Approved flex day count in the month.
+        let flex = sqlx::query!(
+            r#"SELECT COUNT(*) AS "count!"
+               FROM attendance.flex_hours
+               WHERE user_id = $1
+                 AND status = 'approved'
+                 AND work_date >= $2
+                 AND work_date <= $3"#,
+            user.0,
+            first,
+            last,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(mappers::map_pg_error)?;
+
+        // Remaining balance on grants expiring within the report month.
+        let balance = sqlx::query!(
+            r#"SELECT COALESCE(SUM(days_remaining), 0)::float8 AS "soon!"
+               FROM attendance.leave_grants
+               WHERE user_id = $1
+                 AND days_remaining > 0
+                 AND expires_on >= $2
+                 AND expires_on <= $3"#,
+            user.0,
+            first,
+            last,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(mappers::map_pg_error)?;
+
+        // Requests assigned to the user: completed in the period vs still open,
+        // plus the average progress over active (non-terminal) requests.
+        let requests = sqlx::query!(
+            r#"SELECT
+                 COUNT(*) FILTER (
+                   WHERE status = 'completed' AND completed_at >= $2 AND completed_at < $3
+                 )                                                                          AS "completed!",
+                 COUNT(*) FILTER (
+                   WHERE status IN ('draft','submitted','assigned','in_progress','review')
+                 )                                                                          AS "open!",
+                 COALESCE(
+                   AVG(progress) FILTER (WHERE status NOT IN ('completed','cancelled')), 0
+                 )::float8                                                                  AS "avg_progress!"
+               FROM project.requests
+               WHERE assignee_user_id = $1"#,
+            user.0,
+            period.start,
+            period.end,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(mappers::map_pg_error)?;
+
+        Ok(StaffMonthlyStats {
+            days_reported: count(reports.days_reported),
+            hours_request_work: reports.request_work,
+            hours_learning: reports.learning,
+            hours_other: reports.other,
+            leave_days_by_kind,
+            overtime_hours: overtime.hours,
+            flex_days: count(flex.count),
+            balance_expiring_soon: balance.soon,
+            requests_completed: count(requests.completed),
+            requests_open: count(requests.open),
+            avg_request_progress: pct(requests.avg_progress),
+        })
     }
 }
 

@@ -1,0 +1,182 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 id, requester_user_id, work_date,\n                 hours::float8 AS \"hours!\",\n                 reason,\n                 status AS \"status: SqlOvertimeStatus\",\n                 leader_user_id, leader_decided_at, hr_user_id, hr_decided_at,\n                 decision_note, created_at, updated_at\n               FROM attendance.overtime\n               WHERE requester_user_id = $1 AND work_date >= $2 AND work_date <= $3\n               ORDER BY work_date DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "requester_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "requester_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "work_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "work_date"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "hours!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "reason"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "status: SqlOvertimeStatus",
+        "type_info": {
+          "Custom": {
+            "name": "attendance.overtime_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "leader_approved",
+                "approved",
+                "rejected",
+                "cancelled"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "leader_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "leader_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "leader_decided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "leader_decided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "hr_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "hr_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "hr_decided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "hr_decided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "decision_note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "decision_note"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.overtime",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b0d64a6f109b9c18b603156ce4864b276e2c231b013c1962d1d59b6b47534a01"
+}

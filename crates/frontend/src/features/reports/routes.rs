@@ -6,9 +6,8 @@ use shared::dto::user::UserRole;
 use crate::features::home::shell::AuthedPage;
 use crate::features::reports::archive::ReportArchive;
 use crate::features::reports::monthly::MonthlyTab;
+use crate::features::reports::staff::StaffMonthlyTab;
 use crate::features::reports::yearly::YearlyTab;
-use crate::primitives::empty_state::EmptyState;
-use crate::primitives::icon::IconName;
 use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::tabs::{Tab, Tabs};
 use crate::state::auth::AuthState;
@@ -18,6 +17,7 @@ use crate::theme::{self, color, typography};
 enum ReportTab {
     Monthly,
     Yearly,
+    Staff,
 }
 
 #[component]
@@ -43,17 +43,17 @@ fn ReportsIndex() -> impl IntoView {
     view! {
         {move || {
             if !is_admin.get() {
+                // Non-admins see only their own per-staff monthly report.
                 return view! {
-                    <EmptyState
-                        icon=IconName::Lock
-                        title="Restricted"
-                        description="Reports are available to Directors and HR only."
-                    />
+                    <Stack gap=Gap::Lg>
+                        <StaffMonthlyTab />
+                    </Stack>
                 }
                 .into_any();
             }
             let monthly_active = Signal::derive(move || tab.get() == ReportTab::Monthly);
             let yearly_active = Signal::derive(move || tab.get() == ReportTab::Yearly);
+            let staff_active = Signal::derive(move || tab.get() == ReportTab::Staff);
             view! {
                 <Stack gap=Gap::Lg>
                     <Tabs>
@@ -69,13 +69,17 @@ fn ReportsIndex() -> impl IntoView {
                         >
                             "Yearly"
                         </Tab>
+                        <Tab
+                            active=staff_active
+                            on_click=Callback::new(move |_: MouseEvent| tab.set(ReportTab::Staff))
+                        >
+                            "Per staff"
+                        </Tab>
                     </Tabs>
-                    {move || {
-                        if tab.get() == ReportTab::Monthly {
-                            view! { <MonthlyTab /> }.into_any()
-                        } else {
-                            view! { <YearlyTab /> }.into_any()
-                        }
+                    {move || match tab.get() {
+                        ReportTab::Monthly => view! { <MonthlyTab /> }.into_any(),
+                        ReportTab::Yearly => view! { <YearlyTab /> }.into_any(),
+                        ReportTab::Staff => view! { <StaffMonthlyTab /> }.into_any(),
                     }}
                     <ReportArchive />
                 </Stack>

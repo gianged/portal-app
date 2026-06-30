@@ -4,8 +4,10 @@ use anyhow::Context;
 use apalis_redis::RedisStorage;
 
 use application::{
-    AuditProjector, EmailNotifier, MaintenanceService, NotificationFanout, ReportService,
+    AuditProjector, EmailNotifier, FlexHoursService, LeaveBalanceService, MaintenanceService,
+    NotificationFanout, PolicyProvider, ReportService,
     events::EventBus,
+    permissions::Permissions,
     resilience::{CircuitBreaker, Drainer, DrainerConfig, HealthRegistry},
 };
 use domain::{
@@ -15,9 +17,10 @@ use domain::{
         report_renderer::ReportRenderer, spool::Spool,
     },
     repository::{
-        AuditRepository, ChatAttachmentRepository, ChatRepository, GroupRepository,
-        NotificationRepository, ProjectRepository, ReportArchiveRepository, ReportStatsRepository,
-        RequestRepository, TicketRepository, UserRepository,
+        AuditRepository, ChatAttachmentRepository, ChatRepository, DayOffRepository,
+        FlexHoursRepository, GroupRepository, HolidayRepository, LeaveBalanceRepository,
+        NotificationRepository, PolicyRepository, ProjectRepository, ReportArchiveRepository,
+        ReportStatsRepository, RequestRepository, TicketRepository, UserRepository,
     },
 };
 use infrastructure::{
@@ -28,8 +31,10 @@ use infrastructure::{
     },
     local_storage::LocalStorage,
     mailer::{LogMailer, SmtpMailer, SmtpTls},
+    openfga::{self, OpenFgaAuthzClient},
     postgres::{
-        self, PgAuditRepo, PgChatAttachmentRepo, PgGroupRepo, PgNotificationRepo, PgProjectRepo,
+        self, PgAuditRepo, PgChatAttachmentRepo, PgDayOffRepo, PgFlexRepo, PgGroupRepo,
+        PgHolidayRepo, PgLeaveBalanceRepo, PgNotificationRepo, PgPolicyRepo, PgProjectRepo,
         PgReportingRepo, PgRequestRepo, PgTicketRepo, PgUserRepo,
     },
     redis::{RedisEventPublisher, RedisSpool},
@@ -50,6 +55,10 @@ pub struct WorkerContext {
     pub mailer: Arc<dyn Mailer>,
     pub email_storage: RedisStorage<EmailEnvelope>,
     pub report: Arc<ReportService>,
+    /// Leave-balance service driving the scheduled expiry sweep.
+    pub leave: Arc<LeaveBalanceService>,
+    /// Flex-hours service driving the month-end reconciliation sweep.
+    pub flex: Arc<FlexHoursService>,
     pub email_queue: Arc<dyn JobQueue>,
     /// Per-backend breakers + the prober that drives them.
     pub health_registry: Arc<HealthRegistry>,
@@ -114,6 +123,61 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         Arc::new(ApalisAuditQueue::new(audit_storage.clone())),
     ));
 
+    // Leave-expiry sweep service. Needs Permissions (built from OpenFGA, mirroring
+    // the server) to satisfy the service constructor; the sweep itself uses no
+    // authz. The cached PolicyProvider supplies the expiry window + policy.
+    let model_json = tokio::fs::read_to_string(&cfg.openfga_model_path)
+        .await
+        .with_context(|| {
+            format!(
+                "reading openfga model from {}",
+                cfg.openfga_model_path.display()
+            )
+        })?;
+    let fga_config = openfga::resolve_config(
+        &cfg.openfga_api_url,
+        "portal",
+        &model_json,
+        cfg.openfga_bearer_token.clone(),
+    )
+    .await
+    .context("resolving openfga store/model")?;
+    let authz = OpenFgaAuthzClient::new(fga_config).context("building openfga client")?;
+    let perms = Arc::new(Permissions::new(
+        users.clone(),
+        groups.clone(),
+        Arc::new(authz),
+    ));
+    let policy_repo: Arc<dyn PolicyRepository> = Arc::new(PgPolicyRepo::new(pool.clone()));
+    let policy_provider = Arc::new(PolicyProvider::new(
+        policy_repo
+            .load()
+            .await
+            .context("loading attendance policy")?,
+    ));
+    let holiday_repo: Arc<dyn HolidayRepository> = Arc::new(PgHolidayRepo::new(pool.clone()));
+    let leave_repo: Arc<dyn LeaveBalanceRepository> =
+        Arc::new(PgLeaveBalanceRepo::new(pool.clone()));
+    let day_off_repo: Arc<dyn DayOffRepository> = Arc::new(PgDayOffRepo::new(pool.clone()));
+    let leave = Arc::new(LeaveBalanceService::new(
+        leave_repo,
+        holiday_repo,
+        day_off_repo,
+        policy_provider.clone(),
+        perms.clone(),
+        events.clone(),
+    ));
+
+    // Flex reconciliation sweep service. Reuses the cached policy provider; the
+    // sweep itself uses no authz, but the constructor wants Permissions.
+    let flex_repo: Arc<dyn FlexHoursRepository> = Arc::new(PgFlexRepo::new(pool.clone()));
+    let flex = Arc::new(FlexHoursService::new(
+        flex_repo,
+        policy_provider,
+        perms.clone(),
+        events.clone(),
+    ));
+
     // Reporting: one Pg repo backs the aggregate reads and the archive; the renderer is stateless.
     let report_repo = Arc::new(PgReportingRepo::new(pool.clone()));
     let report_stats: Arc<dyn ReportStatsRepository> = report_repo.clone();
@@ -125,6 +189,9 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         report_renderer,
         file_storage.clone(),
         users.clone(),
+        leave.clone(),
+        flex.clone(),
+        perms,
     ));
 
     // Built before the fan-out moves the repo handles below.
@@ -231,6 +298,8 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         mailer,
         email_storage: email_store,
         report,
+        leave,
+        flex,
         email_queue,
         health_registry,
         health_checks,

@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::dto::ids::{GroupId, ReportId};
+use crate::dto::{
+    day_off::DayOffKind,
+    ids::{GroupId, ReportId, UserId},
+};
 
 /// Mirrors `domain::model::ReportKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,6 +117,36 @@ pub struct YearlyReportDto {
     pub year: i32,
     pub growth: GrowthSeriesDto,
     pub totals: YearlyTotalsDto,
+}
+
+/// Approved leave days for one kind in the per-staff monthly report.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StaffLeaveDaysDto {
+    pub kind: DayOffKind,
+    pub days: f64,
+}
+
+/// A single staff member's monthly attendance + workload roll-up.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StaffMonthlyReportDto {
+    pub user_id: UserId,
+    pub year: i32,
+    pub month: u8,
+    pub days_reported: u32,
+    pub hours_request_work: f64,
+    pub hours_learning: f64,
+    pub hours_other: f64,
+    pub leave_days_by_kind: Vec<StaffLeaveDaysDto>,
+    pub overtime_hours: f64,
+    pub flex_days: u32,
+    /// Net deviation of approved flex hours from the expected monthly total; 0 = reconciled.
+    pub flex_month_delta: f64,
+    pub work_percentage: u8,
+    pub balance_remaining: f64,
+    pub balance_expiring_soon: f64,
+    pub requests_completed: u32,
+    pub requests_open: u32,
+    pub avg_request_progress: u8,
 }
 
 /// An archived report artifact with a ready-to-use signed download URL.

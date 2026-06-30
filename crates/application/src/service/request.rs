@@ -65,6 +65,7 @@ impl RequestService {
             description: cmd.description,
             status: RequestStatus::Draft,
             priority: cmd.priority,
+            progress: 0,
             due_at: cmd.due_at,
             completed_at: None,
             created_at: now,
@@ -222,6 +223,35 @@ impl RequestService {
         request.cancel(now)?;
         self.requests.save(&request).await?;
         self.emit_status(actor, &request, from, now).await?;
+        Ok(request)
+    }
+
+    /// Sets the completion percentage on an in-progress request. Assignee-only.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the assignee or the request is not in progress, or a repository or event error if the datastore or event bus is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id, progress = progress))]
+    pub async fn set_progress(
+        &self,
+        actor: UserId,
+        request_id: RequestId,
+        progress: u8,
+    ) -> Result<Request> {
+        let mut request = self.load(request_id).await?;
+        if request.assignee_user_id != Some(actor) || request.status != RequestStatus::InProgress {
+            return Err(Error::Forbidden);
+        }
+        let now = OffsetDateTime::now_utc();
+        request.set_progress(progress, now);
+        self.requests.save(&request).await?;
+        self.events
+            .emit(DomainEvent::RequestProgressUpdated {
+                request_id: request.id,
+                project_id: request.project_id,
+                actor,
+                at: now,
+            })
+            .await?;
         Ok(request)
     }
 

@@ -33,6 +33,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;     -- gen_random_uuid()
 -- -----------------------------------------------------------------------------
 -- 2. Schemas (alphabetical)
 -- -----------------------------------------------------------------------------
+CREATE SCHEMA IF NOT EXISTS attendance;
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE SCHEMA IF NOT EXISTS audit;
 CREATE SCHEMA IF NOT EXISTS chat;
@@ -46,6 +47,64 @@ CREATE SCHEMA IF NOT EXISTS ticket;
 -- -----------------------------------------------------------------------------
 -- 3. Enums (per-schema, alphabetical)
 -- -----------------------------------------------------------------------------
+
+-- attendance
+CREATE TYPE attendance.balance_expiry_policy AS ENUM (
+    'warn',
+    'record_work_pct'
+);
+
+CREATE TYPE attendance.daily_report_status AS ENUM (
+    'draft',
+    'submitted',
+    'approved',
+    'returned'
+);
+
+CREATE TYPE attendance.daily_report_entry_kind AS ENUM (
+    'request_work',
+    'learning',
+    'other'
+);
+
+CREATE TYPE attendance.leave_txn_kind AS ENUM (
+    'grant',
+    'consume',
+    'refund',
+    'adjust',
+    'expire'
+);
+
+CREATE TYPE attendance.dayoff_kind AS ENUM (
+    'annual_leave',
+    'sick_leave',
+    'unpaid_leave',
+    'remote',
+    'other'
+);
+
+CREATE TYPE attendance.dayoff_status AS ENUM (
+    'pending',
+    'leader_approved',
+    'approved',
+    'rejected',
+    'cancelled'
+);
+
+CREATE TYPE attendance.overtime_status AS ENUM (
+    'pending',
+    'leader_approved',
+    'approved',
+    'rejected',
+    'cancelled'
+);
+
+CREATE TYPE attendance.flex_status AS ENUM (
+    'pending',
+    'approved',
+    'rejected',
+    'cancelled'
+);
 
 -- auth
 CREATE TYPE auth.system_role AS ENUM (
@@ -391,12 +450,14 @@ CREATE TABLE project.requests (
     description       TEXT        NOT NULL DEFAULT '',
     status            project.request_status NOT NULL DEFAULT 'draft',
     priority          project.request_priority NOT NULL DEFAULT 'normal',
+    progress          SMALLINT    NOT NULL DEFAULT 0,
     due_at            TIMESTAMPTZ,
     completed_at      TIMESTAMPTZ,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT pk_requests PRIMARY KEY (id),
+    CONSTRAINT chk_requests_progress_range CHECK (progress BETWEEN 0 AND 100),
     -- A request beyond 'submitted' must have an assignee
     CONSTRAINT chk_requests_assignee_required_after_submitted
         CHECK (status IN ('draft', 'submitted', 'cancelled') OR assignee_user_id IS NOT NULL),
@@ -505,6 +566,218 @@ CREATE TABLE ticket.ticket_comments (
 
     CONSTRAINT pk_ticket_comments PRIMARY KEY (id),
     CONSTRAINT chk_ticket_comments_body_not_empty CHECK (length(btrim(body)) > 0)
+);
+
+
+-- attendance.policy ----------------------------------------------------------
+-- Typed, validated singleton holding every tunable attendance limit. Edited by
+-- HR / Director; loaded into a cached provider at boot. id is a fixed boolean
+-- so at most one row exists. Durations are NUMERIC hours; window bounds are TIME.
+CREATE TABLE attendance.policy (
+    id                            BOOLEAN     NOT NULL DEFAULT true,
+    workday_start                 TIME        NOT NULL DEFAULT '08:00',
+    work_hours_per_day            NUMERIC(4,2) NOT NULL DEFAULT 8,
+    flex_core_start               TIME        NOT NULL DEFAULT '10:00',
+    flex_core_end                 TIME        NOT NULL DEFAULT '15:00',
+    flex_daily_min                NUMERIC(4,2) NOT NULL DEFAULT 4,
+    flex_daily_max                NUMERIC(4,2) NOT NULL DEFAULT 10,
+    flex_earliest_start           TIME        NOT NULL DEFAULT '08:00',
+    flex_latest_end               TIME        NOT NULL DEFAULT '20:00',
+    flex_max_segments             SMALLINT    NOT NULL DEFAULT 2,
+    flex_max_per_month            SMALLINT    NOT NULL DEFAULT 5,
+    overtime_max_hours_per_month  NUMERIC(5,2) NOT NULL DEFAULT 40,
+    balance_carry_years           SMALLINT    NOT NULL DEFAULT 3,
+    balance_expiry_policy         attendance.balance_expiry_policy NOT NULL DEFAULT 'warn',
+    balance_expiry_warn_days      SMALLINT    NOT NULL DEFAULT 60,
+    updated_by_user_id            UUID,
+    updated_at                    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_policy PRIMARY KEY (id),
+    CONSTRAINT chk_policy_singleton CHECK (id),
+    CONSTRAINT chk_policy_work_hours_positive CHECK (work_hours_per_day > 0),
+    CONSTRAINT chk_policy_flex_core_order CHECK (flex_core_start < flex_core_end),
+    CONSTRAINT chk_policy_flex_daily_band CHECK (flex_daily_min <= flex_daily_max),
+    CONSTRAINT chk_policy_flex_envelope CHECK (flex_earliest_start <= flex_latest_end),
+    CONSTRAINT chk_policy_flex_max_segments CHECK (flex_max_segments BETWEEN 1 AND 4),
+    CONSTRAINT chk_policy_flex_max_per_month CHECK (flex_max_per_month >= 0),
+    CONSTRAINT chk_policy_overtime_cap_positive CHECK (overtime_max_hours_per_month > 0),
+    CONSTRAINT chk_policy_carry_years CHECK (balance_carry_years >= 1),
+    CONSTRAINT chk_policy_warn_days CHECK (balance_expiry_warn_days >= 0)
+);
+
+-- attendance.daily_reports ---------------------------------------------------
+-- One per (user, date). Free-text summary plus typed entries (below).
+CREATE TABLE attendance.daily_reports (
+    id                   UUID        NOT NULL DEFAULT gen_random_uuid(),
+    user_id              UUID        NOT NULL,
+    report_date          DATE        NOT NULL,
+    status               attendance.daily_report_status NOT NULL DEFAULT 'draft',
+    summary              TEXT        NOT NULL DEFAULT '',
+    submitted_at         TIMESTAMPTZ,
+    reviewed_by_user_id  UUID,
+    reviewed_at          TIMESTAMPTZ,
+    review_note          TEXT        NOT NULL DEFAULT '',
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_daily_reports PRIMARY KEY (id),
+    CONSTRAINT uq_daily_reports_user_date UNIQUE (user_id, report_date)
+);
+
+-- attendance.daily_report_entries --------------------------------------------
+-- A single line of a daily report. request_work entries link a request and may
+-- bump its progress; learning / other are free text. Write-once (replaced
+-- wholesale when the parent draft is re-saved); no updated_at.
+CREATE TABLE attendance.daily_report_entries (
+    id               UUID        NOT NULL DEFAULT gen_random_uuid(),
+    daily_report_id  UUID        NOT NULL,
+    kind             attendance.daily_report_entry_kind NOT NULL,
+    description      TEXT        NOT NULL DEFAULT '',
+    request_id       UUID,
+    hours            NUMERIC(4,2),
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_daily_report_entries PRIMARY KEY (id),
+    CONSTRAINT chk_daily_report_entries_request_work_has_request
+        CHECK (kind <> 'request_work' OR request_id IS NOT NULL),
+    CONSTRAINT chk_daily_report_entries_hours_non_negative
+        CHECK (hours IS NULL OR hours >= 0)
+);
+
+-- attendance.leave_grants ----------------------------------------------------
+-- HR-granted yearly leave entitlement. Unit is half a day. Carries up to
+-- policy.balance_carry_years years, then expires (FIFO oldest-first).
+CREATE TABLE attendance.leave_grants (
+    id                  UUID        NOT NULL DEFAULT gen_random_uuid(),
+    user_id             UUID        NOT NULL,
+    grant_year          SMALLINT    NOT NULL,
+    days_granted        NUMERIC(4,1) NOT NULL,
+    days_remaining      NUMERIC(4,1) NOT NULL,
+    expires_on          DATE        NOT NULL,
+    created_by_user_id  UUID,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_leave_grants PRIMARY KEY (id),
+    CONSTRAINT uq_leave_grants_user_year UNIQUE (user_id, grant_year),
+    CONSTRAINT chk_leave_grants_remaining_range
+        CHECK (days_remaining BETWEEN 0 AND days_granted),
+    CONSTRAINT chk_leave_grants_granted_half_step
+        CHECK ((days_granted * 2) = floor(days_granted * 2)),
+    CONSTRAINT chk_leave_grants_remaining_half_step
+        CHECK ((days_remaining * 2) = floor(days_remaining * 2))
+);
+
+-- attendance.leave_transactions ----------------------------------------------
+-- Immutable ledger of every balance movement (grant / consume / refund /
+-- adjust / expire). work_pct is recorded on expire when policy says so.
+CREATE TABLE attendance.leave_transactions (
+    id                  UUID        NOT NULL DEFAULT gen_random_uuid(),
+    user_id             UUID        NOT NULL,
+    grant_id            UUID        NOT NULL,
+    kind                attendance.leave_txn_kind NOT NULL,
+    delta               NUMERIC(4,1) NOT NULL,
+    dayoff_id           UUID,
+    work_pct            NUMERIC(5,2),
+    reason              TEXT        NOT NULL DEFAULT '',
+    created_by_user_id  UUID,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_leave_transactions PRIMARY KEY (id)
+);
+
+-- attendance.holidays --------------------------------------------------------
+-- HR-maintained public holiday calendar. Excluded (with weekends) from leave
+-- day-counting and the work-percentage denominator.
+CREATE TABLE attendance.holidays (
+    holiday_date        DATE        NOT NULL,
+    name                TEXT        NOT NULL,
+    created_by_user_id  UUID,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_holidays PRIMARY KEY (holiday_date),
+    CONSTRAINT chk_holidays_name_not_empty CHECK (length(btrim(name)) > 0)
+);
+
+-- attendance.dayoff ----------------------------------------------------------
+-- Leave request. annual_leave consumes balance and needs leader + HR; sick /
+-- unpaid are leader-only and backdatable; remote / other are leader-only.
+CREATE TABLE attendance.dayoff (
+    id                  UUID        NOT NULL DEFAULT gen_random_uuid(),
+    requester_user_id   UUID        NOT NULL,
+    kind                attendance.dayoff_kind NOT NULL,
+    start_date          DATE        NOT NULL,
+    end_date            DATE        NOT NULL,
+    start_half          BOOLEAN     NOT NULL DEFAULT false,
+    end_half            BOOLEAN     NOT NULL DEFAULT false,
+    days                NUMERIC(4,1) NOT NULL,
+    reason              TEXT        NOT NULL DEFAULT '',
+    status              attendance.dayoff_status NOT NULL DEFAULT 'pending',
+    leader_user_id      UUID,
+    leader_decided_at   TIMESTAMPTZ,
+    hr_user_id          UUID,
+    hr_decided_at       TIMESTAMPTZ,
+    decision_note       TEXT        NOT NULL DEFAULT '',
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_dayoff PRIMARY KEY (id),
+    CONSTRAINT chk_dayoff_date_order CHECK (end_date >= start_date),
+    CONSTRAINT chk_dayoff_days_non_negative CHECK (days >= 0)
+);
+
+-- attendance.overtime --------------------------------------------------------
+-- Extra-hours request, leader + HR approval, capped monthly by policy.
+CREATE TABLE attendance.overtime (
+    id                  UUID        NOT NULL DEFAULT gen_random_uuid(),
+    requester_user_id   UUID        NOT NULL,
+    work_date           DATE        NOT NULL,
+    hours               NUMERIC(4,2) NOT NULL,
+    reason              TEXT        NOT NULL DEFAULT '',
+    status              attendance.overtime_status NOT NULL DEFAULT 'pending',
+    leader_user_id      UUID,
+    leader_decided_at   TIMESTAMPTZ,
+    hr_user_id          UUID,
+    hr_decided_at       TIMESTAMPTZ,
+    decision_note       TEXT        NOT NULL DEFAULT '',
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_overtime PRIMARY KEY (id),
+    CONSTRAINT chk_overtime_hours_positive CHECK (hours > 0)
+);
+
+-- attendance.flex_hours ------------------------------------------------------
+-- Per-day custom schedule (segments below), leader-approved, capped monthly by
+-- policy and reconciled to the monthly expected total.
+CREATE TABLE attendance.flex_hours (
+    id                  UUID        NOT NULL DEFAULT gen_random_uuid(),
+    user_id             UUID        NOT NULL,
+    work_date           DATE        NOT NULL,
+    status              attendance.flex_status NOT NULL DEFAULT 'pending',
+    leader_user_id      UUID,
+    decided_at          TIMESTAMPTZ,
+    decision_note       TEXT        NOT NULL DEFAULT '',
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_flex_hours PRIMARY KEY (id),
+    CONSTRAINT uq_flex_hours_user_date UNIQUE (user_id, work_date)
+);
+
+-- attendance.flex_segments ---------------------------------------------------
+-- Up to N (policy.flex_max_segments) ordered work blocks for one flex day.
+-- Replaced wholesale when the parent flex request is re-saved; no updated_at.
+CREATE TABLE attendance.flex_segments (
+    id          UUID        NOT NULL DEFAULT gen_random_uuid(),
+    flex_id     UUID        NOT NULL,
+    seq         SMALLINT    NOT NULL,
+    start_at    TIME        NOT NULL,
+    end_at      TIME        NOT NULL,
+
+    CONSTRAINT pk_flex_segments PRIMARY KEY (id),
+    CONSTRAINT uq_flex_segments_flex_seq UNIQUE (flex_id, seq),
+    CONSTRAINT chk_flex_segments_time_order CHECK (end_at > start_at)
 );
 
 
@@ -651,6 +924,122 @@ ALTER TABLE ticket.ticket_comments
     ADD CONSTRAINT fk_ticket_comments_author_user_id
     FOREIGN KEY (author_user_id) REFERENCES auth.users (id)
     ON DELETE RESTRICT;
+
+
+-- attendance.policy
+ALTER TABLE attendance.policy
+    ADD CONSTRAINT fk_policy_updated_by_user_id
+    FOREIGN KEY (updated_by_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+-- attendance.daily_reports
+ALTER TABLE attendance.daily_reports
+    ADD CONSTRAINT fk_daily_reports_user_id
+    FOREIGN KEY (user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+ALTER TABLE attendance.daily_reports
+    ADD CONSTRAINT fk_daily_reports_reviewed_by_user_id
+    FOREIGN KEY (reviewed_by_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+-- attendance.daily_report_entries
+ALTER TABLE attendance.daily_report_entries
+    ADD CONSTRAINT fk_daily_report_entries_daily_report_id
+    FOREIGN KEY (daily_report_id) REFERENCES attendance.daily_reports (id)
+    ON DELETE CASCADE;
+
+ALTER TABLE attendance.daily_report_entries
+    ADD CONSTRAINT fk_daily_report_entries_request_id
+    FOREIGN KEY (request_id) REFERENCES project.requests (id)
+    ON DELETE RESTRICT;
+
+-- attendance.leave_grants
+ALTER TABLE attendance.leave_grants
+    ADD CONSTRAINT fk_leave_grants_user_id
+    FOREIGN KEY (user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+ALTER TABLE attendance.leave_grants
+    ADD CONSTRAINT fk_leave_grants_created_by_user_id
+    FOREIGN KEY (created_by_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+-- attendance.leave_transactions
+ALTER TABLE attendance.leave_transactions
+    ADD CONSTRAINT fk_leave_transactions_user_id
+    FOREIGN KEY (user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+ALTER TABLE attendance.leave_transactions
+    ADD CONSTRAINT fk_leave_transactions_grant_id
+    FOREIGN KEY (grant_id) REFERENCES attendance.leave_grants (id)
+    ON DELETE CASCADE;
+
+ALTER TABLE attendance.leave_transactions
+    ADD CONSTRAINT fk_leave_transactions_dayoff_id
+    FOREIGN KEY (dayoff_id) REFERENCES attendance.dayoff (id)
+    ON DELETE RESTRICT;
+
+ALTER TABLE attendance.leave_transactions
+    ADD CONSTRAINT fk_leave_transactions_created_by_user_id
+    FOREIGN KEY (created_by_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+-- attendance.holidays
+ALTER TABLE attendance.holidays
+    ADD CONSTRAINT fk_holidays_created_by_user_id
+    FOREIGN KEY (created_by_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+-- attendance.dayoff
+ALTER TABLE attendance.dayoff
+    ADD CONSTRAINT fk_dayoff_requester_user_id
+    FOREIGN KEY (requester_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+ALTER TABLE attendance.dayoff
+    ADD CONSTRAINT fk_dayoff_leader_user_id
+    FOREIGN KEY (leader_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+ALTER TABLE attendance.dayoff
+    ADD CONSTRAINT fk_dayoff_hr_user_id
+    FOREIGN KEY (hr_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+-- attendance.overtime
+ALTER TABLE attendance.overtime
+    ADD CONSTRAINT fk_overtime_requester_user_id
+    FOREIGN KEY (requester_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+ALTER TABLE attendance.overtime
+    ADD CONSTRAINT fk_overtime_leader_user_id
+    FOREIGN KEY (leader_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+ALTER TABLE attendance.overtime
+    ADD CONSTRAINT fk_overtime_hr_user_id
+    FOREIGN KEY (hr_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+-- attendance.flex_hours
+ALTER TABLE attendance.flex_hours
+    ADD CONSTRAINT fk_flex_hours_user_id
+    FOREIGN KEY (user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+ALTER TABLE attendance.flex_hours
+    ADD CONSTRAINT fk_flex_hours_leader_user_id
+    FOREIGN KEY (leader_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+-- attendance.flex_segments
+ALTER TABLE attendance.flex_segments
+    ADD CONSTRAINT fk_flex_segments_flex_id
+    FOREIGN KEY (flex_id) REFERENCES attendance.flex_hours (id)
+    ON DELETE CASCADE;
 
 
 -- -----------------------------------------------------------------------------
@@ -806,6 +1195,95 @@ CREATE INDEX idx_ticket_comments_author_user_id
     ON ticket.ticket_comments (author_user_id);
 
 
+-- attendance.daily_reports
+CREATE INDEX idx_daily_reports_user_id_date
+    ON attendance.daily_reports (user_id, report_date DESC);
+
+CREATE INDEX idx_daily_reports_reviewed_by_user_id
+    ON attendance.daily_reports (reviewed_by_user_id)
+    WHERE reviewed_by_user_id IS NOT NULL;
+
+-- attendance.daily_report_entries
+CREATE INDEX idx_daily_report_entries_daily_report_id
+    ON attendance.daily_report_entries (daily_report_id);
+
+CREATE INDEX idx_daily_report_entries_request_id
+    ON attendance.daily_report_entries (request_id)
+    WHERE request_id IS NOT NULL;
+
+-- attendance.leave_grants
+CREATE INDEX idx_leave_grants_user_id_expires
+    ON attendance.leave_grants (user_id, expires_on);
+
+CREATE INDEX idx_leave_grants_created_by_user_id
+    ON attendance.leave_grants (created_by_user_id)
+    WHERE created_by_user_id IS NOT NULL;
+
+-- attendance.leave_transactions
+CREATE INDEX idx_leave_transactions_user_id_created
+    ON attendance.leave_transactions (user_id, created_at DESC);
+
+CREATE INDEX idx_leave_transactions_grant_id
+    ON attendance.leave_transactions (grant_id);
+
+CREATE INDEX idx_leave_transactions_dayoff_id
+    ON attendance.leave_transactions (dayoff_id)
+    WHERE dayoff_id IS NOT NULL;
+
+-- One consume row per (dayoff, grant): permits a single FIFO consume spanning
+-- multiple grants, but blocks a concurrent duplicate consume of the same dayoff
+-- (the second insert collides -> UniqueViolation -> Conflict), making the leave
+-- ledger debit concurrency-safe alongside the application-level idempotency guard.
+CREATE UNIQUE INDEX uq_leave_transactions_consume_per_grant
+    ON attendance.leave_transactions (dayoff_id, grant_id)
+    WHERE kind = 'consume' AND dayoff_id IS NOT NULL;
+
+-- attendance.dayoff
+CREATE INDEX idx_dayoff_requester_user_id_status
+    ON attendance.dayoff (requester_user_id, status);
+
+CREATE INDEX idx_dayoff_status
+    ON attendance.dayoff (status);
+
+CREATE INDEX idx_dayoff_leader_user_id
+    ON attendance.dayoff (leader_user_id)
+    WHERE leader_user_id IS NOT NULL;
+
+CREATE INDEX idx_dayoff_hr_user_id
+    ON attendance.dayoff (hr_user_id)
+    WHERE hr_user_id IS NOT NULL;
+
+-- attendance.overtime
+CREATE INDEX idx_overtime_requester_user_id_status
+    ON attendance.overtime (requester_user_id, status);
+
+CREATE INDEX idx_overtime_status
+    ON attendance.overtime (status);
+
+CREATE INDEX idx_overtime_leader_user_id
+    ON attendance.overtime (leader_user_id)
+    WHERE leader_user_id IS NOT NULL;
+
+CREATE INDEX idx_overtime_hr_user_id
+    ON attendance.overtime (hr_user_id)
+    WHERE hr_user_id IS NOT NULL;
+
+-- attendance.flex_hours
+CREATE INDEX idx_flex_hours_user_id_date
+    ON attendance.flex_hours (user_id, work_date);
+
+CREATE INDEX idx_flex_hours_status
+    ON attendance.flex_hours (status);
+
+CREATE INDEX idx_flex_hours_leader_user_id
+    ON attendance.flex_hours (leader_user_id)
+    WHERE leader_user_id IS NOT NULL;
+
+-- attendance.flex_segments
+CREATE INDEX idx_flex_segments_flex_id
+    ON attendance.flex_segments (flex_id);
+
+
 -- -----------------------------------------------------------------------------
 -- 8. Triggers
 --    updated_at maintenance + cross-table invariants. Append-only tables
@@ -851,11 +1329,38 @@ CREATE TRIGGER trg_project_collaborators_no_self_collab
     ON project.project_collaborators
     FOR EACH ROW EXECUTE FUNCTION project.fn_no_self_collab();
 
+-- attendance: updated_at maintenance. Entry / segment / transaction child rows
+-- and the holidays calendar are write-once, so they have no updated_at trigger.
+CREATE TRIGGER trg_policy_set_updated_at
+    BEFORE UPDATE ON attendance.policy
+    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+CREATE TRIGGER trg_daily_reports_set_updated_at
+    BEFORE UPDATE ON attendance.daily_reports
+    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+CREATE TRIGGER trg_leave_grants_set_updated_at
+    BEFORE UPDATE ON attendance.leave_grants
+    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+CREATE TRIGGER trg_dayoff_set_updated_at
+    BEFORE UPDATE ON attendance.dayoff
+    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+CREATE TRIGGER trg_overtime_set_updated_at
+    BEFORE UPDATE ON attendance.overtime
+    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+CREATE TRIGGER trg_flex_hours_set_updated_at
+    BEFORE UPDATE ON attendance.flex_hours
+    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
 
 -- -----------------------------------------------------------------------------
 -- 9. Comments
 -- -----------------------------------------------------------------------------
 
+COMMENT ON SCHEMA attendance   IS 'Staff time tracking: tunable policy, daily reports, leave balances/holidays/day-off, overtime, flexible hours.';
 COMMENT ON SCHEMA auth         IS 'User identity, profile, lifecycle.';
 COMMENT ON SCHEMA audit        IS 'Append-only audit log. Immutable by convention (invariant 5).';
 COMMENT ON SCHEMA chat         IS 'Relational sidecar for chat: trusted attachment metadata. Messages/channels live in Scylla.';
@@ -955,3 +1460,14 @@ VALUES (
     NOW()
 )
 ON CONFLICT (email) DO NOTHING;
+
+
+-- -----------------------------------------------------------------------------
+-- 11. Attendance policy singleton
+--     Seed the one-and-only policy row with the documented defaults so the
+--     cached provider has something to load before HR edits anything. Every
+--     column has a DEFAULT, so a bare insert of the boolean id is enough.
+--     Idempotent: a no-op once the row exists.
+-- -----------------------------------------------------------------------------
+INSERT INTO attendance.policy (id) VALUES (true)
+ON CONFLICT (id) DO NOTHING;

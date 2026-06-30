@@ -17,10 +17,13 @@ use crate::features::users::picker::UserPicker;
 use crate::primitives::badge::Badge;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
+use crate::primitives::chart::ProgressBar;
 use crate::primitives::cluster::Cluster;
 use crate::primitives::dialog::{Dialog, DialogBody, DialogFooter, DialogHeader};
 use crate::primitives::icon::{Icon, IconName};
+use crate::primitives::input::Input;
 use crate::primitives::stack::{Gap, Stack};
+use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
 use crate::theme::{self, color, space, typography};
 use crate::util::format;
@@ -63,6 +66,7 @@ fn action_future(
 #[component]
 pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
+    let auth = use_context::<AuthState>().expect("AuthState context");
     let detail: Loadable<RequestDetailDto> = RwSignal::new(None);
     let reload = RwSignal::new(0u32);
     let assign_open = RwSignal::new(false);
@@ -156,11 +160,24 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                     let r = &d.request;
                     let status = r.status;
                     let priority = r.priority;
+                    let progress = r.progress;
                     let title_v = title_block(&r.title);
                     let meta_v = meta_line(r);
                     let desc_v = desc_block(&r.description);
                     let actions_v = lifecycle_bar(status, run, open_assign);
                     let attach_v = attachments_card(&d, pick_file, upload, file_ref);
+                    let is_assignee = auth.user.with_untracked(|u| {
+                        u.as_ref().map(|u| u.id) == r.assignee.as_ref().map(|a| a.id)
+                    });
+                    let progress_editor = if is_assignee && status == RequestStatus::InProgress {
+                        if let Some(rid) = id.get_untracked() {
+                            view! { <ProgressEditor id=rid initial=progress reload=reload /> }.into_any()
+                        } else {
+                            ().into_any()
+                        }
+                    } else {
+                        ().into_any()
+                    };
                     view! {
                         <Stack gap=Gap::Lg>
                             <Card>
@@ -173,10 +190,12 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                                         </Cluster>
                                     </Cluster>
                                     {meta_v}
+                                    {progress_row(progress)}
                                     {desc_v}
                                 </Stack>
                             </Card>
                             {actions_v}
+                            {progress_editor}
                             {attach_v}
                         </Stack>
                     }.into_any()
@@ -383,6 +402,78 @@ fn meta_line(r: &RequestDto) -> AnyView {
         <div class=cls>{format!("Created by {creator} · {created} · Assignee: {assignee}")}</div>
     }
     .into_any()
+}
+
+fn progress_row(progress: u8) -> AnyView {
+    let wrap = theme::class("display: flex; align-items: center; gap: 12px;");
+    let label = theme::class(format!(
+        "font-family: {ff}; font-size: {fs}; color: {c}; white-space: nowrap;",
+        ff = typography::FONT_SANS,
+        fs = typography::TEXT_CAPTION,
+        c = color::TEXT_MUTED,
+    ));
+    let bar = theme::class("flex: 1; max-width: 260px;");
+    view! {
+        <div class=wrap>
+            <span class=label>{format!("Progress {progress}%")}</span>
+            <div class=bar>
+                <ProgressBar value=Signal::derive(move || progress) />
+            </div>
+        </div>
+    }
+    .into_any()
+}
+
+#[component]
+fn ProgressEditor(id: RequestId, initial: u8, reload: RwSignal<u32>) -> impl IntoView {
+    let toast = use_context::<ToastState>().expect("ToastState context");
+    let value = RwSignal::new(initial.to_string());
+    let saving = RwSignal::new(false);
+    let on_input = Callback::new(move |v: String| value.set(v));
+    let save = Callback::new(move |_| {
+        if saving.get_untracked() {
+            return;
+        }
+        let Ok(p) = value.get_untracked().trim().parse::<u8>() else {
+            toast.error("Progress must be a whole number between 0 and 100.");
+            return;
+        };
+        if p > 100 {
+            toast.error("Progress must be between 0 and 100.");
+            return;
+        }
+        saving.set(true);
+        task::spawn_local(async move {
+            match api::set_progress(id, p).await {
+                Ok(_) => {
+                    toast.success("Progress updated");
+                    reload.update(|n| *n += 1);
+                }
+                Err(e) => toast.error_from(&e),
+            }
+            saving.set(false);
+        });
+    });
+    let input_wrap = theme::class("width: 110px;");
+    view! {
+        <Card>
+            <Stack gap=Gap::Sm>
+                <Cluster gap=Gap::Sm>
+                    <div class=input_wrap>
+                        <Input value=value on_input=on_input placeholder="0-100" />
+                    </div>
+                    <Button
+                        variant=ButtonVariant::Primary
+                        size=ButtonSize::Sm
+                        on_click=save
+                        disabled=Signal::derive(move || saving.get())
+                    >
+                        "Save progress"
+                    </Button>
+                </Cluster>
+            </Stack>
+        </Card>
+    }
 }
 
 fn desc_block(description: &str) -> AnyView {

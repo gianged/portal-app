@@ -1,0 +1,106 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 id,\n                 daily_report_id,\n                 kind        AS \"kind: SqlDailyReportEntryKind\",\n                 description,\n                 request_id,\n                 hours::float8 AS \"hours?\",\n                 created_at\n               FROM attendance.daily_report_entries\n               WHERE daily_report_id = ANY($1)\n               ORDER BY created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_report_entries",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "daily_report_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_report_entries",
+            "name": "daily_report_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "kind: SqlDailyReportEntryKind",
+        "type_info": {
+          "Custom": {
+            "name": "attendance.daily_report_entry_kind",
+            "kind": {
+              "Enum": [
+                "request_work",
+                "learning",
+                "other"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_report_entries",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_report_entries",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "request_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_report_entries",
+            "name": "request_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "hours?",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.daily_report_entries",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      null,
+      false
+    ]
+  },
+  "hash": "e8f63a1a5ffd584461d8bd6180296c53d045f27a63d5ca0246c916f953cc3eab"
+}

@@ -352,7 +352,7 @@ fn MessageEditDialog(
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting.get()>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
                     {move || if submitting.get() { "Saving…" } else { "Save" }}
                 </Button>
             </DialogFooter>

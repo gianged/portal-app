@@ -5,6 +5,7 @@ mod repository;
 
 pub use pool::{PoolError, build_pool};
 pub use repository::{
-    PgAuditRepo, PgChatAttachmentRepo, PgCommentRepo, PgGroupRepo, PgNotificationRepo,
-    PgProjectRepo, PgReportingRepo, PgRequestRepo, PgTicketRepo, PgUserRepo,
+    PgAuditRepo, PgChatAttachmentRepo, PgCommentRepo, PgDailyReportRepo, PgDayOffRepo, PgFlexRepo,
+    PgGroupRepo, PgHolidayRepo, PgLeaveBalanceRepo, PgNotificationRepo, PgOvertimeRepo,
+    PgPolicyRepo, PgProjectRepo, PgReportingRepo, PgRequestRepo, PgTicketRepo, PgUserRepo,
 };

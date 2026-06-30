@@ -108,7 +108,7 @@ fn variant_css(v: ButtonVariant) -> String {
 pub fn Button(
     #[prop(optional)] variant: ButtonVariant,
     #[prop(optional)] size: ButtonSize,
-    #[prop(optional)] disabled: bool,
+    #[prop(optional, into)] disabled: Signal<bool>,
     #[prop(optional, into)] type_: Option<String>,
     #[prop(optional)] on_click: Option<Callback<MouseEvent>>,
     #[prop(optional)] full_width: bool,
@@ -153,7 +153,7 @@ pub fn Button(
     };
 
     view! {
-        <button class=cls type=type_ disabled=disabled on:click=on_click_handler>
+        <button class=cls type=type_ disabled=move || disabled.get() on:click=on_click_handler>
             {children()}
         </button>
     }

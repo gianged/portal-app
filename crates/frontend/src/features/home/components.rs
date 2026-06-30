@@ -107,6 +107,79 @@ pub fn sidebar_sections() -> Vec<NavSection> {
             ],
         },
         NavSection {
+            label: "Time & attendance",
+            items: vec![
+                NavItem {
+                    label: "Daily report",
+                    href: "/daily-reports",
+                    icon: IconName::Calendar,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Team reports",
+                    href: "/daily-reports/team",
+                    icon: IconName::Doc,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "My leave",
+                    href: "/leave",
+                    icon: IconName::Calendar,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Time off",
+                    href: "/time-off",
+                    icon: IconName::Doc,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Leave approvals",
+                    href: "/leave-approvals",
+                    icon: IconName::Clock,
+                    count: None,
+                    enabled: true,
+                },
+            ],
+        },
+        NavSection {
+            label: "Schedule change",
+            items: vec![
+                NavItem {
+                    label: "Overtime",
+                    href: "/overtime",
+                    icon: IconName::Clock,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Overtime approvals",
+                    href: "/overtime-approvals",
+                    icon: IconName::Clock,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Flexible hours",
+                    href: "/flex-hours",
+                    icon: IconName::Calendar,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Flex approvals",
+                    href: "/flex-approvals",
+                    icon: IconName::Clock,
+                    count: None,
+                    enabled: true,
+                },
+            ],
+        },
+        NavSection {
             label: "Admin",
             items: vec![
                 NavItem {
@@ -134,6 +207,20 @@ pub fn sidebar_sections() -> Vec<NavSection> {
                     label: "Reports",
                     href: "/reports",
                     icon: IconName::Doc,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Attendance policy",
+                    href: "/policy",
+                    icon: IconName::Settings,
+                    count: None,
+                    enabled: true,
+                },
+                NavItem {
+                    label: "Holidays",
+                    href: "/holidays",
+                    icon: IconName::Calendar,
                     count: None,
                     enabled: true,
                 },

@@ -11,8 +11,15 @@
 mod audit;
 mod chat;
 mod comment;
+mod daily_report;
+mod day_off;
+mod flex_hours;
 mod group;
+mod holiday;
+mod leave_balance;
 mod notification;
+mod overtime;
+mod policy;
 mod project;
 mod report;
 mod request;
@@ -29,17 +36,32 @@ pub use self::{
         message_created_at, message_dto, post_announcement_command, post_message_command,
     },
     comment::comment_dto,
+    daily_report::{daily_report_dto, review_daily_report_command, upsert_daily_report_command},
+    day_off::{
+        create_day_off_command, day_off_dto, day_off_kind_domain, day_off_kind_dto,
+        day_off_status_dto, decide_day_off_command,
+    },
+    flex_hours::{decide_flex_command, flex_hours_dto, flex_status_dto, request_flex_command},
     group::{
         add_membership_command, create_group_command, group_dto, group_kind_domain, group_kind_dto,
         group_role_domain, group_role_dto, group_summary_dto, membership_dto,
         unknown_group_summary, update_group_metadata_command,
     },
+    holiday::holiday_dto,
+    leave_balance::{
+        adjust_balance_command, leave_balance_dto, leave_grant_dto, leave_statement_dto,
+        leave_transaction_dto, leave_txn_kind_dto, set_leave_grant_command,
+    },
     notification::{notification_dto, notification_payload_dto},
+    overtime::{
+        create_overtime_command, decide_overtime_command, overtime_dto, overtime_status_dto,
+    },
+    policy::{policy_dto, update_policy_command},
     project::{
         create_project_command, project_collaborator_dto, project_dto, project_invite_dto,
         project_invite_status_dto, project_status_dto, update_project_metadata_command,
     },
-    report::{monthly_report_dto, report_summary_dto, yearly_report_dto},
+    report::{monthly_report_dto, report_summary_dto, staff_monthly_report_dto, yearly_report_dto},
     request::{
         create_request_command, request_attachment_dto, request_dto, request_priority_domain,
         request_priority_dto, request_status_domain, request_status_dto, update_request_command,
@@ -86,6 +108,14 @@ id_map!(comment_id, CommentId);
 id_map!(notification_id, NotificationId);
 id_map!(audit_log_id, AuditLogId);
 id_map!(report_id, ReportId);
+id_map!(daily_report_id, DailyReportId);
+id_map!(daily_report_entry_id, DailyReportEntryId);
+id_map!(leave_grant_id, LeaveGrantId);
+id_map!(leave_transaction_id, LeaveTransactionId);
+id_map!(day_off_id, DayOffId);
+id_map!(overtime_id, OvertimeId);
+id_map!(flex_hours_id, FlexHoursId);
+id_map!(flex_segment_id, FlexSegmentId);
 
 // `channel_id` would collide with the local binding name in the notification
 // payload match arms; this alias lets that module project a `ChannelId` there.

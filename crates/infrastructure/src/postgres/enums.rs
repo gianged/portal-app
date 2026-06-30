@@ -1,7 +1,8 @@
 use domain::model::{
-    AuditAction, GroupKind, GroupRole, NotificationKind, ProjectInviteStatus, ProjectStatus,
-    ReportKind, ReportScope, RequestPriority, RequestStatus, SystemRole, TicketCategory,
-    TicketPriority, TicketStatus, UserStatus,
+    AuditAction, BalanceExpiryPolicy, DailyReportEntryKind, DailyReportStatus, DayOffKind,
+    DayOffStatus, FlexStatus, GroupKind, GroupRole, LeaveTxnKind, NotificationKind, OvertimeStatus,
+    ProjectInviteStatus, ProjectStatus, ReportKind, ReportScope, RequestPriority, RequestStatus,
+    SystemRole, TicketCategory, TicketPriority, TicketStatus, UserStatus,
 };
 
 #[derive(Debug, Clone, Copy, sqlx::Type)]
@@ -53,6 +54,266 @@ impl From<SqlSystemRole> for SystemRole {
         match v {
             SqlSystemRole::Director => Self::Director,
             SqlSystemRole::Hr => Self::Hr,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[sqlx(
+    type_name = "attendance.balance_expiry_policy",
+    rename_all = "snake_case"
+)]
+pub(crate) enum SqlBalanceExpiryPolicy {
+    Warn,
+    RecordWorkPct,
+}
+
+impl From<BalanceExpiryPolicy> for SqlBalanceExpiryPolicy {
+    fn from(v: BalanceExpiryPolicy) -> Self {
+        match v {
+            BalanceExpiryPolicy::Warn => Self::Warn,
+            BalanceExpiryPolicy::RecordWorkPct => Self::RecordWorkPct,
+        }
+    }
+}
+
+impl From<SqlBalanceExpiryPolicy> for BalanceExpiryPolicy {
+    fn from(v: SqlBalanceExpiryPolicy) -> Self {
+        match v {
+            SqlBalanceExpiryPolicy::Warn => Self::Warn,
+            SqlBalanceExpiryPolicy::RecordWorkPct => Self::RecordWorkPct,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[sqlx(
+    type_name = "attendance.daily_report_status",
+    rename_all = "snake_case"
+)]
+pub(crate) enum SqlDailyReportStatus {
+    Draft,
+    Submitted,
+    Approved,
+    Returned,
+}
+
+impl From<DailyReportStatus> for SqlDailyReportStatus {
+    fn from(v: DailyReportStatus) -> Self {
+        match v {
+            DailyReportStatus::Draft => Self::Draft,
+            DailyReportStatus::Submitted => Self::Submitted,
+            DailyReportStatus::Approved => Self::Approved,
+            DailyReportStatus::Returned => Self::Returned,
+        }
+    }
+}
+
+impl From<SqlDailyReportStatus> for DailyReportStatus {
+    fn from(v: SqlDailyReportStatus) -> Self {
+        match v {
+            SqlDailyReportStatus::Draft => Self::Draft,
+            SqlDailyReportStatus::Submitted => Self::Submitted,
+            SqlDailyReportStatus::Approved => Self::Approved,
+            SqlDailyReportStatus::Returned => Self::Returned,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[sqlx(
+    type_name = "attendance.daily_report_entry_kind",
+    rename_all = "snake_case"
+)]
+pub(crate) enum SqlDailyReportEntryKind {
+    RequestWork,
+    Learning,
+    Other,
+}
+
+impl From<DailyReportEntryKind> for SqlDailyReportEntryKind {
+    fn from(v: DailyReportEntryKind) -> Self {
+        match v {
+            DailyReportEntryKind::RequestWork => Self::RequestWork,
+            DailyReportEntryKind::Learning => Self::Learning,
+            DailyReportEntryKind::Other => Self::Other,
+        }
+    }
+}
+
+impl From<SqlDailyReportEntryKind> for DailyReportEntryKind {
+    fn from(v: SqlDailyReportEntryKind) -> Self {
+        match v {
+            SqlDailyReportEntryKind::RequestWork => Self::RequestWork,
+            SqlDailyReportEntryKind::Learning => Self::Learning,
+            SqlDailyReportEntryKind::Other => Self::Other,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[sqlx(type_name = "attendance.leave_txn_kind", rename_all = "snake_case")]
+pub(crate) enum SqlLeaveTxnKind {
+    Grant,
+    Consume,
+    Refund,
+    Adjust,
+    Expire,
+}
+
+impl From<LeaveTxnKind> for SqlLeaveTxnKind {
+    fn from(v: LeaveTxnKind) -> Self {
+        match v {
+            LeaveTxnKind::Grant => Self::Grant,
+            LeaveTxnKind::Consume => Self::Consume,
+            LeaveTxnKind::Refund => Self::Refund,
+            LeaveTxnKind::Adjust => Self::Adjust,
+            LeaveTxnKind::Expire => Self::Expire,
+        }
+    }
+}
+
+impl From<SqlLeaveTxnKind> for LeaveTxnKind {
+    fn from(v: SqlLeaveTxnKind) -> Self {
+        match v {
+            SqlLeaveTxnKind::Grant => Self::Grant,
+            SqlLeaveTxnKind::Consume => Self::Consume,
+            SqlLeaveTxnKind::Refund => Self::Refund,
+            SqlLeaveTxnKind::Adjust => Self::Adjust,
+            SqlLeaveTxnKind::Expire => Self::Expire,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[sqlx(type_name = "attendance.dayoff_kind", rename_all = "snake_case")]
+pub(crate) enum SqlDayOffKind {
+    AnnualLeave,
+    SickLeave,
+    UnpaidLeave,
+    Remote,
+    Other,
+}
+
+impl From<DayOffKind> for SqlDayOffKind {
+    fn from(v: DayOffKind) -> Self {
+        match v {
+            DayOffKind::AnnualLeave => Self::AnnualLeave,
+            DayOffKind::SickLeave => Self::SickLeave,
+            DayOffKind::UnpaidLeave => Self::UnpaidLeave,
+            DayOffKind::Remote => Self::Remote,
+            DayOffKind::Other => Self::Other,
+        }
+    }
+}
+
+impl From<SqlDayOffKind> for DayOffKind {
+    fn from(v: SqlDayOffKind) -> Self {
+        match v {
+            SqlDayOffKind::AnnualLeave => Self::AnnualLeave,
+            SqlDayOffKind::SickLeave => Self::SickLeave,
+            SqlDayOffKind::UnpaidLeave => Self::UnpaidLeave,
+            SqlDayOffKind::Remote => Self::Remote,
+            SqlDayOffKind::Other => Self::Other,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[sqlx(type_name = "attendance.dayoff_status", rename_all = "snake_case")]
+pub(crate) enum SqlDayOffStatus {
+    Pending,
+    LeaderApproved,
+    Approved,
+    Rejected,
+    Cancelled,
+}
+
+impl From<DayOffStatus> for SqlDayOffStatus {
+    fn from(v: DayOffStatus) -> Self {
+        match v {
+            DayOffStatus::Pending => Self::Pending,
+            DayOffStatus::LeaderApproved => Self::LeaderApproved,
+            DayOffStatus::Approved => Self::Approved,
+            DayOffStatus::Rejected => Self::Rejected,
+            DayOffStatus::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
+impl From<SqlDayOffStatus> for DayOffStatus {
+    fn from(v: SqlDayOffStatus) -> Self {
+        match v {
+            SqlDayOffStatus::Pending => Self::Pending,
+            SqlDayOffStatus::LeaderApproved => Self::LeaderApproved,
+            SqlDayOffStatus::Approved => Self::Approved,
+            SqlDayOffStatus::Rejected => Self::Rejected,
+            SqlDayOffStatus::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[sqlx(type_name = "attendance.overtime_status", rename_all = "snake_case")]
+pub(crate) enum SqlOvertimeStatus {
+    Pending,
+    LeaderApproved,
+    Approved,
+    Rejected,
+    Cancelled,
+}
+
+impl From<OvertimeStatus> for SqlOvertimeStatus {
+    fn from(v: OvertimeStatus) -> Self {
+        match v {
+            OvertimeStatus::Pending => Self::Pending,
+            OvertimeStatus::LeaderApproved => Self::LeaderApproved,
+            OvertimeStatus::Approved => Self::Approved,
+            OvertimeStatus::Rejected => Self::Rejected,
+            OvertimeStatus::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
+impl From<SqlOvertimeStatus> for OvertimeStatus {
+    fn from(v: SqlOvertimeStatus) -> Self {
+        match v {
+            SqlOvertimeStatus::Pending => Self::Pending,
+            SqlOvertimeStatus::LeaderApproved => Self::LeaderApproved,
+            SqlOvertimeStatus::Approved => Self::Approved,
+            SqlOvertimeStatus::Rejected => Self::Rejected,
+            SqlOvertimeStatus::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[sqlx(type_name = "attendance.flex_status", rename_all = "snake_case")]
+pub(crate) enum SqlFlexStatus {
+    Pending,
+    Approved,
+    Rejected,
+    Cancelled,
+}
+
+impl From<FlexStatus> for SqlFlexStatus {
+    fn from(v: FlexStatus) -> Self {
+        match v {
+            FlexStatus::Pending => Self::Pending,
+            FlexStatus::Approved => Self::Approved,
+            FlexStatus::Rejected => Self::Rejected,
+            FlexStatus::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
+impl From<SqlFlexStatus> for FlexStatus {
+    fn from(v: SqlFlexStatus) -> Self {
+        match v {
+            SqlFlexStatus::Pending => Self::Pending,
+            SqlFlexStatus::Approved => Self::Approved,
+            SqlFlexStatus::Rejected => Self::Rejected,
+            SqlFlexStatus::Cancelled => Self::Cancelled,
         }
     }
 }

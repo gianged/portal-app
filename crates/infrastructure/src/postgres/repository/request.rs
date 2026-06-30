@@ -35,6 +35,7 @@ struct RequestRow {
     description: String,
     status: SqlRequestStatus,
     priority: SqlRequestPriority,
+    progress: i16,
     due_at: Option<OffsetDateTime>,
     completed_at: Option<OffsetDateTime>,
     created_at: OffsetDateTime,
@@ -52,6 +53,7 @@ impl From<RequestRow> for Request {
             description: r.description,
             status: r.status.into(),
             priority: r.priority.into(),
+            progress: u8::try_from(r.progress).unwrap_or(0),
             due_at: r.due_at,
             completed_at: r.completed_at,
             created_at: r.created_at,
@@ -105,6 +107,7 @@ impl RequestRepository for PgRequestRepo {
                  description,
                  status   AS "status: SqlRequestStatus",
                  priority AS "priority: SqlRequestPriority",
+                 progress,
                  due_at,
                  completed_at,
                  created_at,
@@ -140,6 +143,7 @@ impl RequestRepository for PgRequestRepo {
                  description,
                  status   AS "status: SqlRequestStatus",
                  priority AS "priority: SqlRequestPriority",
+                 progress,
                  due_at,
                  completed_at,
                  created_at,
@@ -180,6 +184,7 @@ impl RequestRepository for PgRequestRepo {
                  description,
                  status   AS "status: SqlRequestStatus",
                  priority AS "priority: SqlRequestPriority",
+                 progress,
                  due_at,
                  completed_at,
                  created_at,
@@ -206,8 +211,8 @@ impl RequestRepository for PgRequestRepo {
         sqlx::query!(
             r#"INSERT INTO project.requests
                  (id, project_id, creator_user_id, assignee_user_id, title, description,
-                  status, priority, due_at, completed_at, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                  status, priority, progress, due_at, completed_at, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                ON CONFLICT (id) DO UPDATE SET
                  project_id        = EXCLUDED.project_id,
                  creator_user_id   = EXCLUDED.creator_user_id,
@@ -216,6 +221,7 @@ impl RequestRepository for PgRequestRepo {
                  description       = EXCLUDED.description,
                  status            = EXCLUDED.status,
                  priority          = EXCLUDED.priority,
+                 progress          = EXCLUDED.progress,
                  due_at            = EXCLUDED.due_at,
                  completed_at      = EXCLUDED.completed_at"#,
             request.id.0,
@@ -226,6 +232,7 @@ impl RequestRepository for PgRequestRepo {
             request.description,
             status as SqlRequestStatus,
             priority as SqlRequestPriority,
+            i16::from(request.progress),
             request.due_at,
             request.completed_at,
             request.created_at,

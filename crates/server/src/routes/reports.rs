@@ -8,13 +8,16 @@ use std::time::Duration;
 
 use axum::{
     Json, Router,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     routing,
 };
 use serde::Deserialize;
+use uuid::Uuid;
 
 use domain::{ids::UserId, model::Report, ports::file_storage::FileStorage};
-use shared::dto::report::{MonthlyReportDto, ReportSummaryDto, YearlyReportDto};
+use shared::dto::report::{
+    MonthlyReportDto, ReportSummaryDto, StaffMonthlyReportDto, YearlyReportDto,
+};
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser};
 
@@ -31,6 +34,10 @@ pub fn router() -> Router<AppState> {
         .route("/reports/yearly", routing::get(yearly_stats))
         .route("/reports/monthly/generate", routing::post(generate_monthly))
         .route("/reports/yearly/generate", routing::post(generate_yearly))
+        .route(
+            "/reports/staff/{user_id}/monthly",
+            routing::get(staff_monthly),
+        )
 }
 
 #[derive(Deserialize)]
@@ -47,6 +54,12 @@ struct MonthlyQuery {
 #[derive(Deserialize)]
 struct YearlyQuery {
     year: i32,
+}
+
+#[derive(Deserialize)]
+struct StaffMonthlyQuery {
+    year: i32,
+    month: u32,
 }
 
 async fn list(
@@ -82,6 +95,21 @@ async fn yearly_stats(
     state.perms.require_admin(auth.user_id).await?;
     let data = state.report.yearly_stats(q.year).await?;
     Ok(Json(dto::yearly_report_dto(&data)))
+}
+
+/// Per-staff monthly report. Authorization (self / leader / HR / Director) is
+/// enforced inside `ReportService::staff_monthly`, not here.
+async fn staff_monthly(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(user_id): Path<Uuid>,
+    Query(q): Query<StaffMonthlyQuery>,
+) -> Result<Json<StaffMonthlyReportDto>, AppError> {
+    let data = state
+        .report
+        .staff_monthly(auth.user_id, UserId(user_id), q.year, q.month)
+        .await?;
+    Ok(Json(dto::staff_monthly_report_dto(&data)))
 }
 
 async fn generate_monthly(

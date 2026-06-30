@@ -17,6 +17,7 @@ use crate::features::requests::components::{heading, subtle};
 use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::primitives::badge::Badge;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
+use crate::primitives::chart::ProgressBar;
 use crate::primitives::cluster::Cluster;
 use crate::primitives::dialog::{Dialog, DialogBody, DialogFooter, DialogHeader};
 use crate::primitives::empty_state::EmptyState;
@@ -159,6 +160,7 @@ fn requests_table(items: Vec<RequestDto>) -> AnyView {
                     <th>"Title"</th>
                     <th>"Status"</th>
                     <th>"Priority"</th>
+                    <th>"Progress"</th>
                     <th>"Assignee"</th>
                     <th>"Updated"</th>
                 </tr>
@@ -177,6 +179,7 @@ fn request_row(r: RequestDto) -> impl IntoView {
     let title = r.title.clone();
     let status = r.status;
     let priority = r.priority;
+    let progress = r.progress;
     let updated = format::relative_time(r.updated_at);
     let assignee = r.assignee.map(|a| a.full_name);
     let link_cls = theme::class(format!(
@@ -191,6 +194,7 @@ fn request_row(r: RequestDto) -> impl IntoView {
             <td><A href=href attr:class=link_cls>{title}</A></td>
             <td><Badge variant=format::request_status_variant(status)>{status.label()}</Badge></td>
             <td><Badge variant=format::request_priority_variant(priority)>{priority.label()}</Badge></td>
+            <td>{progress_cell(progress)}</td>
             <td>{match assignee {
                 Some(name) => assignee_cell(&name),
                 None => view! { <span class="cell-muted">"—"</span> }.into_any(),
@@ -198,6 +202,23 @@ fn request_row(r: RequestDto) -> impl IntoView {
             <td><span class="cell-muted">{updated}</span></td>
         </tr>
     }
+}
+
+fn progress_cell(progress: u8) -> AnyView {
+    let wrap = theme::class(format!(
+        "display: inline-flex; align-items: center; gap: {g}; min-width: 120px;",
+        g = space::D2
+    ));
+    let bar = theme::class("flex: 1; min-width: 70px;");
+    view! {
+        <span class=wrap>
+            <div class=bar>
+                <ProgressBar value=Signal::derive(move || progress) />
+            </div>
+            <span class="cell-muted">{format!("{progress}%")}</span>
+        </span>
+    }
+    .into_any()
 }
 
 fn assignee_cell(name: &str) -> AnyView {
@@ -319,7 +340,7 @@ fn CreateRequestDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl I
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting.get()>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
                     {move || if submitting.get() { "Creating…" } else { "Create request" }}
                 </Button>
             </DialogFooter>

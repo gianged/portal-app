@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT holiday_date, name\n               FROM attendance.holidays\n               WHERE holiday_date BETWEEN $1 AND $2\n               ORDER BY holiday_date",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "holiday_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "attendance.holidays",
+            "name": "holiday_date"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attendance.holidays",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "6638d53909587c4793ae136fb99ae4a06c599026f2302fe7bbc0519a031d85dd"
+}

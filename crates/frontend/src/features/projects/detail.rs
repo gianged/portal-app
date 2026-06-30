@@ -460,7 +460,7 @@ fn ProgressEditor(id: ProjectId, initial: u8, reload: RwSignal<u32>) -> impl Int
                         variant=ButtonVariant::Primary
                         size=ButtonSize::Sm
                         on_click=save
-                        disabled=saving.get()
+                        disabled=Signal::derive(move || saving.get())
                     >
                         "Save"
                     </Button>

@@ -3,10 +3,10 @@ use time::OffsetDateTime;
 
 use crate::{
     error::RepositoryError,
-    ids::ReportId,
+    ids::{ReportId, UserId},
     model::{
         CompanyStaffStats, GroupProjectStats, GroupRequestStats, GroupStaffStats, MonthlyBucket,
-        Period, Report, ReportKind, TicketStats,
+        Period, Report, ReportKind, StaffMonthlyStats, TicketStats,
     },
 };
 
@@ -41,6 +41,14 @@ pub trait ReportStatsRepository: Send + Sync {
 
     /// Twelve monthly buckets for the given calendar year, oldest first.
     async fn monthly_growth(&self, year: i32) -> Result<Vec<MonthlyBucket>, RepositoryError>;
+
+    /// SQL-derived monthly stats for one staff member over `period`. The service
+    /// fills in the work percentage and flex delta from the leave/flex services.
+    async fn staff_monthly_stats(
+        &self,
+        user: UserId,
+        period: Period,
+    ) -> Result<StaffMonthlyStats, RepositoryError>;
 }
 
 /// Archive of generated report artifacts (metadata only; payload in file storage).

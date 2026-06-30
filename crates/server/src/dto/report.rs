@@ -2,15 +2,16 @@
 
 use domain::model::{
     GroupKind, GroupReportRow, GrowthPoint, GrowthSeries, MonthlyReportData, Report, ReportKind,
-    StaffSummary, TicketCategory, TicketStatus, TicketSummary, YearlyReportData,
+    StaffMonthlyReport, StaffSummary, TicketCategory, TicketStatus, TicketSummary,
+    YearlyReportData,
 };
 use shared::dto::report::{
     GroupHeadcountDto, GroupReportRowDto, GrowthPointDto, GrowthSeriesDto, LabeledCountDto,
-    MonthlyReportDto, ReportKindDto, ReportSummaryDto, StaffSummaryDto, TicketSummaryDto,
-    YearlyReportDto, YearlyTotalsDto,
+    MonthlyReportDto, ReportKindDto, ReportSummaryDto, StaffLeaveDaysDto, StaffMonthlyReportDto,
+    StaffSummaryDto, TicketSummaryDto, YearlyReportDto, YearlyTotalsDto,
 };
 
-use super::{group_id, report_id};
+use super::{day_off_kind_dto, group_id, report_id, user_id};
 
 fn report_kind_dto(kind: ReportKind) -> ReportKindDto {
     match kind {
@@ -146,6 +147,36 @@ pub fn yearly_report_dto(data: &YearlyReportData) -> YearlyReportDto {
             projects_completed: data.totals.projects_completed,
             requests_completed: data.totals.requests_completed,
         },
+    }
+}
+
+#[must_use]
+pub fn staff_monthly_report_dto(data: &StaffMonthlyReport) -> StaffMonthlyReportDto {
+    StaffMonthlyReportDto {
+        user_id: user_id(data.user_id),
+        year: data.period.start.year(),
+        month: u8::from(data.period.start.month()),
+        days_reported: data.days_reported,
+        hours_request_work: data.hours_request_work,
+        hours_learning: data.hours_learning,
+        hours_other: data.hours_other,
+        leave_days_by_kind: data
+            .leave_days_by_kind
+            .iter()
+            .map(|(kind, days)| StaffLeaveDaysDto {
+                kind: day_off_kind_dto(*kind),
+                days: *days,
+            })
+            .collect(),
+        overtime_hours: data.overtime_hours,
+        flex_days: data.flex_days,
+        flex_month_delta: data.flex_month_delta,
+        work_percentage: data.work_percentage,
+        balance_remaining: data.balance_remaining,
+        balance_expiring_soon: data.balance_expiring_soon,
+        requests_completed: data.requests_completed,
+        requests_open: data.requests_open,
+        avg_request_progress: data.avg_request_progress,
     }
 }
 

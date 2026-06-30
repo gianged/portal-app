@@ -227,6 +227,38 @@ impl Permissions {
         }
     }
 
+    /// Reports whether the actor is the active leader of at least one group the
+    /// `member` actively belongs to. Backs leader review/approval of a member's
+    /// attendance records (daily reports, leave, overtime, flex).
+    ///
+    /// # Errors
+    /// Returns a repository error if the datastore is unavailable.
+    pub async fn is_leader_of_member(&self, actor: UserId, member: UserId) -> Result<bool> {
+        let memberships = self.groups.list_active_memberships_for_user(member).await?;
+        for m in memberships {
+            if matches!(
+                self.group_role(actor, m.group_id).await?,
+                Some(GroupRole::Leader)
+            ) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Verifies the actor is active and the leader of at least one of `member`'s groups.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the actor does not exist, `Forbidden` if the actor is inactive or leads none of the member's groups, or a repository error if the datastore is unavailable.
+    pub async fn require_leader_of_member(&self, actor: UserId, member: UserId) -> Result<()> {
+        self.require_active(actor).await?;
+        if self.is_leader_of_member(actor, member).await? {
+            Ok(())
+        } else {
+            Err(Error::Forbidden)
+        }
+    }
+
     /// Verifies the actor holds any active role in `group`.
     ///
     /// # Errors

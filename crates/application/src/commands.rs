@@ -1,5 +1,11 @@
 pub mod chat;
+pub mod daily_report;
+pub mod day_off;
+pub mod flex_hours;
 pub mod group;
+pub mod leave_balance;
+pub mod overtime;
+pub mod policy;
 pub mod project;
 pub mod request;
 pub mod ticket;

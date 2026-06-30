@@ -95,7 +95,7 @@ pub fn MonthlyTab() -> impl IntoView {
                     variant=ButtonVariant::Primary
                     size=ButtonSize::Sm
                     on_click=on_download
-                    disabled=generating.get()
+                    disabled=Signal::derive(move || generating.get())
                 >
                     <Icon name=IconName::Doc size=14 />
                     {move || if generating.get() { " Generating…" } else { " Generate PDF" }}

@@ -1,0 +1,114 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 id,\n                 user_id,\n                 grant_year,\n                 days_granted::float8   AS \"days_granted!\",\n                 days_remaining::float8 AS \"days_remaining!\",\n                 expires_on,\n                 created_by_user_id,\n                 created_at,\n                 updated_at\n               FROM attendance.leave_grants\n               WHERE user_id = $1\n               ORDER BY grant_year DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_grants",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_grants",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "grant_year",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_grants",
+            "name": "grant_year"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "days_granted!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "days_remaining!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "expires_on",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_grants",
+            "name": "expires_on"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_by_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_grants",
+            "name": "created_by_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_grants",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.leave_grants",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "4ff282877a2b719bbdaf46da929219e8f66f2119995c7fc03ba38222e680af7b"
+}

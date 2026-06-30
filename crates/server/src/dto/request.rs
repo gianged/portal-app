@@ -81,6 +81,7 @@ pub fn request_dto(
         description: request.description.clone(),
         status: request_status_dto(request.status),
         priority: request_priority_dto(request.priority),
+        progress: request.progress,
         due_at: request.due_at,
         created_at: request.created_at,
         updated_at: request.updated_at,

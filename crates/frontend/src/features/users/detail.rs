@@ -224,7 +224,7 @@ fn ChangePasswordDialog(open: RwSignal<bool>) -> impl IntoView {
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting.get()>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
                     {move || if submitting.get() { "Changing…" } else { "Change password" }}
                 </Button>
             </DialogFooter>
@@ -286,7 +286,7 @@ fn ResetPasswordDialog(
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting.get()>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
                     {move || if submitting.get() { "Resetting…" } else { "Reset password" }}
                 </Button>
             </DialogFooter>
@@ -403,7 +403,7 @@ fn EditProfileDialog(
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting.get()>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
                     {move || if submitting.get() { "Saving…" } else { "Save" }}
                 </Button>
             </DialogFooter>

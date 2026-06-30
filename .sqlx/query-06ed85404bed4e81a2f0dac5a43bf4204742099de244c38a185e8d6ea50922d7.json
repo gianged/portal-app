@@ -1,0 +1,241 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 d.id, d.requester_user_id,\n                 d.kind AS \"kind: SqlDayOffKind\",\n                 d.start_date, d.end_date, d.start_half, d.end_half,\n                 d.days::float8 AS \"days!\",\n                 d.reason,\n                 d.status AS \"status: SqlDayOffStatus\",\n                 d.leader_user_id, d.leader_decided_at, d.hr_user_id, d.hr_decided_at,\n                 d.decision_note, d.created_at, d.updated_at\n               FROM attendance.dayoff d\n               JOIN org.memberships mem ON mem.user_id = d.requester_user_id\n               WHERE mem.group_id = $1\n                 AND mem.deactivated_at IS NULL\n                 AND d.status = 'pending'\n               ORDER BY d.created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "requester_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "requester_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "kind: SqlDayOffKind",
+        "type_info": {
+          "Custom": {
+            "name": "attendance.dayoff_kind",
+            "kind": {
+              "Enum": [
+                "annual_leave",
+                "sick_leave",
+                "unpaid_leave",
+                "remote",
+                "other"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "start_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "start_date"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "end_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "end_date"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "start_half",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "start_half"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "end_half",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "end_half"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "days!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "reason"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "status: SqlDayOffStatus",
+        "type_info": {
+          "Custom": {
+            "name": "attendance.dayoff_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "leader_approved",
+                "approved",
+                "rejected",
+                "cancelled"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "leader_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "leader_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "leader_decided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "leader_decided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "hr_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "hr_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "hr_decided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "hr_decided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "decision_note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "decision_note"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "attendance.dayoff",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "06ed85404bed4e81a2f0dac5a43bf4204742099de244c38a185e8d6ea50922d7"
+}

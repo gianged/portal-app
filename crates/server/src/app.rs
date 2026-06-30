@@ -20,8 +20,9 @@ use application::{
     resilience::{self, HealthRegistry},
     service::{
         AnnouncementService, AuditService, ChatIngest, ChatIngestConfig, ChatService,
-        CommentService, GroupService, NotificationService, ProjectService, ReportService,
-        RequestService, TicketService, UserService,
+        CommentService, DailyReportService, DayOffService, FlexHoursService, GroupService,
+        HolidayService, LeaveBalanceService, NotificationService, OvertimeService, PolicyProvider,
+        PolicyService, ProjectService, ReportService, RequestService, TicketService, UserService,
     },
 };
 use domain::{
@@ -32,8 +33,10 @@ use domain::{
     },
     repository::{
         AuditRepository, ChatAttachmentRepository, ChatRepository, CommentRepository,
-        GroupRepository, NotificationRepository, ProjectRepository, ReportArchiveRepository,
-        ReportStatsRepository, RequestRepository, TicketRepository, UserRepository,
+        DailyReportRepository, DayOffRepository, FlexHoursRepository, GroupRepository,
+        HolidayRepository, LeaveBalanceRepository, NotificationRepository, OvertimeRepository,
+        PolicyRepository, ProjectRepository, ReportArchiveRepository, ReportStatsRepository,
+        RequestRepository, TicketRepository, UserRepository,
     },
 };
 use infrastructure::{
@@ -42,8 +45,10 @@ use infrastructure::{
     local_storage::LocalStorage,
     openfga::{self, OpenFgaAuthzClient},
     postgres::{
-        PgAuditRepo, PgChatAttachmentRepo, PgCommentRepo, PgGroupRepo, PgNotificationRepo,
-        PgProjectRepo, PgReportingRepo, PgRequestRepo, PgTicketRepo, PgUserRepo, build_pool,
+        PgAuditRepo, PgChatAttachmentRepo, PgCommentRepo, PgDailyReportRepo, PgDayOffRepo,
+        PgFlexRepo, PgGroupRepo, PgHolidayRepo, PgLeaveBalanceRepo, PgNotificationRepo,
+        PgOvertimeRepo, PgPolicyRepo, PgProjectRepo, PgReportingRepo, PgRequestRepo, PgTicketRepo,
+        PgUserRepo, build_pool,
     },
     redis::{PresenceStore, RateLimiter, RedisEventPublisher, RedisSpool, RedisTokenRevocation},
     report::PrintPdfReportRenderer,
@@ -79,6 +84,21 @@ pub struct AppState {
     pub announcement: Arc<AnnouncementService>,
     pub notification: Arc<NotificationService>,
     pub report: Arc<ReportService>,
+    // Tunable attendance limits, cached and swapped on update. Other attendance
+    // services read the same `PolicyProvider` this service wraps.
+    pub policy: Arc<PolicyService>,
+    // Daily reports: staff describe their day; leaders review per group.
+    pub daily_report: Arc<DailyReportService>,
+    // HR-maintained public-holiday calendar.
+    pub holiday: Arc<HolidayService>,
+    // Leave grants + ledger; consumed/refunded by day-off, swept for expiry.
+    pub leave: Arc<LeaveBalanceService>,
+    // Leave requests with leader/HR approval.
+    pub day_off: Arc<DayOffService>,
+    // Overtime requests with leader/HR approval, capped monthly by policy.
+    pub overtime: Arc<OvertimeService>,
+    // Per-day flexible-hours requests with leader approval, settled monthly.
+    pub flex: Arc<FlexHoursService>,
     // Director/HR gate for the report endpoints (resolved per request).
     pub perms: Arc<Permissions>,
     // Session-cookie tokens + the real-time pub/sub handle, consumed by the auth
@@ -303,6 +323,70 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
         drain: ingest_drain,
     };
 
+    // Attendance policy: load the singleton into a cached provider at boot so reads
+    // are lock-free. Other attendance services share this `policy_provider`.
+    let policy_repo: Arc<dyn PolicyRepository> = Arc::new(PgPolicyRepo::new(pool.clone()));
+    let policy_provider = Arc::new(PolicyProvider::new(
+        policy_repo
+            .load()
+            .await
+            .context("loading attendance policy")?,
+    ));
+
+    // Request service is hoisted so the daily-report service can bump request
+    // progress when a report's RequestWork entries carry a completion hint.
+    let request_service = Arc::new(RequestService::new(
+        requests.clone(),
+        projects.clone(),
+        groups.clone(),
+        storage_port.clone(),
+        perms.clone(),
+        events.clone(),
+    ));
+    let daily_report_repo: Arc<dyn DailyReportRepository> =
+        Arc::new(PgDailyReportRepo::new(pool.clone()));
+
+    // Leave subsystem. No cycle: LeaveBalanceService depends on the DayOff
+    // repository trait, while DayOffService depends on the LeaveBalance service.
+    let holiday_repo: Arc<dyn HolidayRepository> = Arc::new(PgHolidayRepo::new(pool.clone()));
+    let leave_repo: Arc<dyn LeaveBalanceRepository> =
+        Arc::new(PgLeaveBalanceRepo::new(pool.clone()));
+    let day_off_repo: Arc<dyn DayOffRepository> = Arc::new(PgDayOffRepo::new(pool.clone()));
+    let holiday_service = Arc::new(HolidayService::new(holiday_repo.clone(), perms.clone()));
+    let leave_service = Arc::new(LeaveBalanceService::new(
+        leave_repo,
+        holiday_repo.clone(),
+        day_off_repo.clone(),
+        policy_provider.clone(),
+        perms.clone(),
+        events.clone(),
+    ));
+    let day_off_service = Arc::new(DayOffService::new(
+        day_off_repo,
+        holiday_repo,
+        leave_service.clone(),
+        perms.clone(),
+        events.clone(),
+    ));
+
+    // Overtime: leader + HR approval, capped monthly by the cached policy.
+    let overtime_repo: Arc<dyn OvertimeRepository> = Arc::new(PgOvertimeRepo::new(pool.clone()));
+    let overtime_service = Arc::new(OvertimeService::new(
+        overtime_repo,
+        policy_provider.clone(),
+        perms.clone(),
+        events.clone(),
+    ));
+
+    // Flexible hours: leader approval, per-day shape + monthly cap from policy.
+    let flex_repo: Arc<dyn FlexHoursRepository> = Arc::new(PgFlexRepo::new(pool.clone()));
+    let flex_service = Arc::new(FlexHoursService::new(
+        flex_repo,
+        policy_provider.clone(),
+        perms.clone(),
+        events.clone(),
+    ));
+
     let state = AppState {
         user: Arc::new(UserService::new(
             users.clone(),
@@ -326,14 +410,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
             perms.clone(),
             events.clone(),
         )),
-        request: Arc::new(RequestService::new(
-            requests.clone(),
-            projects.clone(),
-            groups.clone(),
-            storage_port.clone(),
-            perms.clone(),
-            events.clone(),
-        )),
+        request: request_service.clone(),
         ticket: Arc::new(TicketService::new(
             tickets.clone(),
             perms.clone(),
@@ -363,7 +440,28 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
             report_renderer,
             storage_port.clone(),
             users.clone(),
+            leave_service.clone(),
+            flex_service.clone(),
+            perms.clone(),
         )),
+        policy: Arc::new(PolicyService::new(
+            policy_repo.clone(),
+            policy_provider.clone(),
+            perms.clone(),
+            events.clone(),
+        )),
+        daily_report: Arc::new(DailyReportService::new(
+            daily_report_repo,
+            groups.clone(),
+            request_service.clone(),
+            perms.clone(),
+            events.clone(),
+        )),
+        holiday: holiday_service,
+        leave: leave_service,
+        day_off: day_off_service,
+        overtime: overtime_service,
+        flex: flex_service,
         perms: perms.clone(),
         token,
         revocation,
@@ -407,6 +505,13 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::notifications::router())
         .merge(routes::audit::router())
         .merge(routes::reports::router())
+        .merge(routes::policy::router())
+        .merge(routes::daily_reports::router())
+        .merge(routes::holidays::router())
+        .merge(routes::leave_balance::router())
+        .merge(routes::day_off::router())
+        .merge(routes::overtime::router())
+        .merge(routes::flex_hours::router())
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::middleware::rate_limit::per_user,

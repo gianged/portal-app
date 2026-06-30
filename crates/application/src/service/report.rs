@@ -5,7 +5,8 @@ use domain::{
     ids::{ReportId, UserId},
     model::{
         GroupReportRow, GrowthPoint, GrowthSeries, MonthlyReportData, Period, Report, ReportKind,
-        ReportScope, StaffSummary, TicketSummary, YearlyReportData, YearlyTotals,
+        ReportScope, StaffMonthlyReport, StaffSummary, TicketSummary, YearlyReportData,
+        YearlyTotals,
     },
     ports::{file_storage::FileStorage, report_renderer::ReportRenderer},
     repository::{ReportArchiveRepository, ReportStatsRepository, UserRepository},
@@ -13,7 +14,11 @@ use domain::{
 use time::{Date, Month, OffsetDateTime};
 use uuid::Uuid;
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    permissions::Permissions,
+    service::{FlexHoursService, LeaveBalanceService},
+};
 
 /// A project counts as "stuck" if on hold, or active with no update in this many days.
 const STUCK_DAYS: i32 = 14;
@@ -37,16 +42,25 @@ pub struct ReportService {
     renderer: Arc<dyn ReportRenderer>,
     storage: Arc<dyn FileStorage>,
     users: Arc<dyn UserRepository>,
+    // The per-staff report reuses the leave/flex services for work percentage and
+    // flex reconciliation, and `perms` to gate the subject (self / leader / admin).
+    leave: Arc<LeaveBalanceService>,
+    flex: Arc<FlexHoursService>,
+    perms: Arc<Permissions>,
 }
 
 impl ReportService {
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         stats: Arc<dyn ReportStatsRepository>,
         archive: Arc<dyn ReportArchiveRepository>,
         renderer: Arc<dyn ReportRenderer>,
         storage: Arc<dyn FileStorage>,
         users: Arc<dyn UserRepository>,
+        leave: Arc<LeaveBalanceService>,
+        flex: Arc<FlexHoursService>,
+        perms: Arc<Permissions>,
     ) -> Self {
         Self {
             stats,
@@ -54,6 +68,9 @@ impl ReportService {
             renderer,
             storage,
             users,
+            leave,
+            flex,
+            perms,
         }
     }
 
@@ -73,6 +90,65 @@ impl ReportService {
     #[tracing::instrument(skip_all)]
     pub async fn yearly_stats(&self, year: i32) -> Result<YearlyReportData> {
         self.assemble_yearly(year).await
+    }
+
+    /// A single staff member's monthly report. The actor may view their own report,
+    /// a report for a member of a group they lead, or (as HR/Director) anyone's.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor may not view the subject's report,
+    /// `Validation` for an invalid month, or a repository / service error.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, subject = ?subject, year, month))]
+    pub async fn staff_monthly(
+        &self,
+        actor: UserId,
+        subject: UserId,
+        year: i32,
+        month: u32,
+    ) -> Result<StaffMonthlyReport> {
+        if actor != subject {
+            match self.perms.require_leader_of_member(actor, subject).await {
+                Ok(()) => {}
+                Err(Error::Forbidden) => self.perms.require_admin(actor).await?,
+                Err(e) => return Err(e),
+            }
+        }
+
+        let month_u8 =
+            u8::try_from(month).map_err(|_| Error::Validation("month must be 1-12".into()))?;
+        let period = month_period(year, month_u8)?;
+        // Balance as of the last day of the report month.
+        let asof = period
+            .end
+            .date()
+            .previous_day()
+            .ok_or_else(|| Error::Validation("invalid report period".into()))?;
+
+        // TODO: I8 - scheduled per-staff PDF archival (extend the monthly scheduler
+        // to render/store a per-staff PDF per active user) is deferred.
+        let stats = self.stats.staff_monthly_stats(subject, period).await?;
+        let work_percentage = pct(self.leave.work_percentage(subject, year, month).await?);
+        let flex_month_delta = self.flex.month_delta(subject, year, month).await?;
+        let balance_remaining = self.leave.available(subject, asof).await?;
+
+        Ok(StaffMonthlyReport {
+            user_id: subject,
+            period,
+            days_reported: stats.days_reported,
+            hours_request_work: stats.hours_request_work,
+            hours_learning: stats.hours_learning,
+            hours_other: stats.hours_other,
+            leave_days_by_kind: stats.leave_days_by_kind,
+            overtime_hours: stats.overtime_hours,
+            flex_days: stats.flex_days,
+            flex_month_delta,
+            work_percentage,
+            balance_remaining,
+            balance_expiring_soon: stats.balance_expiring_soon,
+            requests_completed: stats.requests_completed,
+            requests_open: stats.requests_open,
+            avg_request_progress: stats.avg_request_progress,
+        })
     }
 
     /// Generates (or returns the existing) monthly PDF, storing the artifact.
@@ -372,6 +448,18 @@ impl ReportService {
                 requests_completed,
             },
         })
+    }
+}
+
+/// Round and clamp a percentage value into the 0-100 range.
+fn pct(v: f64) -> u8 {
+    let r = v.round();
+    if r <= 0.0 {
+        0
+    } else if r >= 100.0 {
+        100
+    } else {
+        r as u8
     }
 }
 
