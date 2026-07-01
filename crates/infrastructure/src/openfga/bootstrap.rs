@@ -1,6 +1,6 @@
 use reqwest::Client;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use domain::error::AuthzError;
 
@@ -72,7 +72,7 @@ async fn ensure_model(
     if let Some(model) = existing.authorization_models.into_iter().next() {
         return Ok(model.id);
     }
-    let body: serde_json::Value = serde_json::from_str(model_json)
+    let body: Value = serde_json::from_str(model_json)
         .map_err(|e| AuthzError::Backend(format!("invalid openfga model json: {e}")))?;
     let created: WriteModelResponse = post_json(
         http,

@@ -19,8 +19,7 @@ use shared::{
 };
 
 use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve,
-    routes::parse_date,
+    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
 };
 
 pub fn router() -> Router<AppState> {
@@ -53,7 +52,7 @@ async fn create(
     Json(body): Json<CreateOvertimeRequest>,
 ) -> Result<Json<OvertimeDto>, AppError> {
     validate_overtime(&body).map_err(|e| AppError::Validation(e.to_string()))?;
-    let work_date = parse_date(&body.work_date)?;
+    let work_date = routes::parse_date(&body.work_date)?;
     let cmd = dto::create_overtime_command(work_date, body);
     let overtime = state.overtime.create(auth.user_id, cmd).await?;
     Ok(Json(single(&state, &overtime).await?))
@@ -64,8 +63,8 @@ async fn list_mine(
     auth: AuthUser,
     Query(q): Query<RangeQuery>,
 ) -> Result<Json<Vec<OvertimeDto>>, AppError> {
-    let from = parse_date(&q.from)?;
-    let to = parse_date(&q.to)?;
+    let from = routes::parse_date(&q.from)?;
+    let to = routes::parse_date(&q.to)?;
     let list = state.overtime.list_mine(auth.user_id, from, to).await?;
     Ok(Json(many(&state, list).await?))
 }

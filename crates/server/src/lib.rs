@@ -18,6 +18,8 @@ pub mod realtime;
 pub mod resolve;
 pub mod routes;
 
+#[cfg(not(unix))]
+use std::future;
 use std::{net::SocketAddr, process, time::Duration};
 
 use infrastructure::telemetry;
@@ -89,7 +91,7 @@ async fn wait_for_shutdown() {
         }
     };
     #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
+    let terminate = future::pending::<()>();
 
     tokio::select! {
         () = ctrl_c => {}

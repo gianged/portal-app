@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::pin::Pin;
 
 use async_trait::async_trait;
@@ -65,6 +66,6 @@ pub async fn subscribe(
     )))
 }
 
-fn backend<E: std::fmt::Display>(e: E) -> EventError {
+fn backend<E: Display>(e: E) -> EventError {
     EventError::Backend(e.to_string())
 }

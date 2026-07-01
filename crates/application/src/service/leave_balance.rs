@@ -2,10 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use domain::{
     ids::{DayOffId, LeaveGrantId, LeaveTransactionId, UserId},
-    model::{
-        BalanceExpiryPolicy, LeaveGrant, LeaveTransaction, LeaveTxnKind, allocate_fifo,
-        working_days,
-    },
+    model::{self, BalanceExpiryPolicy, LeaveGrant, LeaveTransaction, LeaveTxnKind},
     repository::{DayOffRepository, HolidayRepository, LeaveBalanceRepository},
 };
 use time::{Date, Month, OffsetDateTime};
@@ -238,7 +235,7 @@ impl LeaveBalanceService {
             .into_iter()
             .map(|h| h.date)
             .collect();
-        let working = working_days(first, last, false, false, &holiday_dates);
+        let working = model::working_days(first, last, false, false, &holiday_dates);
         if working <= 0.0 {
             return Ok(0.0);
         }
@@ -264,7 +261,7 @@ impl LeaveBalanceService {
             return Ok(());
         }
         let grants = self.leave.list_grants(user).await?;
-        let deltas = allocate_fifo(&grants, days, now.date())
+        let deltas = model::allocate_fifo(&grants, days, now.date())
             .map_err(|_| Error::Conflict("insufficient_leave_balance".into()))?;
         if deltas.is_empty() {
             return Ok(());

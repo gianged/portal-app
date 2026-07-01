@@ -8,11 +8,12 @@ use axum::{
     routing,
 };
 use serde::Deserialize;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use domain::{
     ids::{CommentId, TicketId, UserId},
-    model::{CommentEntity, Ticket},
+    model::{Comment, CommentEntity, Ticket},
 };
 use shared::{
     dto::{
@@ -22,7 +23,9 @@ use shared::{
     validation::{comment, ticket},
 };
 
-use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
+use crate::{
+    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -120,10 +123,10 @@ async fn delete_comment(
 async fn comment_to_dto(
     state: &AppState,
     viewer: UserId,
-    comment: &domain::model::Comment,
+    comment: &Comment,
 ) -> Result<Json<CommentDto>, AppError> {
     let author = resolve::user_summary(&state.user, &state.group, comment.author_user_id).await?;
-    let now = time::OffsetDateTime::now_utc();
+    let now = OffsetDateTime::now_utc();
     Ok(Json(dto::comment_dto(comment, author, viewer, now)))
 }
 
@@ -131,7 +134,7 @@ async fn comment_to_dto(
 async fn comments_to_dtos(
     state: &AppState,
     viewer: UserId,
-    comments: Vec<domain::model::Comment>,
+    comments: Vec<Comment>,
 ) -> Result<Json<Vec<CommentDto>>, AppError> {
     let authors = resolve::user_map(
         &state.user,
@@ -139,7 +142,7 @@ async fn comments_to_dtos(
         comments.iter().map(|c| c.author_user_id),
     )
     .await?;
-    let now = time::OffsetDateTime::now_utc();
+    let now = OffsetDateTime::now_utc();
     Ok(Json(
         comments
             .iter()
@@ -190,7 +193,7 @@ async fn list(
     auth: AuthUser,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<TicketDto>>, AppError> {
-    let search = crate::routes::norm_q(q.q);
+    let search = routes::norm_q(q.q);
     let search = search.as_deref();
     let tickets = match q.scope.unwrap_or(Scope::Mine) {
         Scope::Triage => {

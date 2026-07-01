@@ -2,7 +2,7 @@
 
 use leptos::{prelude::*, task};
 
-use shared::dto::chat::{EditMessageRequest, MessageDto};
+use shared::dto::chat::{ChatAttachmentDto, EditMessageRequest, MessageDto};
 use shared::dto::ids::{ChannelId, MessageId, UserId};
 use shared::dto::ws::ClientFrame;
 use shared::validation::chat;
@@ -252,7 +252,7 @@ fn message_row(
 }
 
 /// Renders attachments: images inline, everything else as a paperclip file row; URLs are presigned per viewer.
-fn attachment_views(attachments: Vec<shared::dto::chat::ChatAttachmentDto>) -> AnyView {
+fn attachment_views(attachments: Vec<ChatAttachmentDto>) -> AnyView {
     let img_cls = theme::class(format!(
         "max-width: 320px; max-height: 240px; border-radius: 6px; border: 1px solid {b}; \
          display: block;",

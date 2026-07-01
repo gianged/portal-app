@@ -1,7 +1,7 @@
 use crate::{
     dto::day_off::{CreateDayOffRequest, DecideDayOffRequest},
     errors::SharedError,
-    validation::common,
+    validation::common::{self, DESCRIPTION_MAX},
 };
 
 /// Validates a leave request: well-formed dates with `end >= start`, sensible
@@ -24,7 +24,7 @@ pub fn validate_day_off(req: &CreateDayOffRequest) -> Result<(), SharedError> {
             "Use a single half-day flag for a one-day request".into(),
         ));
     }
-    common::max_len("Reason", &req.reason, common::DESCRIPTION_MAX)?;
+    common::max_len("Reason", &req.reason, DESCRIPTION_MAX)?;
     Ok(())
 }
 
@@ -33,6 +33,6 @@ pub fn validate_day_off(req: &CreateDayOffRequest) -> Result<(), SharedError> {
 /// # Errors
 /// Returns [`SharedError::Validation`] when the note is too long.
 pub fn validate_decide_day_off(req: &DecideDayOffRequest) -> Result<(), SharedError> {
-    common::max_len("Note", &req.note, common::DESCRIPTION_MAX)?;
+    common::max_len("Note", &req.note, DESCRIPTION_MAX)?;
     Ok(())
 }

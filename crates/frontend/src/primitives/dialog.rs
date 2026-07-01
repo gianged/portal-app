@@ -1,4 +1,4 @@
-use leptos::ev::KeyboardEvent;
+use leptos::ev::{KeyboardEvent, keydown};
 use leptos::prelude::*;
 
 use crate::theme::{self, color, radius, space, typography};
@@ -31,7 +31,7 @@ pub fn Dialog(
 
     // Close on Escape while open. Registered once for the component's lifetime;
     // reads `open` untracked since the handler is not a reactive context.
-    let handle = window_event_listener(leptos::ev::keydown, move |ev: KeyboardEvent| {
+    let handle = window_event_listener(keydown, move |ev: KeyboardEvent| {
         if open.get_untracked()
             && ev.key() == "Escape"
             && let Some(cb) = on_close

@@ -118,13 +118,14 @@ impl IntoResponse for AppError {
 mod tests {
     use super::*;
 
+    use axum::body;
     use domain::error::{EventError, JobError, RepositoryError, StorageError, TransitionError};
 
     /// Renders an `AppError` and decodes the wire body the frontend would see.
     async fn decode(err: AppError) -> (StatusCode, ApiError) {
         let response = err.into_response();
         let status = response.status();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        let bytes = body::to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("buffer response body");
         let body: ApiError = serde_json::from_slice(&bytes).expect("decode ApiError");

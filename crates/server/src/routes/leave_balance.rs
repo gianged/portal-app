@@ -18,9 +18,7 @@ use shared::{
     validation::leave_balance::{validate_adjust, validate_grant},
 };
 
-use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, routes::parse_date,
-};
+use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, routes};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -59,8 +57,8 @@ async fn my_statement(
     auth: AuthUser,
     Query(q): Query<RangeQuery>,
 ) -> Result<Json<LeaveStatementDto>, AppError> {
-    let from = parse_date(&q.from)?;
-    let to = parse_date(&q.to)?;
+    let from = routes::parse_date(&q.from)?;
+    let to = routes::parse_date(&q.to)?;
     let (grants, txns) = state.leave.statement(auth.user_id, from, to).await?;
     Ok(Json(dto::leave_statement_dto(&grants, &txns)))
 }

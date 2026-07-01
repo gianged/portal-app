@@ -5,7 +5,9 @@ use leptos::{prelude::*, task};
 
 use shared::dto::holiday::{HolidayDto, SetHolidayRequest};
 use shared::dto::user::UserRole;
-use shared::validation::holiday::validate_holiday;
+use shared::validation::holiday;
+
+use web_sys::js_sys::Date;
 
 use crate::features::holidays::api;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
@@ -18,7 +20,7 @@ use crate::theme::{self, color, space, typography};
 use crate::util::load::{self, Loadable};
 
 fn current_year() -> i32 {
-    web_sys::js_sys::Date::new_0().get_full_year() as i32
+    Date::new_0().get_full_year() as i32
 }
 
 #[component]
@@ -57,7 +59,7 @@ pub fn HolidayCalendar() -> impl IntoView {
         let req = SetHolidayRequest {
             name: new_name.get_untracked(),
         };
-        if let Err(e) = validate_holiday(&req) {
+        if let Err(e) = holiday::validate_holiday(&req) {
             err.set(Some(e.to_string()));
             return;
         }

@@ -1,6 +1,6 @@
 //! Work-request HTTP wrappers; listing is scope-filtered (`mine` or `project`), and the lifecycle endpoints each return the updated [`RequestDto`].
 
-use web_sys::FormData;
+use web_sys::{FormData, js_sys};
 
 use shared::dto::ids::{ProjectId, RequestId};
 use shared::dto::request::{
@@ -32,7 +32,7 @@ pub async fn list_mine(
     if let Some(s) = status {
         pairs.push(("status", status_param(s)));
     }
-    let encoded = q.map(|term| String::from(web_sys::js_sys::encode_uri_component(&term)));
+    let encoded = q.map(|term| String::from(js_sys::encode_uri_component(&term)));
     if let Some(encoded) = &encoded {
         pairs.push(("q", encoded));
     }

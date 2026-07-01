@@ -4,7 +4,10 @@ use crate::{
         policy::PolicyDto,
     },
     errors::SharedError,
-    validation::{common, policy},
+    validation::{
+        common::{self, DESCRIPTION_MAX},
+        policy,
+    },
 };
 
 /// Validates a flex-hours request against the policy limits fetched client-side,
@@ -92,6 +95,6 @@ pub fn validate_flex(req: &RequestFlexRequest, policy: &PolicyDto) -> Result<(),
 /// # Errors
 /// Returns [`SharedError::Validation`] when the note is too long.
 pub fn validate_decide_flex(req: &DecideFlexRequest) -> Result<(), SharedError> {
-    common::max_len("Note", &req.note, common::DESCRIPTION_MAX)?;
+    common::max_len("Note", &req.note, DESCRIPTION_MAX)?;
     Ok(())
 }

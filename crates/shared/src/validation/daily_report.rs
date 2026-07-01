@@ -1,7 +1,7 @@
 use crate::{
     dto::daily_report::{DailyReportEntryKind, ReviewDailyReportRequest, UpsertDailyReportRequest},
     errors::SharedError,
-    validation::common,
+    validation::common::{self, DESCRIPTION_MAX},
 };
 
 /// Upper bound on entries in one report.
@@ -18,17 +18,13 @@ const HOURS_MAX: f64 = 24.0;
 /// `RequestWork` entry is missing its request link, a non-`RequestWork` entry
 /// carries one, or a progress hint exceeds 100.
 pub fn validate_daily_report(req: &UpsertDailyReportRequest) -> Result<(), SharedError> {
-    common::max_len("Summary", &req.summary, common::DESCRIPTION_MAX)?;
+    common::max_len("Summary", &req.summary, DESCRIPTION_MAX)?;
     common::max_items("Entries", req.entries.len(), ENTRIES_MAX)?;
 
     let mut total_hours = 0.0;
     for entry in &req.entries {
         common::non_empty("Entry description", &entry.description)?;
-        common::max_len(
-            "Entry description",
-            &entry.description,
-            common::DESCRIPTION_MAX,
-        )?;
+        common::max_len("Entry description", &entry.description, DESCRIPTION_MAX)?;
 
         if let Some(hours) = entry.hours {
             common::in_range("Entry hours", hours, 0.0, HOURS_MAX)?;
@@ -73,6 +69,6 @@ pub fn validate_daily_report(req: &UpsertDailyReportRequest) -> Result<(), Share
 /// # Errors
 /// Returns [`SharedError::Validation`] when the note is too long.
 pub fn validate_review_daily_report(req: &ReviewDailyReportRequest) -> Result<(), SharedError> {
-    common::max_len("Note", &req.note, common::DESCRIPTION_MAX)?;
+    common::max_len("Note", &req.note, DESCRIPTION_MAX)?;
     Ok(())
 }

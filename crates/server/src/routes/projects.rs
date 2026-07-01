@@ -25,7 +25,9 @@ use shared::{
     validation::project,
 };
 
-use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
+use crate::{
+    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -83,7 +85,7 @@ async fn list(
             "owner_group query parameter is required".into(),
         ));
     };
-    let search = crate::routes::norm_q(q.q);
+    let search = routes::norm_q(q.q);
     let projects = state
         .project
         .list_for_owner_group(auth.user_id, GroupId(group), search.as_deref())

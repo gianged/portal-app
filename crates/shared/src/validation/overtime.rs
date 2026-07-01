@@ -1,7 +1,7 @@
 use crate::{
     dto::overtime::{CreateOvertimeRequest, DecideOvertimeRequest},
     errors::SharedError,
-    validation::common,
+    validation::common::{self, DESCRIPTION_MAX},
 };
 
 /// Generous per-request sanity bound on hours. This is NOT the legal cap: the
@@ -27,7 +27,7 @@ pub fn validate_overtime(req: &CreateOvertimeRequest) -> Result<(), SharedError>
             "Hours must be at most {HOURS_SANITY_MAX}"
         )));
     }
-    common::max_len("Reason", &req.reason, common::DESCRIPTION_MAX)?;
+    common::max_len("Reason", &req.reason, DESCRIPTION_MAX)?;
     Ok(())
 }
 
@@ -36,6 +36,6 @@ pub fn validate_overtime(req: &CreateOvertimeRequest) -> Result<(), SharedError>
 /// # Errors
 /// Returns [`SharedError::Validation`] when the note is too long.
 pub fn validate_decide_overtime(req: &DecideOvertimeRequest) -> Result<(), SharedError> {
-    common::max_len("Note", &req.note, common::DESCRIPTION_MAX)?;
+    common::max_len("Note", &req.note, DESCRIPTION_MAX)?;
     Ok(())
 }

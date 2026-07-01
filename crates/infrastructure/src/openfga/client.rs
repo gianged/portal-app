@@ -3,6 +3,7 @@ use std::fmt;
 use async_trait::async_trait;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use domain::{
     error::AuthzError,
@@ -173,7 +174,7 @@ impl AuthzClient for OpenFgaAuthzClient {
             }),
             authorization_model_id: &self.authorization_model_id,
         };
-        let _: serde_json::Value = self.post_json(self.store_url("write"), &req).await?;
+        let _: Value = self.post_json(self.store_url("write"), &req).await?;
         Ok(())
     }
 
@@ -201,7 +202,7 @@ impl AuthzClient for OpenFgaAuthzClient {
             deletes: (!deletes.is_empty()).then(|| to_keys(deletes)),
             authorization_model_id: &self.authorization_model_id,
         };
-        let _: serde_json::Value = self.post_json(self.store_url("write"), &req).await?;
+        let _: Value = self.post_json(self.store_url("write"), &req).await?;
         Ok(())
     }
 

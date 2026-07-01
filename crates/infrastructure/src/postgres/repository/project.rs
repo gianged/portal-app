@@ -6,7 +6,7 @@ use uuid::Uuid;
 use domain::{
     error::RepositoryError,
     ids::{GroupId, ProjectCollaboratorId, ProjectId, ProjectInviteId, UserId},
-    model::{Project, ProjectCollaborator, ProjectInvite},
+    model::{Project, ProjectCollaborator, ProjectInvite, ProjectInviteStatus},
     repository::ProjectRepository,
 };
 
@@ -314,7 +314,7 @@ impl ProjectRepository for PgProjectRepo {
         group_id: GroupId,
     ) -> Result<Vec<ProjectInvite>, RepositoryError> {
         // Matches idx_project_invites_invited_group_id_status.
-        let pending = SqlInviteStatus::from(domain::model::ProjectInviteStatus::Pending);
+        let pending = SqlInviteStatus::from(ProjectInviteStatus::Pending);
         let rows = sqlx::query_as!(
             InviteRow,
             r#"SELECT
@@ -344,7 +344,7 @@ impl ProjectRepository for PgProjectRepo {
         &self,
         project_id: ProjectId,
     ) -> Result<Vec<ProjectInvite>, RepositoryError> {
-        let pending = SqlInviteStatus::from(domain::model::ProjectInviteStatus::Pending);
+        let pending = SqlInviteStatus::from(ProjectInviteStatus::Pending);
         let rows = sqlx::query_as!(
             InviteRow,
             r#"SELECT

@@ -38,6 +38,7 @@ mod tests {
         http::{Request, StatusCode},
         response::IntoResponse,
     };
+    use uuid::Uuid;
 
     fn parts_with(user: Option<AuthUser>) -> Parts {
         let mut request = Request::builder().body(()).expect("build request");
@@ -50,7 +51,7 @@ mod tests {
     #[tokio::test]
     async fn reads_auth_user_from_extensions() {
         let user = AuthUser {
-            user_id: UserId(uuid::Uuid::nil()),
+            user_id: UserId(Uuid::nil()),
         };
         let mut parts = parts_with(Some(user));
         let extracted = AuthUser::from_request_parts(&mut parts, &())

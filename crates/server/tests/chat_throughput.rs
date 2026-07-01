@@ -33,7 +33,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use futures::StreamExt;
+use futures::{StreamExt, stream};
 use time::OffsetDateTime;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
@@ -57,9 +57,9 @@ use domain::{
     repository::{ChatAttachmentRepository, ChatRepository, GroupRepository, UserRepository},
 };
 use infrastructure::{
-    postgres::{PgGroupRepo, PgUserRepo, build_pool},
+    postgres::{self, PgGroupRepo, PgUserRepo},
     redis::RedisEventPublisher,
-    scylla::{ScyllaChatRepo, build_session},
+    scylla::{self, ScyllaChatRepo},
 };
 
 // Tunables. Bump TOTAL_MESSAGES to push the ceiling; CONCURRENCY is the in-flight
@@ -81,7 +81,7 @@ async fn chat_throughput_and_no_loss() {
 
     // Fire the load, bounded to CONCURRENCY in-flight, timing the inline path.
     let start = Instant::now();
-    let posted: Vec<MessageId> = futures::stream::iter(0..TOTAL_MESSAGES)
+    let posted: Vec<MessageId> = stream::iter(0..TOTAL_MESSAGES)
         .map(|i| {
             let chat = h.chat.clone();
             let marker = marker.clone();
@@ -135,7 +135,7 @@ async fn chat_ingest_throughput_and_no_loss() {
     // sheds with `chat_overloaded`; the producer retries so no accepted message is
     // lost while still respecting backpressure.
     let start = Instant::now();
-    let posted: Vec<MessageId> = futures::stream::iter(0..TOTAL_MESSAGES)
+    let posted: Vec<MessageId> = stream::iter(0..TOTAL_MESSAGES)
         .map(|i| {
             let ingest = ingest.clone();
             let marker = marker.clone();
@@ -203,8 +203,10 @@ async fn setup() -> Harness {
         .collect();
     let scylla_keyspace = env_or("SCYLLA_KEYSPACE", "portal_chat");
 
-    let pool = build_pool(&database_url, 16).await.expect("postgres pool");
-    let session = build_session(&scylla_hosts, &scylla_keyspace)
+    let pool = postgres::build_pool(&database_url, 16)
+        .await
+        .expect("postgres pool");
+    let session = scylla::build_session(&scylla_hosts, &scylla_keyspace)
         .await
         .expect("scylla session");
     let publisher = Arc::new(

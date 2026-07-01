@@ -19,8 +19,7 @@ use shared::{
 };
 
 use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve,
-    routes::parse_date,
+    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
 };
 
 pub fn router() -> Router<AppState> {
@@ -56,7 +55,7 @@ async fn create(
 ) -> Result<Json<FlexHoursDto>, AppError> {
     let policy = dto::policy_dto(&state.policy.current());
     validate_flex(&body, &policy).map_err(|e| AppError::Validation(e.to_string()))?;
-    let work_date = parse_date(&body.work_date)?;
+    let work_date = routes::parse_date(&body.work_date)?;
     let cmd = dto::request_flex_command(work_date, body)
         .map_err(|e| AppError::Validation(e.to_string()))?;
     let flex = state.flex.request(auth.user_id, cmd).await?;
@@ -68,8 +67,8 @@ async fn list_mine(
     auth: AuthUser,
     Query(q): Query<RangeQuery>,
 ) -> Result<Json<Vec<FlexHoursDto>>, AppError> {
-    let from = parse_date(&q.from)?;
-    let to = parse_date(&q.to)?;
+    let from = routes::parse_date(&q.from)?;
+    let to = routes::parse_date(&q.to)?;
     let list = state.flex.list_mine(auth.user_id, from, to).await?;
     Ok(Json(many(&state, list).await?))
 }

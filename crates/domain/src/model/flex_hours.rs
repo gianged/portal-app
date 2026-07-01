@@ -203,6 +203,7 @@ impl FlexHours {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use time::Month;
     use uuid::Uuid;
 
     fn seg(start: (u8, u8), end: (u8, u8)) -> FlexSegment {
@@ -219,7 +220,7 @@ mod tests {
         FlexHours {
             id: FlexHoursId(Uuid::now_v7()),
             user_id: UserId(Uuid::now_v7()),
-            work_date: Date::from_calendar_date(2026, time::Month::June, 1).unwrap(),
+            work_date: Date::from_calendar_date(2026, Month::June, 1).unwrap(),
             segments,
             status: FlexStatus::Pending,
             leader_user_id: None,

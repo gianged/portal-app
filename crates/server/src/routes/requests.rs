@@ -11,12 +11,13 @@ use axum::{
     routing,
 };
 use serde::Deserialize;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use application::commands::request::AddAttachmentCommand;
 use domain::{
     ids::{CommentId, ProjectId, RequestId, UserId},
-    model::{CommentEntity, Request},
+    model::{Comment, CommentEntity, Request},
     ports::file_storage::FileStorage,
 };
 use shared::{
@@ -24,14 +25,15 @@ use shared::{
         comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest},
         request::{
             AssignRequestRequest, CreateRequestRequest, RequestAttachmentDto, RequestDetailDto,
-            RequestDto, RequestStatus as WireRequestStatus, SetRequestProgressRequest,
-            UpdateRequestRequest,
+            RequestDto, RequestStatus, SetRequestProgressRequest, UpdateRequestRequest,
         },
     },
     validation::{comment, file, request},
 };
 
-use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
+use crate::{
+    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
+};
 
 /// Upload cap for a single attachment (the default axum body limit is 2 MiB).
 const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
@@ -140,10 +142,10 @@ async fn delete_comment(
 async fn comment_to_dto(
     state: &AppState,
     viewer: UserId,
-    comment: &domain::model::Comment,
+    comment: &Comment,
 ) -> Result<Json<CommentDto>, AppError> {
     let author = resolve::user_summary(&state.user, &state.group, comment.author_user_id).await?;
-    let now = time::OffsetDateTime::now_utc();
+    let now = OffsetDateTime::now_utc();
     Ok(Json(dto::comment_dto(comment, author, viewer, now)))
 }
 
@@ -151,7 +153,7 @@ async fn comment_to_dto(
 async fn comments_to_dtos(
     state: &AppState,
     viewer: UserId,
-    comments: Vec<domain::model::Comment>,
+    comments: Vec<Comment>,
 ) -> Result<Json<Vec<CommentDto>>, AppError> {
     let authors = resolve::user_map(
         &state.user,
@@ -159,7 +161,7 @@ async fn comments_to_dtos(
         comments.iter().map(|c| c.author_user_id),
     )
     .await?;
-    let now = time::OffsetDateTime::now_utc();
+    let now = OffsetDateTime::now_utc();
     Ok(Json(
         comments
             .iter()
@@ -179,7 +181,7 @@ struct ListQuery {
     #[serde(default)]
     mine: bool,
     /// Optional status filter.
-    status: Option<WireRequestStatus>,
+    status: Option<RequestStatus>,
     /// Substring search on the request title.
     q: Option<String>,
 }
@@ -206,7 +208,7 @@ async fn list(
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<RequestDto>>, AppError> {
     let status = q.status.map(dto::request_status_domain);
-    let search = crate::routes::norm_q(q.q);
+    let search = routes::norm_q(q.q);
     let search = search.as_deref();
     let requests = if let Some(project) = q.project {
         state

@@ -1,4 +1,4 @@
-use reqwasm::http::Request;
+use reqwasm::http::{Request, Response};
 use serde::{Serialize, de::DeserializeOwned};
 use shared::dto::common::{ApiError, ErrorCode};
 use web_sys::FormData;
@@ -123,7 +123,7 @@ pub fn query(pairs: &[(&str, &str)]) -> String {
     format!("?{joined}")
 }
 
-async fn handle_json<T>(resp: reqwasm::http::Response) -> Result<T, FrontendError>
+async fn handle_json<T>(resp: Response) -> Result<T, FrontendError>
 where
     T: DeserializeOwned,
 {
@@ -135,7 +135,7 @@ where
     Ok(parsed)
 }
 
-async fn handle_empty(resp: reqwasm::http::Response) -> Result<(), FrontendError> {
+async fn handle_empty(resp: Response) -> Result<(), FrontendError> {
     let status = resp.status();
     if !(200..300).contains(&status) {
         return Err(http_error(resp).await);
@@ -147,7 +147,7 @@ async fn handle_empty(resp: reqwasm::http::Response) -> Result<(), FrontendError
 /// server's stable `{ code, message }` body and keep the `x-request-id` header
 /// for support references. A non-JSON body (e.g. a proxy/gateway error page)
 /// falls back to `Unknown` with the raw text as the message.
-async fn http_error(resp: reqwasm::http::Response) -> FrontendError {
+async fn http_error(resp: Response) -> FrontendError {
     let status = resp.status();
     let request_id = resp.headers().get("x-request-id");
     let body = resp.text().await.unwrap_or_default();

@@ -55,6 +55,7 @@ use crate::{
     dto,
     error::AppError,
     extractors::auth_user::AuthUser,
+    middleware::rate_limit,
     realtime::{WS_TOPIC, WsSignal},
     resolve,
 };
@@ -226,7 +227,7 @@ async fn on_client_frame(
             }
             // Per-user WS rate gate before the expensive enqueue (the HTTP per-user
             // limiter never sees WS frames).
-            if !crate::middleware::rate_limit::within_chat_rate(state, uid).await {
+            if !rate_limit::within_chat_rate(state, uid).await {
                 return send(
                     sink,
                     &ServerFrame::Error {

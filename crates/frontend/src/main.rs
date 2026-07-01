@@ -6,6 +6,8 @@ mod state;
 mod theme;
 mod util;
 
+use leptos::mount;
+
 fn main() {
-    leptos::mount::mount_to_body(app::App);
+    mount::mount_to_body(app::App);
 }

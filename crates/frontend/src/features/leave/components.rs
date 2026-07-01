@@ -4,6 +4,7 @@
 
 use leptos::{prelude::*, task};
 use uuid::Uuid;
+use web_sys::js_sys::Date;
 
 use shared::dto::ids::UserId;
 use shared::dto::leave_balance::{
@@ -181,7 +182,7 @@ fn GrantAdmin() -> impl IntoView {
         });
     });
 
-    let grant_year = RwSignal::new(web_sys::js_sys::Date::new_0().get_full_year().to_string());
+    let grant_year = RwSignal::new(Date::new_0().get_full_year().to_string());
     let days = RwSignal::new(String::new());
     let delta = RwSignal::new(String::new());
     let reason = RwSignal::new(String::new());

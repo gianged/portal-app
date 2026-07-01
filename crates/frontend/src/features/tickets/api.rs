@@ -4,6 +4,7 @@ use shared::dto::ids::TicketId;
 use shared::dto::ticket::{
     AssignTicketRequest, RaiseTicketRequest, TicketDto, TriageTicketRequest,
 };
+use web_sys::js_sys;
 
 use crate::api::client;
 use crate::api::error::FrontendError;
@@ -29,7 +30,7 @@ impl Scope {
 /// Tickets in the given scope (`GET /tickets?scope=…`); `q` filters by title substring.
 pub async fn list(scope: Scope, q: Option<String>) -> Result<Vec<TicketDto>, FrontendError> {
     let mut pairs: Vec<(&str, &str)> = vec![("scope", scope.wire())];
-    let encoded = q.map(|term| String::from(web_sys::js_sys::encode_uri_component(&term)));
+    let encoded = q.map(|term| String::from(js_sys::encode_uri_component(&term)));
     if let Some(encoded) = &encoded {
         pairs.push(("q", encoded));
     }

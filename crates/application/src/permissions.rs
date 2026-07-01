@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use domain::{
-    error::AuthzError,
+    error::{AuthzError, RepositoryError},
     ids::{ChannelId, GroupId, ProjectId, TicketId, UserId},
     model::{Channel, GroupRole, Membership, SystemRole, User, UserStatus},
     ports::authz_client::{AuthzClient, RelationTuple},
@@ -669,7 +669,7 @@ impl Permissions {
 fn map_authz_write(err: AuthzError) -> Error {
     match err {
         AuthzError::Denied => Error::Conflict("authz_write_denied".into()),
-        AuthzError::Backend(msg) => Error::Repository(domain::error::RepositoryError::Backend(msg)),
+        AuthzError::Backend(msg) => Error::Repository(RepositoryError::Backend(msg)),
     }
 }
 

@@ -3,7 +3,7 @@
 use application::commands::daily_report::{
     DailyReportEntryInput, ReviewDailyReportCommand, UpsertDailyReportCommand,
 };
-use domain::model;
+use domain::{ids::RequestId, model};
 use shared::dto::{
     common::UserSummaryDto,
     daily_report::{
@@ -102,7 +102,7 @@ pub fn upsert_daily_report_command(
             .map(|e| DailyReportEntryInput {
                 kind: daily_report_entry_kind_domain(e.kind),
                 description: e.description,
-                request_id: e.request_id.map(|r| domain::ids::RequestId(r.0)),
+                request_id: e.request_id.map(|r| RequestId(r.0)),
                 hours: e.hours,
                 progress: e.progress,
             })

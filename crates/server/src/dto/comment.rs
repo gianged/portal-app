@@ -1,6 +1,6 @@
 //! Domain <-> wire projection for work-item comments.
 
-use domain::model;
+use domain::{ids::UserId, model};
 use shared::dto::{comment::CommentDto, common::UserSummaryDto};
 use time::OffsetDateTime;
 
@@ -12,7 +12,7 @@ use super::comment_id;
 pub fn comment_dto(
     comment: &model::Comment,
     author: UserSummaryDto,
-    viewer: domain::ids::UserId,
+    viewer: UserId,
     now: OffsetDateTime,
 ) -> CommentDto {
     CommentDto {

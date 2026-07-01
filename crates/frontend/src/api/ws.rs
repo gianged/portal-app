@@ -9,7 +9,7 @@
 
 use futures::{
     SinkExt, StreamExt,
-    channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded},
+    channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
 };
 use gloo::timers::future::TimeoutFuture;
 use leptos::{prelude::*, task};
@@ -46,7 +46,7 @@ impl WsClient {
     /// logged-out client never reconnect-loops against a 401 upgrade.
     #[must_use]
     pub fn new() -> Self {
-        let (tx, rx) = unbounded::<ClientFrame>();
+        let (tx, rx) = mpsc::unbounded::<ClientFrame>();
         Self {
             tx: StoredValue::new(tx),
             rx: StoredValue::new(Some(rx)),

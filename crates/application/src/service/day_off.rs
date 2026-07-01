@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use domain::{
     ids::{DayOffId, GroupId, UserId},
-    model::{DayOff, DayOffStatus, working_days},
+    model::{self, DayOff, DayOffStatus},
     repository::{DayOffRepository, HolidayRepository},
 };
 use time::{Date, OffsetDateTime};
@@ -69,7 +69,7 @@ impl DayOffService {
             .into_iter()
             .map(|h| h.date)
             .collect();
-        let days = working_days(
+        let days = model::working_days(
             cmd.start_date,
             cmd.end_date,
             cmd.start_half,

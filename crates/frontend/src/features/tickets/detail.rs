@@ -2,7 +2,7 @@
 
 use futures::FutureExt;
 use futures::future::LocalBoxFuture;
-use leptos::{prelude::*, task};
+use leptos::{ev::MouseEvent, prelude::*, task};
 
 use shared::dto::ids::{TicketId, UserId};
 use shared::dto::ticket::{
@@ -197,8 +197,8 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
 fn lifecycle_bar(
     status: TicketStatus,
     run: impl Fn(TicketAction) + Copy + Send + Sync + 'static,
-    open_triage: Callback<leptos::ev::MouseEvent>,
-    open_assign: Callback<leptos::ev::MouseEvent>,
+    open_triage: Callback<MouseEvent>,
+    open_assign: Callback<MouseEvent>,
 ) -> AnyView {
     let btn = move |label: &'static str, variant: ButtonVariant, action: TicketAction| {
         let cb = Callback::new(move |_| run(action));

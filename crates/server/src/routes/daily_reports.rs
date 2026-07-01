@@ -19,8 +19,7 @@ use shared::{
 };
 
 use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve,
-    routes::parse_date,
+    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
 };
 
 pub fn router() -> Router<AppState> {
@@ -46,8 +45,8 @@ async fn list_mine(
     auth: AuthUser,
     Query(q): Query<RangeQuery>,
 ) -> Result<Json<Vec<DailyReportDto>>, AppError> {
-    let from = parse_date(&q.from)?;
-    let to = parse_date(&q.to)?;
+    let from = routes::parse_date(&q.from)?;
+    let to = routes::parse_date(&q.to)?;
     let reports = state.daily_report.list_mine(auth.user_id, from, to).await?;
     Ok(Json(many(&state, reports).await?))
 }
@@ -59,7 +58,7 @@ async fn get_by_date(
     auth: AuthUser,
     Path(date): Path<String>,
 ) -> Result<Json<Option<DailyReportDto>>, AppError> {
-    let date = parse_date(&date)?;
+    let date = routes::parse_date(&date)?;
     let report = state
         .daily_report
         .list_mine(auth.user_id, date, date)
@@ -78,7 +77,7 @@ async fn upsert(
     Path(date): Path<String>,
     Json(body): Json<UpsertDailyReportRequest>,
 ) -> Result<Json<DailyReportDto>, AppError> {
-    let date = parse_date(&date)?;
+    let date = routes::parse_date(&date)?;
     validate_daily_report(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     let cmd = dto::upsert_daily_report_command(date, body);
     let report = state.daily_report.upsert_draft(auth.user_id, cmd).await?;
@@ -120,8 +119,8 @@ async fn list_for_group(
     Path(id): Path<Uuid>,
     Query(q): Query<RangeQuery>,
 ) -> Result<Json<Vec<DailyReportDto>>, AppError> {
-    let from = parse_date(&q.from)?;
-    let to = parse_date(&q.to)?;
+    let from = routes::parse_date(&q.from)?;
+    let to = routes::parse_date(&q.to)?;
     let reports = state
         .daily_report
         .list_for_group(auth.user_id, GroupId(id), from, to)

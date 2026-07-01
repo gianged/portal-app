@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use async_trait::async_trait;
 use redis::{Client, Script, aio::ConnectionManager};
 use time::OffsetDateTime;
@@ -60,6 +62,6 @@ fn rate_limit_key(bucket: &str, window: i64) -> String {
     format!("portal:ratelimit:{bucket}:{window}")
 }
 
-fn backend<E: std::fmt::Display>(e: E) -> RepositoryError {
+fn backend<E: Display>(e: E) -> RepositoryError {
     RepositoryError::Backend(e.to_string())
 }

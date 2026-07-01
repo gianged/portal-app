@@ -6,13 +6,13 @@ use leptos::{prelude::*, task};
 use uuid::Uuid;
 
 use shared::dto::day_off::{
-    CreateDayOffRequest, DayOffDto, DayOffKind as WireKind, DayOffStatus, DecideDayOffRequest,
+    CreateDayOffRequest, DayOffDto, DayOffKind, DayOffStatus, DecideDayOffRequest,
 };
 use shared::dto::group::GroupDto;
 use shared::dto::ids::GroupId;
 use shared::dto::leave_balance::LeaveBalanceDto;
 use shared::dto::user::UserRole;
-use shared::validation::day_off::validate_day_off;
+use shared::validation::day_off;
 
 use crate::features::day_off::api;
 use crate::features::groups::api as groups_api;
@@ -29,13 +29,13 @@ use crate::theme::{self, color, space, typography};
 use crate::util::date::{days_ago_iso, today_iso};
 use crate::util::load::{self, Loadable};
 
-fn kind_from_str(s: &str) -> WireKind {
+fn kind_from_str(s: &str) -> DayOffKind {
     match s {
-        "annual_leave" => WireKind::AnnualLeave,
-        "sick_leave" => WireKind::SickLeave,
-        "unpaid_leave" => WireKind::UnpaidLeave,
-        "remote" => WireKind::Remote,
-        _ => WireKind::Other,
+        "annual_leave" => DayOffKind::AnnualLeave,
+        "sick_leave" => DayOffKind::SickLeave,
+        "unpaid_leave" => DayOffKind::UnpaidLeave,
+        "remote" => DayOffKind::Remote,
+        _ => DayOffKind::Other,
     }
 }
 
@@ -98,7 +98,7 @@ pub fn TimeOff() -> impl IntoView {
             end_half: end_half.get_untracked(),
             reason: reason.get_untracked(),
         };
-        if let Err(e) = validate_day_off(&req) {
+        if let Err(e) = day_off::validate_day_off(&req) {
             err.set(Some(e.to_string()));
             return;
         }
@@ -144,7 +144,7 @@ pub fn TimeOff() -> impl IntoView {
                         </div>
                         <div>
                             {move || {
-                                let annual = kind_from_str(&kind.get()) == WireKind::AnnualLeave;
+                                let annual = kind_from_str(&kind.get()) == DayOffKind::AnnualLeave;
                                 let muted = muted.clone();
                                 annual.then(|| match balance.get() {
                                     Some(Ok(b)) => view! {

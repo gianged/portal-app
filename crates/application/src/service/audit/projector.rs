@@ -32,53 +32,52 @@ impl AuditProjector {
     #[tracing::instrument(skip_all)]
     pub async fn handle(&self, event: &DomainEvent) -> Result<()> {
         use AuditAction::{Assign, Create, Delete, StatusChange, Transfer, Update};
-        use DomainEvent as E;
 
         let entry = match event {
             // --- users: auth.users ---
-            E::UserCreated {
+            DomainEvent::UserCreated {
                 user_id, actor, at, ..
             } => row(Some(*actor), Create, "auth", "users", user_id.0, *at),
             // First login is self-service; no acting admin.
-            E::UserActivated { user_id, at, .. } => {
+            DomainEvent::UserActivated { user_id, at, .. } => {
                 row(None, StatusChange, "auth", "users", user_id.0, *at)
             }
-            E::UserDeactivated {
+            DomainEvent::UserDeactivated {
                 user_id, actor, at, ..
             } => row(Some(*actor), StatusChange, "auth", "users", user_id.0, *at),
-            E::UserReactivated {
+            DomainEvent::UserReactivated {
                 user_id, actor, at, ..
             } => row(Some(*actor), StatusChange, "auth", "users", user_id.0, *at),
-            E::UserProfileUpdated {
+            DomainEvent::UserProfileUpdated {
                 user_id, actor, at, ..
             } => row(Some(*actor), Update, "auth", "users", user_id.0, *at),
-            E::UserPasswordChanged { user_id, at } => {
+            DomainEvent::UserPasswordChanged { user_id, at } => {
                 row(Some(*user_id), Update, "auth", "users", user_id.0, *at)
             }
-            E::UserPasswordReset {
+            DomainEvent::UserPasswordReset {
                 user_id, actor, at, ..
             } => row(Some(*actor), Update, "auth", "users", user_id.0, *at),
 
             // --- groups: org.groups ---
-            E::GroupCreated {
+            DomainEvent::GroupCreated {
                 group_id,
                 actor,
                 at,
                 ..
             } => row(Some(*actor), Create, "org", "groups", group_id.0, *at),
-            E::GroupDeleted {
+            DomainEvent::GroupDeleted {
                 group_id,
                 actor,
                 at,
                 ..
             } => row(Some(*actor), Delete, "org", "groups", group_id.0, *at),
-            E::GroupMetadataUpdated {
+            DomainEvent::GroupMetadataUpdated {
                 group_id,
                 actor,
                 at,
                 ..
             } => row(Some(*actor), Update, "org", "groups", group_id.0, *at),
-            E::LeadershipTransferred {
+            DomainEvent::LeadershipTransferred {
                 group_id,
                 actor,
                 at,
@@ -86,7 +85,7 @@ impl AuditProjector {
             } => row(Some(*actor), Transfer, "org", "groups", group_id.0, *at),
 
             // --- memberships: org.memberships ---
-            E::MembershipAdded {
+            DomainEvent::MembershipAdded {
                 membership_id,
                 actor,
                 at,
@@ -99,7 +98,7 @@ impl AuditProjector {
                 membership_id.0,
                 *at,
             ),
-            E::MembershipRoleChanged {
+            DomainEvent::MembershipRoleChanged {
                 membership_id,
                 actor,
                 at,
@@ -112,7 +111,7 @@ impl AuditProjector {
                 membership_id.0,
                 *at,
             ),
-            E::MembershipDeactivated {
+            DomainEvent::MembershipDeactivated {
                 membership_id,
                 actor,
                 at,
@@ -127,7 +126,7 @@ impl AuditProjector {
             ),
 
             // --- projects: project.projects ---
-            E::ProjectCreated {
+            DomainEvent::ProjectCreated {
                 project_id,
                 actor,
                 at,
@@ -140,7 +139,7 @@ impl AuditProjector {
                 project_id.0,
                 *at,
             ),
-            E::ProjectMetadataUpdated {
+            DomainEvent::ProjectMetadataUpdated {
                 project_id,
                 actor,
                 at,
@@ -153,7 +152,7 @@ impl AuditProjector {
                 project_id.0,
                 *at,
             ),
-            E::ProjectStatusChanged {
+            DomainEvent::ProjectStatusChanged {
                 project_id,
                 actor,
                 at,
@@ -166,7 +165,7 @@ impl AuditProjector {
                 project_id.0,
                 *at,
             ),
-            E::ProjectCollaboratorRemoved {
+            DomainEvent::ProjectCollaboratorRemoved {
                 project_id,
                 actor,
                 at,
@@ -181,7 +180,7 @@ impl AuditProjector {
             ),
 
             // --- project invites: project.project_invites ---
-            E::ProjectInviteSent {
+            DomainEvent::ProjectInviteSent {
                 invite_id,
                 actor,
                 at,
@@ -194,7 +193,7 @@ impl AuditProjector {
                 invite_id.0,
                 *at,
             ),
-            E::ProjectInviteResponded {
+            DomainEvent::ProjectInviteResponded {
                 invite_id,
                 actor,
                 at,
@@ -209,7 +208,7 @@ impl AuditProjector {
             ),
 
             // --- requests: project.requests ---
-            E::RequestCreated {
+            DomainEvent::RequestCreated {
                 request_id,
                 actor,
                 at,
@@ -222,7 +221,7 @@ impl AuditProjector {
                 request_id.0,
                 *at,
             ),
-            E::RequestMetadataUpdated {
+            DomainEvent::RequestMetadataUpdated {
                 request_id,
                 actor,
                 at,
@@ -235,7 +234,7 @@ impl AuditProjector {
                 request_id.0,
                 *at,
             ),
-            E::RequestAssigned {
+            DomainEvent::RequestAssigned {
                 request_id,
                 actor,
                 at,
@@ -248,7 +247,7 @@ impl AuditProjector {
                 request_id.0,
                 *at,
             ),
-            E::RequestStatusChanged {
+            DomainEvent::RequestStatusChanged {
                 request_id,
                 actor,
                 at,
@@ -263,7 +262,7 @@ impl AuditProjector {
             ),
 
             // --- tickets: ticket.tickets ---
-            E::TicketRaised {
+            DomainEvent::TicketRaised {
                 ticket_id,
                 requester,
                 at,
@@ -276,19 +275,19 @@ impl AuditProjector {
                 ticket_id.0,
                 *at,
             ),
-            E::TicketTriaged {
+            DomainEvent::TicketTriaged {
                 ticket_id,
                 actor,
                 at,
                 ..
             } => row(Some(*actor), Update, "ticket", "tickets", ticket_id.0, *at),
-            E::TicketAssigned {
+            DomainEvent::TicketAssigned {
                 ticket_id,
                 actor,
                 at,
                 ..
             } => row(Some(*actor), Assign, "ticket", "tickets", ticket_id.0, *at),
-            E::TicketStatusChanged {
+            DomainEvent::TicketStatusChanged {
                 ticket_id,
                 actor,
                 at,
@@ -302,26 +301,26 @@ impl AuditProjector {
                 *at,
             ),
             // System action, no actor (precedent: UserActivated).
-            E::TicketAutoClosed { ticket_id, at } => {
+            DomainEvent::TicketAutoClosed { ticket_id, at } => {
                 row(None, StatusChange, "ticket", "tickets", ticket_id.0, *at)
             }
 
             // --- comments: project.request_comments / ticket.ticket_comments ---
-            E::CommentAdded {
+            DomainEvent::CommentAdded {
                 comment_id,
                 entity,
                 actor,
                 at,
                 ..
             } => comment_row(*entity, Some(*actor), Create, comment_id.0, *at),
-            E::CommentEdited {
+            DomainEvent::CommentEdited {
                 comment_id,
                 entity,
                 actor,
                 at,
                 ..
             } => comment_row(*entity, Some(*actor), Update, comment_id.0, *at),
-            E::CommentDeleted {
+            DomainEvent::CommentDeleted {
                 comment_id,
                 entity,
                 actor,

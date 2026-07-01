@@ -6,6 +6,7 @@ use shared::dto::project::{
     ProjectDto, ProjectInviteDto, RespondInviteRequest, SetProjectProgressRequest,
     UpdateProjectMetadataRequest,
 };
+use web_sys::js_sys;
 
 use crate::api::client;
 use crate::api::error::FrontendError;
@@ -17,7 +18,7 @@ pub async fn list_for_owner_group(
 ) -> Result<Vec<ProjectDto>, FrontendError> {
     let gid = group.0.to_string();
     let mut pairs: Vec<(&str, &str)> = vec![("owner_group", &gid)];
-    let encoded = q.map(|term| String::from(web_sys::js_sys::encode_uri_component(&term)));
+    let encoded = q.map(|term| String::from(js_sys::encode_uri_component(&term)));
     if let Some(encoded) = &encoded {
         pairs.push(("q", encoded));
     }

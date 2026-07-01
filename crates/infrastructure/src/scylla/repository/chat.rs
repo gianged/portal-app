@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Display,
     sync::Arc,
 };
 
@@ -238,7 +239,7 @@ async fn prepare(
         .map_err(|e| RepositoryError::Backend(e.to_string()))
 }
 
-fn backend<E: std::fmt::Display>(e: E) -> RepositoryError {
+fn backend<E: Display>(e: E) -> RepositoryError {
     RepositoryError::Backend(e.to_string())
 }
 

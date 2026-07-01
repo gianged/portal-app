@@ -3,7 +3,7 @@ use std::{any::Any, sync::Arc};
 use anyhow::Context;
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::{HeaderValue, Method, StatusCode, header},
     middleware::{from_fn, from_fn_with_state},
     response::{IntoResponse, Response},
@@ -17,6 +17,7 @@ use tower_http::{
 };
 
 use application::{
+    bootstrap,
     events::EventBus,
     permissions::Permissions,
     resilience::{self, HealthRegistry},
@@ -43,18 +44,18 @@ use domain::{
 };
 use infrastructure::{
     health::{OpenFgaHealthCheck, PgHealthCheck, RedisHealthCheck, ScyllaHealthCheck},
-    jobs::{ApalisAuditQueue, ApalisNotificationQueue, audit_storage, notification_storage},
+    jobs::{self, ApalisAuditQueue, ApalisNotificationQueue},
     local_storage::LocalStorage,
     openfga::{self, OpenFgaAuthzClient},
     postgres::{
-        PgAuditRepo, PgChatAttachmentRepo, PgCommentRepo, PgDailyReportRepo, PgDayOffRepo,
+        self, PgAuditRepo, PgChatAttachmentRepo, PgCommentRepo, PgDailyReportRepo, PgDayOffRepo,
         PgFlexRepo, PgGroupRepo, PgHolidayRepo, PgLeaveBalanceRepo, PgNotificationRepo,
         PgOvertimeRepo, PgPolicyRepo, PgProjectRepo, PgReportingRepo, PgRequestRepo, PgTicketRepo,
-        PgUserRepo, build_pool,
+        PgUserRepo,
     },
     redis::{PresenceStore, RateLimiter, RedisEventPublisher, RedisSpool, RedisTokenRevocation},
     report::PrintPdfReportRenderer,
-    scylla::{ScyllaChatRepo, build_session},
+    scylla::{self, ScyllaChatRepo},
     signed_url::SignedUrl,
 };
 use shared::dto::{
@@ -155,10 +156,10 @@ impl IngestShutdown {
 #[allow(clippy::too_many_lines)]
 pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
     // Backends.
-    let pool = build_pool(&cfg.database_url, cfg.pg_max_connections)
+    let pool = postgres::build_pool(&cfg.database_url, cfg.pg_max_connections)
         .await
         .context("building postgres pool")?;
-    let session = build_session(&cfg.scylla_hosts, &cfg.scylla_keyspace)
+    let session = scylla::build_session(&cfg.scylla_hosts, &cfg.scylla_keyspace)
         .await
         .context("building scylla session")?;
     let publisher = Arc::new(
@@ -239,16 +240,16 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
     ));
 
     // Idempotent org bootstrap: company singleton tuples + general channel.
-    application::bootstrap::seed_company(chats.as_ref(), perms.as_ref())
+    bootstrap::seed_company(chats.as_ref(), perms.as_ref())
         .await
         .context("seeding company singleton")?;
     let jobs = ApalisNotificationQueue::new(
-        notification_storage(&cfg.redis_url)
+        jobs::notification_storage(&cfg.redis_url)
             .await
             .context("connecting apalis redis (jobs)")?,
     );
     let audit_jobs = ApalisAuditQueue::new(
-        audit_storage(&cfg.redis_url)
+        jobs::audit_storage(&cfg.redis_url)
             .await
             .context("connecting apalis redis (audit jobs)")?,
     );
@@ -555,7 +556,7 @@ pub fn router(state: AppState) -> Router {
         // outer layers still see a normal response.
         .layer(CatchPanicLayer::custom(on_panic))
         // Global 1 MiB JSON cap; upload routes override with their own DefaultBodyLimit.
-        .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
+        .layer(DefaultBodyLimit::max(1024 * 1024))
         // Baseline security headers (no HSTS - internal plain HTTP); `if_not_present` lets a route override.
         .layer(SetResponseHeaderLayer::if_not_present(
             header::X_CONTENT_TYPE_OPTIONS,

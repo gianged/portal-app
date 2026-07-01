@@ -7,12 +7,12 @@ use leptos::{prelude::*, task};
 use uuid::Uuid;
 
 use shared::dto::daily_report::{
-    DailyReportDto, DailyReportEntryKind as WireKind, DailyReportStatus, ReviewDailyReportRequest,
+    DailyReportDto, DailyReportEntryKind, DailyReportStatus, ReviewDailyReportRequest,
     UpsertDailyReportEntry, UpsertDailyReportRequest,
 };
 use shared::dto::group::GroupDto;
 use shared::dto::ids::{DailyReportId, GroupId, RequestId};
-use shared::validation::daily_report::validate_daily_report;
+use shared::validation::daily_report;
 
 use crate::features::daily_reports::api;
 use crate::features::groups::api as groups_api;
@@ -41,19 +41,19 @@ struct EntryDraft {
     progress: String,
 }
 
-fn kind_str(kind: WireKind) -> &'static str {
+fn kind_str(kind: DailyReportEntryKind) -> &'static str {
     match kind {
-        WireKind::RequestWork => "request_work",
-        WireKind::Learning => "learning",
-        WireKind::Other => "other",
+        DailyReportEntryKind::RequestWork => "request_work",
+        DailyReportEntryKind::Learning => "learning",
+        DailyReportEntryKind::Other => "other",
     }
 }
 
-fn kind_from_str(s: &str) -> WireKind {
+fn kind_from_str(s: &str) -> DailyReportEntryKind {
     match s {
-        "request_work" => WireKind::RequestWork,
-        "learning" => WireKind::Learning,
-        _ => WireKind::Other,
+        "request_work" => DailyReportEntryKind::RequestWork,
+        "learning" => DailyReportEntryKind::Learning,
+        _ => DailyReportEntryKind::Other,
     }
 }
 
@@ -84,7 +84,7 @@ fn build_request(
     let mut out = Vec::new();
     for d in entries.get_untracked() {
         let kind = kind_from_str(&d.kind);
-        let request_id = if kind == WireKind::RequestWork {
+        let request_id = if kind == DailyReportEntryKind::RequestWork {
             let raw = d.request_id.trim();
             if raw.is_empty() {
                 return Err("Pick a request for request-work entries".into());
@@ -234,7 +234,7 @@ pub fn MyDay() -> impl IntoView {
                 return;
             }
         };
-        if let Err(e) = validate_daily_report(&req) {
+        if let Err(e) = daily_report::validate_daily_report(&req) {
             err.set(Some(e.to_string()));
             return;
         }
@@ -267,7 +267,7 @@ pub fn MyDay() -> impl IntoView {
                 return;
             }
         };
-        if let Err(e) = validate_daily_report(&req) {
+        if let Err(e) = daily_report::validate_daily_report(&req) {
             err.set(Some(e.to_string()));
             return;
         }

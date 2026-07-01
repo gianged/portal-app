@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use async_trait::async_trait;
 use redis::{AsyncCommands, Client, aio::ConnectionManager};
 
@@ -42,6 +44,6 @@ fn presence_key(user: UserId) -> String {
     format!("portal:presence:user:{}", user.0)
 }
 
-fn backend<E: std::fmt::Display>(e: E) -> RepositoryError {
+fn backend<E: Display>(e: E) -> RepositoryError {
     RepositoryError::Backend(e.to_string())
 }

@@ -5,6 +5,7 @@
 
 use leptos::{prelude::*, task};
 use uuid::Uuid;
+use web_sys::js_sys::Date;
 
 use shared::dto::flex_hours::{
     DecideFlexRequest, FlexHoursDto, FlexMonthDeltaDto, FlexSegmentInput, FlexStatus,
@@ -14,8 +15,8 @@ use shared::dto::group::GroupDto;
 use shared::dto::ids::GroupId;
 use shared::dto::policy::PolicyDto;
 use shared::dto::user::UserRole;
-use shared::validation::flex_hours::validate_flex;
-use shared::validation::policy::parse_hhmm;
+use shared::validation::flex_hours;
+use shared::validation::policy;
 
 use crate::features::flex_hours::api;
 use crate::features::groups::api as groups_api;
@@ -35,7 +36,7 @@ use crate::util::load::{self, Loadable};
 
 /// Current `(year, month)` from the browser clock.
 fn current_year_month() -> (i32, u32) {
-    let d = web_sys::js_sys::Date::new_0();
+    let d = Date::new_0();
     (d.get_full_year() as i32, d.get_month() + 1)
 }
 
@@ -46,7 +47,7 @@ fn current_month_prefix() -> String {
 
 /// Minutes-since-midnight of a `"HH:MM"` string, or `None` if malformed.
 fn hhmm_min(s: &str) -> Option<u16> {
-    let (h, m) = parse_hhmm(s)?;
+    let (h, m) = policy::parse_hhmm(s)?;
     Some(u16::from(h) * 60 + u16::from(m))
 }
 
@@ -158,7 +159,7 @@ pub fn FlexHours() -> impl IntoView {
         };
         // Client check against the loaded policy, if available.
         if let Some(Ok(p)) = policy.get_untracked()
-            && let Err(e) = validate_flex(&req, &p)
+            && let Err(e) = flex_hours::validate_flex(&req, &p)
         {
             err.set(Some(e.to_string()));
             return;

@@ -20,6 +20,7 @@ use crate::primitives::textarea::Textarea;
 use crate::state::toast::ToastState;
 use crate::theme::{self, color, space, typography};
 use crate::util::format;
+use crate::util::load;
 
 const PAGE: u32 = 50;
 
@@ -193,7 +194,7 @@ pub fn CommentThread(#[prop(into)] target: Signal<Option<CommentTarget>>) -> imp
                 {move || {
                     let list = comments.get();
                     if list.is_empty() {
-                        crate::util::load::note("No comments yet — start the discussion.")
+                        load::note("No comments yet — start the discussion.")
                     } else {
                         let rows = list
                             .into_iter()

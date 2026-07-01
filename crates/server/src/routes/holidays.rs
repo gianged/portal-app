@@ -8,7 +8,7 @@ use axum::{
     routing,
 };
 use serde::Deserialize;
-use time::Month;
+use time::{Date, Month};
 
 use domain::model::Holiday;
 use shared::{
@@ -16,9 +16,7 @@ use shared::{
     validation::holiday::validate_holiday,
 };
 
-use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, routes::parse_date,
-};
+use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, routes};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -36,9 +34,9 @@ async fn list(
     auth: AuthUser,
     Query(q): Query<YearQuery>,
 ) -> Result<Json<Vec<HolidayDto>>, AppError> {
-    let from = time::Date::from_calendar_date(q.year, Month::January, 1)
+    let from = Date::from_calendar_date(q.year, Month::January, 1)
         .map_err(|_| AppError::Validation(format!("invalid year '{}'", q.year)))?;
-    let to = time::Date::from_calendar_date(q.year, Month::December, 31)
+    let to = Date::from_calendar_date(q.year, Month::December, 31)
         .map_err(|_| AppError::Validation(format!("invalid year '{}'", q.year)))?;
     let holidays = state.holiday.list(auth.user_id, from, to).await?;
     Ok(Json(holidays.iter().map(dto::holiday_dto).collect()))
@@ -50,7 +48,7 @@ async fn set(
     Path(date): Path<String>,
     Json(body): Json<SetHolidayRequest>,
 ) -> Result<Json<HolidayDto>, AppError> {
-    let date = parse_date(&date)?;
+    let date = routes::parse_date(&date)?;
     validate_holiday(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     state
         .holiday
@@ -67,7 +65,7 @@ async fn remove(
     auth: AuthUser,
     Path(date): Path<String>,
 ) -> Result<StatusCode, AppError> {
-    let date = parse_date(&date)?;
+    let date = routes::parse_date(&date)?;
     state.holiday.remove(auth.user_id, date).await?;
     Ok(StatusCode::NO_CONTENT)
 }

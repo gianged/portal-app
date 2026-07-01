@@ -5,12 +5,14 @@ pub mod typography;
 
 use std::str::FromStr;
 
+use stylist::Style;
+use stylist::ast::Sheet;
+
 #[must_use]
 pub fn class(css: impl AsRef<str>) -> String {
     // CSS comes from static templates and theme constants we control, so a parse failure is a programmer bug.
-    let sheet =
-        stylist::ast::Sheet::from_str(css.as_ref()).expect("CSS template is statically valid");
-    stylist::Style::new(sheet)
+    let sheet = Sheet::from_str(css.as_ref()).expect("CSS template is statically valid");
+    Style::new(sheet)
         .expect("CSS template is statically valid")
         .get_class_name()
         .to_string()

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use domain::{
+    error::TransitionError,
     ids::{GroupId, ProjectCollaboratorId, ProjectId, ProjectInviteId, UserId},
     model::{
         Project, ProjectCollaborator, ProjectInvite, ProjectInviteStatus, ProjectStatus,
@@ -509,10 +510,7 @@ impl ProjectService {
 
     async fn transition<F>(&self, actor: UserId, project_id: ProjectId, op: F) -> Result<Project>
     where
-        F: FnOnce(
-            &mut Project,
-            OffsetDateTime,
-        ) -> std::result::Result<(), domain::error::TransitionError>,
+        F: FnOnce(&mut Project, OffsetDateTime) -> std::result::Result<(), TransitionError>,
     {
         let mut project = self.load(project_id).await?;
         self.perms

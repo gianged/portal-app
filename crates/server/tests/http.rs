@@ -8,7 +8,7 @@ mod common;
 use std::net::SocketAddr;
 
 use axum::{
-    body::Body,
+    body::{self, Body},
     extract::ConnectInfo,
     http::{Request, StatusCode, header},
     response::Response,
@@ -31,7 +31,7 @@ use server::{
 use common::{active_user, default_test_app, test_app};
 
 async fn decode<T: DeserializeOwned>(response: Response) -> T {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+    let bytes = body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("buffer response body");
     serde_json::from_slice(&bytes).expect("decode response body")
@@ -67,7 +67,7 @@ async fn healthz_returns_ok() {
     let app = default_test_app();
     let response = router(app.state).oneshot(get("/healthz")).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+    let bytes = body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     assert_eq!(&bytes[..], b"ok");

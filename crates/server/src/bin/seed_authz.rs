@@ -18,7 +18,7 @@ use domain::{
 };
 use infrastructure::{
     openfga::{self, OpenFgaAuthzClient},
-    postgres::{PgGroupRepo, PgProjectRepo, PgTicketRepo, PgUserRepo, build_pool},
+    postgres::{self, PgGroupRepo, PgProjectRepo, PgTicketRepo, PgUserRepo},
 };
 use tokio::fs;
 
@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
         .ok()
         .filter(|s| !s.is_empty());
 
-    let pool = build_pool(&database_url, 5)
+    let pool = postgres::build_pool(&database_url, 5)
         .await
         .context("building postgres pool")?;
 

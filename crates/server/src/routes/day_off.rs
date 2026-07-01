@@ -19,8 +19,7 @@ use shared::{
 };
 
 use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve,
-    routes::parse_date,
+    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
 };
 
 pub fn router() -> Router<AppState> {
@@ -53,8 +52,8 @@ async fn create(
     Json(body): Json<CreateDayOffRequest>,
 ) -> Result<Json<DayOffDto>, AppError> {
     validate_day_off(&body).map_err(|e| AppError::Validation(e.to_string()))?;
-    let start = parse_date(&body.start_date)?;
-    let end = parse_date(&body.end_date)?;
+    let start = routes::parse_date(&body.start_date)?;
+    let end = routes::parse_date(&body.end_date)?;
     let cmd = dto::create_day_off_command(start, end, body);
     let day_off = state.day_off.create(auth.user_id, cmd).await?;
     Ok(Json(single(&state, &day_off).await?))
@@ -65,8 +64,8 @@ async fn list_mine(
     auth: AuthUser,
     Query(q): Query<RangeQuery>,
 ) -> Result<Json<Vec<DayOffDto>>, AppError> {
-    let from = parse_date(&q.from)?;
-    let to = parse_date(&q.to)?;
+    let from = routes::parse_date(&q.from)?;
+    let to = routes::parse_date(&q.to)?;
     let list = state.day_off.list_mine(auth.user_id, from, to).await?;
     Ok(Json(many(&state, list).await?))
 }

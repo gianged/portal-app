@@ -1,8 +1,8 @@
 //! Work-request detail: status-gated lifecycle actions, the assignee picker, and attachment upload, plus the comment thread and audit trail.
 
 use futures::{FutureExt, future::LocalBoxFuture};
-use leptos::{html::Input as HtmlInputEl, prelude::*, task};
-use web_sys::FormData;
+use leptos::{ev::MouseEvent, html::Input as HtmlInputEl, prelude::*, task};
+use web_sys::{Blob, FormData};
 
 use shared::dto::ids::{RequestId, UserId};
 use shared::dto::request::{AssignRequestRequest, RequestDetailDto, RequestDto, RequestStatus};
@@ -130,7 +130,7 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
             return;
         };
         let form = FormData::new().expect("FormData is constructible in the browser");
-        let blob: &web_sys::Blob = file.as_ref();
+        let blob: &Blob = file.as_ref();
         let _ = form.append_with_blob_and_filename("file", blob, &file.name());
         task::spawn_local(async move {
             match api::upload_attachment(rid, form).await {
@@ -215,7 +215,7 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
 fn lifecycle_bar(
     status: RequestStatus,
     run: impl Fn(RequestAction) + Copy + Send + Sync + 'static,
-    open_assign: Callback<leptos::ev::MouseEvent>,
+    open_assign: Callback<MouseEvent>,
 ) -> AnyView {
     let btn = move |label: &'static str, variant: ButtonVariant, action: RequestAction| {
         let cb = Callback::new(move |_| run(action));
@@ -308,7 +308,7 @@ fn AssignDialog(
 
 fn attachments_card(
     detail: &RequestDetailDto,
-    pick_file: Callback<leptos::ev::MouseEvent>,
+    pick_file: Callback<MouseEvent>,
     upload: Callback<()>,
     file_ref: NodeRef<HtmlInputEl>,
 ) -> AnyView {

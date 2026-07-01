@@ -1,6 +1,6 @@
 //! Project detail: status transitions, collaborator management, group invitations, and the project's requests.
 
-use leptos::{prelude::*, task};
+use leptos::{ev::MouseEvent, prelude::*, task};
 use leptos_router::components::A;
 use uuid::Uuid;
 
@@ -218,7 +218,7 @@ fn status_bar(
 fn collaborators_card(
     detail: &ProjectDetailDto,
     remove: impl Fn(GroupId) + Copy + Send + Sync + 'static,
-    open_invite: Callback<leptos::ev::MouseEvent>,
+    open_invite: Callback<MouseEvent>,
 ) -> AnyView {
     let rows = detail
         .collaborators
@@ -324,7 +324,7 @@ fn ProjectRequests(requests: Loadable<Vec<RequestDto>>) -> impl IntoView {
                             view! {
                                 <div class=row>
                                     <A href=href attr:class=link>{title}</A>
-                                    <Badge variant=crate::util::format::request_status_variant(status)>{status.label()}</Badge>
+                                    <Badge variant=format::request_status_variant(status)>{status.label()}</Badge>
                                 </div>
                             }
                         }).collect_view();

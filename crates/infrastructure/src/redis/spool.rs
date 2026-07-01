@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use async_trait::async_trait;
 use redis::{Client, aio::ConnectionManager};
 
@@ -93,6 +95,6 @@ impl Spool for RedisSpool {
     }
 }
 
-fn backend<E: std::fmt::Display>(e: E) -> SpoolError {
+fn backend<E: Display>(e: E) -> SpoolError {
     SpoolError::Backend(e.to_string())
 }

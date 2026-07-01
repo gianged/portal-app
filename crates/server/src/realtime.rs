@@ -14,7 +14,7 @@ use domain::{
     ids::{ChannelId, MessageId, UserId},
     ports::event_publisher::EventPublisher,
 };
-use infrastructure::redis::subscribe;
+use infrastructure::redis;
 
 /// Topic for ephemeral WS signals (not persisted, best-effort).
 pub const WS_TOPIC: &str = "portal.ws";
@@ -74,6 +74,6 @@ impl Realtime {
         &self,
         topic: &str,
     ) -> Result<Pin<Box<dyn Stream<Item = Vec<u8>> + Send>>, EventError> {
-        subscribe(&self.redis_url, topic).await
+        redis::subscribe(&self.redis_url, topic).await
     }
 }

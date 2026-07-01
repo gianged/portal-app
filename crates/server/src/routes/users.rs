@@ -18,7 +18,9 @@ use shared::{
     validation::user,
 };
 
-use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
+use crate::{
+    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -57,7 +59,7 @@ async fn list(
 ) -> Result<Json<Vec<UserDto>>, AppError> {
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
     let offset = q.offset.unwrap_or(0);
-    let search = crate::routes::norm_q(q.q);
+    let search = routes::norm_q(q.q);
     let users = state
         .user
         .list_active(limit, offset, search.as_deref())

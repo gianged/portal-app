@@ -4,6 +4,7 @@ use shared::dto::ids::UserId;
 use shared::dto::user::{
     CreateUserRequest, ResetPasswordRequest, UpdateProfileRequest, UserDto, UserProfileDto,
 };
+use web_sys::js_sys;
 
 use crate::api::client;
 use crate::api::error::FrontendError;
@@ -12,7 +13,7 @@ use crate::api::error::FrontendError;
 pub async fn list(q: Option<String>) -> Result<Vec<UserDto>, FrontendError> {
     let query = match q {
         Some(term) => {
-            let encoded = String::from(web_sys::js_sys::encode_uri_component(&term));
+            let encoded = String::from(js_sys::encode_uri_component(&term));
             client::query(&[("q", &encoded)])
         }
         None => String::new(),
