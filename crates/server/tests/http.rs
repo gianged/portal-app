@@ -5,8 +5,11 @@
 
 mod common;
 
+use std::net::SocketAddr;
+
 use axum::{
     body::Body,
+    extract::ConnectInfo,
     http::{Request, StatusCode, header},
     response::Response,
 };
@@ -22,7 +25,7 @@ use shared::dto::{
 
 use server::{
     app::{cors_layer, router},
-    middleware::rate_limit::RateLimits,
+    middleware::{ip_allowlist::IpAllowlist, rate_limit::RateLimits},
 };
 
 use common::{active_user, default_test_app, test_app};
@@ -47,6 +50,16 @@ fn authed_get(uri: &str, token: &str) -> Request<Body> {
         .header(header::COOKIE, format!("portal_session={token}"))
         .body(Body::empty())
         .expect("build request")
+}
+
+/// A GET carrying a `ConnectInfo` peer address, which the make-service normally
+/// attaches but `oneshot` does not. Lets the network-gate tests drive a specific
+/// client IP.
+fn get_from(uri: &str, peer: &str) -> Request<Body> {
+    let mut req = get(uri);
+    req.extensions_mut()
+        .insert(ConnectInfo(peer.parse::<SocketAddr>().expect("peer addr")));
+    req
 }
 
 #[tokio::test]
@@ -212,6 +225,48 @@ async fn unknown_route_is_404() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn allowlisted_peer_passes_gate() {
+    let mut app = default_test_app();
+    app.state.ip_allowlist = IpAllowlist {
+        enabled: true,
+        nets: ["10.0.0.0/8".parse().unwrap()].into(),
+    };
+    let response = router(app.state)
+        .oneshot(get_from("/healthz", "10.1.2.3:5000"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn out_of_range_peer_is_403() {
+    let mut app = default_test_app();
+    app.state.ip_allowlist = IpAllowlist {
+        enabled: true,
+        nets: ["10.0.0.0/8".parse().unwrap()].into(),
+    };
+    let response = router(app.state)
+        .oneshot(get_from("/healthz", "203.0.113.5:5000"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body: ApiError = decode(response).await;
+    assert_eq!(body.code, ErrorCode::Forbidden);
+}
+
+#[tokio::test]
+async fn enabled_gate_without_peer_addr_is_403() {
+    // Fail closed: with the gate on and no ConnectInfo, the client is rejected.
+    let mut app = default_test_app();
+    app.state.ip_allowlist = IpAllowlist {
+        enabled: true,
+        nets: ["10.0.0.0/8".parse().unwrap()].into(),
+    };
+    let response = router(app.state).oneshot(get("/healthz")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

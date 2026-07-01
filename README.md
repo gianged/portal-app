@@ -1,6 +1,6 @@
 # Portal
 
-Internal company portal for a single organization (100–1000 users): project tracking, work requests, IT ticketing, real-time chat, and company-wide announcements — all behind relationship-based access control.
+Internal company portal for a single organization (100–1000 users): project tracking, work requests, IT ticketing, attendance & leave management, real-time chat, and company-wide announcements — all behind relationship-based access control.
 
 Full-stack Rust — an Axum HTTP/WebSocket backend, a Leptos WebAssembly frontend, and ReBAC authorization via OpenFGA, backed by PostgreSQL, ScyllaDB, and Redis. This README is written for operators running and deploying the stack.
 
@@ -25,6 +25,8 @@ Full-stack Rust — an Axum HTTP/WebSocket backend, a Leptos WebAssembly fronten
 - **Projects** — owned at the group level, with cross-group collaboration via group invites.
 - **Requests** — work-request workflows scoped to projects, with assignment, review, and approval states.
 - **Tickets** — IT ticketing with triage, priority, resolution, and a bounded reopen window.
+- **Attendance & leave** — daily work reports with leader review, day-off requests (annual, sick, unpaid, remote), overtime, and flexible working hours enforcing core hours plus monthly reconciliation.
+- **Leave & policy** — yearly leave grants with FIFO carryover and expiry, a company holiday calendar, and HR-configured attendance policy; monthly / yearly / per-staff reports export to PDF.
 - **Chat** — real-time over WebSocket: group channels, an HR-broadcast general channel, and direct messages.
 - **Announcements** — company-wide, with a 15-minute edit grace period and broadcast notifications.
 - **Authorization** — ReBAC via OpenFGA; permissions are derived from the org graph, not stored as flat ACLs.
@@ -131,6 +133,10 @@ Generate each with `openssl rand -hex 32`. These are placeholders in `.env.examp
 | `SESSION_TTL_HOURS` | `24` | Session lifetime. |
 | `HEALTH_PROBE_INTERVAL_SECS` | `5` | How often backends are probed (drives circuit breakers and `/readyz`). |
 | `RUST_LOG` | `info,portal=debug` | Log filter. |
+
+### Network access gate
+
+An IP allowlist middleware runs before auth and any handler. With `IP_ALLOWLIST_ENABLED=true` (default) only peers matching `IP_ALLOWLIST` reach the API — others get `403`. When `IP_ALLOWLIST` is unset it defaults to loopback + private ranges, so LAN and VPN clients pass; set your real networks in production. The gate fails closed: a request with no resolvable peer IP is rejected. Behind a reverse proxy, enforce this at the proxy for now (`X-Forwarded-For` trust is a TODO).
 
 ### Production-only authorization hardening
 

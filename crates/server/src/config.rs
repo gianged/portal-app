@@ -1,6 +1,12 @@
-use std::{env, net::SocketAddr, path::PathBuf};
+use std::{
+    env,
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+    str::FromStr,
+};
 
 use anyhow::Context;
+use ipnet::IpNet;
 
 use infrastructure::telemetry::{LogFormat, TelemetryConfig};
 
@@ -59,6 +65,13 @@ pub struct Config {
     /// How often the health prober pings each backend to drive its breaker and
     /// the `/readyz` snapshot.
     pub health_probe_interval: std::time::Duration,
+    /// Network gate: when `true`, only clients whose peer IP falls in
+    /// `ip_allowlist` reach the API; others get 403. Toggle via
+    /// `IP_ALLOWLIST_ENABLED` (default on).
+    pub ip_allowlist_enabled: bool,
+    /// Allowed source networks (CIDR). Defaults to loopback + RFC1918/ULA private
+    /// ranges so LAN and VPN clients pass; override with `IP_ALLOWLIST`.
+    pub ip_allowlist: Vec<IpNet>,
 }
 
 pub fn from_env() -> anyhow::Result<Config> {
@@ -99,6 +112,11 @@ pub fn from_env() -> anyhow::Result<Config> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
+
+    let ip_allowlist_enabled: bool = optional("IP_ALLOWLIST_ENABLED", "true")
+        .parse()
+        .context("invalid IP_ALLOWLIST_ENABLED (expected true/false)")?;
+    let ip_allowlist = parse_allowlist(&optional("IP_ALLOWLIST", DEFAULT_IP_ALLOWLIST))?;
 
     Ok(Config {
         database_url: required("DATABASE_URL")?,
@@ -142,7 +160,29 @@ pub fn from_env() -> anyhow::Result<Config> {
                 .parse()
                 .context("invalid HEALTH_PROBE_INTERVAL_SECS")?,
         ),
+        ip_allowlist_enabled,
+        ip_allowlist,
     })
+}
+
+/// Default allowlist: loopback plus RFC1918 (v4) and ULA (v6) private ranges, so a
+/// deploy inside the corporate LAN and its VPN clients pass without configuration.
+const DEFAULT_IP_ALLOWLIST: &str =
+    "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7";
+
+/// Parses a comma-separated network list. Each token is a CIDR (`10.0.0.0/8`) or a
+/// bare address promoted to a host route (`/32` or `/128`). A malformed token fails
+/// startup rather than silently narrowing the gate.
+fn parse_allowlist(raw: &str) -> anyhow::Result<Vec<IpNet>> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|tok| {
+            IpNet::from_str(tok)
+                .or_else(|_| IpAddr::from_str(tok).map(IpNet::from))
+                .with_context(|| format!("invalid IP_ALLOWLIST entry: {tok}"))
+        })
+        .collect()
 }
 
 fn required(key: &str) -> anyhow::Result<String> {

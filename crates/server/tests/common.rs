@@ -69,7 +69,8 @@ use domain::{
 use infrastructure::{local_storage::LocalStorage, signed_url::SignedUrl};
 
 use server::{
-    app::AppState, auth::TokenService, middleware::rate_limit::RateLimits, realtime::Realtime,
+    app::AppState, auth::TokenService, middleware::ip_allowlist::IpAllowlist,
+    middleware::rate_limit::RateLimits, realtime::Realtime,
 };
 
 // --- repositories --------------------------------------------------------------
@@ -1220,6 +1221,11 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         presence,
         rate_limiter,
         rate_limits,
+        // Gate off: oneshot requests attach no ConnectInfo and the gate fails closed.
+        ip_allowlist: IpAllowlist {
+            enabled: false,
+            nets: Arc::from([]),
+        },
         storage,
         signed_url,
         health: Arc::new(HealthRegistry::new(&BackendId::ALL)),

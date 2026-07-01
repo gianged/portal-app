@@ -5,10 +5,11 @@ use axum::{
     Json, Router,
     extract::State,
     http::{HeaderValue, Method, StatusCode, header},
+    middleware::{from_fn, from_fn_with_state},
     response::{IntoResponse, Response},
     routing,
 };
-use tokio::fs;
+use tokio::{fs, sync::oneshot, task::JoinHandle};
 use tower_http::{
     catch_panic::CatchPanicLayer,
     cors::{AllowOrigin, CorsLayer},
@@ -62,7 +63,15 @@ use shared::dto::{
 };
 
 use crate::{
-    auth::TokenService, config::Config, middleware::rate_limit::RateLimits, realtime::Realtime,
+    auth::TokenService,
+    config::Config,
+    middleware::{
+        auth,
+        ip_allowlist::{self, IpAllowlist},
+        rate_limit::{self, RateLimits},
+        request_id, trace,
+    },
+    realtime::Realtime,
     routes,
 };
 
@@ -112,6 +121,9 @@ pub struct AppState {
     pub presence: Arc<dyn Presence>,
     pub rate_limiter: Arc<dyn RateLimit>,
     pub rate_limits: RateLimits,
+    // Network gate: allowlisted source CIDRs + enable flag, checked by the
+    // ip_allowlist middleware before auth.
+    pub ip_allowlist: IpAllowlist,
     pub storage: Arc<LocalStorage>,
     // Verifies the signed `?exp&sig` on `/files` downloads; the same signer
     // (built from `STORAGE_SIGNING_SECRET`) backs `LocalStorage::presign_get`.
@@ -123,8 +135,8 @@ pub struct AppState {
 /// Owns the chat ingest drain task so the serving loop can flush its buffered
 /// tail before exit. [`Self::shutdown`] signals the loop and waits for it.
 pub struct IngestShutdown {
-    trigger: tokio::sync::oneshot::Sender<()>,
-    drain: tokio::task::JoinHandle<()>,
+    trigger: oneshot::Sender<()>,
+    drain: JoinHandle<()>,
 }
 
 impl IngestShutdown {
@@ -317,7 +329,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
     // The drain loop owns a single-use receiver and a shutdown handshake that
     // flushes its tail on exit, so it keeps its own spawn rather than the restart
     // supervisor; a persist failure now spills instead of crashing the loop.
-    let (ingest_shutdown_tx, ingest_shutdown_rx) = tokio::sync::oneshot::channel();
+    let (ingest_shutdown_tx, ingest_shutdown_rx) = oneshot::channel();
     let ingest_drain = tokio::spawn(chat_ingest.clone().run(chat_ingest_rx, ingest_shutdown_rx));
     let ingest_shutdown = IngestShutdown {
         trigger: ingest_shutdown_tx,
@@ -475,6 +487,10 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
             api: cfg.api_rate_limit,
             chat: cfg.chat_rate_limit,
         },
+        ip_allowlist: IpAllowlist {
+            enabled: cfg.ip_allowlist_enabled,
+            nets: cfg.ip_allowlist.iter().copied().collect(),
+        },
         storage,
         signed_url,
         health,
@@ -513,27 +529,17 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::day_off::router())
         .merge(routes::overtime::router())
         .merge(routes::flex_hours::router())
-        .route_layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            crate::middleware::rate_limit::per_user,
-        ))
-        .route_layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            crate::middleware::auth::require_auth,
-        ));
+        .route_layer(from_fn_with_state(state.clone(), rate_limit::per_user))
+        .route_layer(from_fn_with_state(state.clone(), auth::require_auth));
 
     // Public API: login / logout carry no session yet; rate-limited per client IP.
-    let public = routes::auth::public_router().route_layer(axum::middleware::from_fn_with_state(
-        state.clone(),
-        crate::middleware::rate_limit::per_ip,
-    ));
+    let public = routes::auth::public_router()
+        .route_layer(from_fn_with_state(state.clone(), rate_limit::per_ip));
 
     // Files need session + signed `?exp&sig` (bound to the user); skip the per-user limiter -
     // the signature already scopes each fetch, so image-heavy pages don't burn the API budget.
-    let files = routes::files::router().route_layer(axum::middleware::from_fn_with_state(
-        state.clone(),
-        crate::middleware::auth::require_auth,
-    ));
+    let files =
+        routes::files::router().route_layer(from_fn_with_state(state.clone(), auth::require_auth));
     let api = public.merge(protected).merge(files);
 
     Router::new()
@@ -567,10 +573,11 @@ pub fn router(state: AppState) -> Router {
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'"),
         ))
-        .layer(axum::middleware::from_fn(
-            crate::middleware::request_id::propagate,
-        ))
-        .layer(crate::middleware::trace::layer())
+        // Network gate: rejects out-of-allowlist peers before auth/handlers, but
+        // inside trace + request-id so a 403 is still traced and correlated.
+        .layer(from_fn_with_state(state.clone(), ip_allowlist::enforce))
+        .layer(from_fn(request_id::propagate))
+        .layer(trace::layer())
         .with_state(state)
 }
 
