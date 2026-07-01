@@ -109,9 +109,7 @@ impl ChatService {
         let direct = DirectChannel::new(id, actor, other_user, now);
         let channel = Channel::Direct(direct);
         self.chats.save_channel(&channel).await?;
-        // Subscribe both participants so the channel shows up in their lists. Read
-        // access is enforced by identity, not OpenFGA, so there is no participant
-        // tuple to write and thus no Director backdoor.
+        // Read access is by identity, not OpenFGA, so no participant tuple and no Director backdoor.
         self.chats
             .subscribe_member(actor, id, ChannelKind::Direct)
             .await?;

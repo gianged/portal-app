@@ -1,7 +1,6 @@
-//! Color tokens, resolved at runtime to CSS custom properties so a single
-//! `data-theme` flip on `<html>` reskins the whole app. The variable values live
-//! in [`crate::theme::global_stylesheet`]; spacing/radius/typography stay baked
-//! because they do not change between light and dark.
+//! Color tokens resolved at runtime to CSS custom properties, so a single
+//! `data-theme` flip on `<html>` reskins the app. Values live in
+//! [`crate::theme::global_stylesheet`]; spacing/radius/typography stay baked.
 
 pub const BG: &str = "var(--bg)";
 pub const BG_SUBTLE: &str = "var(--bg-subtle)";

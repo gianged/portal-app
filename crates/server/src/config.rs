@@ -50,11 +50,9 @@ pub struct Config {
     /// `Secure` attribute on the session cookie. Defaults to `true`; set
     /// `COOKIE_SECURE=false` for plain-HTTP local development.
     pub cookie_secure: bool,
-    /// Per-window request ceilings for the rate-limit middleware: `auth_rate_limit`
-    /// gates unauthenticated `/login` per client IP, `api_rate_limit` gates the
-    /// protected API per user, `chat_rate_limit` gates the WebSocket `SendMessage`
-    /// path per user (the HTTP per-user limiter never sees WS frames).
-    /// `rate_limit_window_secs` is the fixed window width.
+    /// Per-window request ceilings: `auth_rate_limit` gates `/login` per client IP,
+    /// `api_rate_limit` the API and `chat_rate_limit` the WS `SendMessage` path per
+    /// user (WS frames bypass the HTTP limiter); `rate_limit_window_secs` is the window.
     pub auth_rate_limit: u64,
     pub api_rate_limit: u64,
     pub chat_rate_limit: u64,

@@ -20,8 +20,7 @@ impl PgPolicyRepo {
     }
 }
 
-// NUMERIC columns are read as float8 and written via `$n::float8::numeric` since
-// the workspace sqlx build carries no decimal feature. SMALLINT maps to i16.
+// NUMERIC columns are read/written via ::float8 (no decimal feature).
 struct PolicyRow {
     workday_start: Time,
     work_hours_per_day: f64,

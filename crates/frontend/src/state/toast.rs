@@ -1,7 +1,5 @@
 //! Transient toast notifications. Provided once at the app root and rendered by
-//! [`crate::primitives::toast::ToastHost`]. Mutation flows call
-//! [`ToastState::success`] / [`ToastState::error`] / [`ToastState::error_from`];
-//! each toast auto-dismisses.
+//! [`crate::primitives::toast::ToastHost`]; each toast auto-dismisses.
 
 use std::time::Duration;
 

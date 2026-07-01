@@ -22,8 +22,7 @@ impl PgLeaveBalanceRepo {
     }
 }
 
-// NUMERIC columns are read via ::float8 and written via $n::float8::numeric (no
-// decimal feature). SMALLINT grant_year maps to i16.
+// NUMERIC columns are read/written via ::float8 (no decimal feature).
 struct GrantRow {
     id: Uuid,
     user_id: Uuid,

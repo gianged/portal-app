@@ -2,11 +2,8 @@
 //! allowlist with 403, before auth or any handler runs. Toggled by
 //! `IP_ALLOWLIST_ENABLED` (default on); the CIDR set comes from `IP_ALLOWLIST` and
 //! defaults to loopback + private ranges, so LAN and VPN clients pass unconfigured.
-//!
-//! Reads the peer address from the same `ConnectInfo` extension the per-IP rate
-//! limiter uses. Unlike that limiter it fails *closed*: with the gate enabled and no
-//! peer address, the client is rejected rather than let through, since an
-//! unverifiable network cannot be trusted.
+//! Fails closed: with no peer address the client is rejected, since an unverifiable
+//! network cannot be trusted.
 
 use std::{
     net::{IpAddr, SocketAddr},

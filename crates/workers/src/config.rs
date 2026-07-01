@@ -120,8 +120,7 @@ pub fn from_env() -> anyhow::Result<Config> {
         .parse()
         .context("invalid HEALTH_PROBE_INTERVAL_SECS")?;
 
-    // OpenFGA wiring, needed to construct the leave service for the expiry sweep.
-    // Mirrors the server so both binaries share the same store/model resolution.
+    // OpenFGA wiring for the leave service; mirrors the server's store/model resolution.
     let openfga_bearer_token = env::var("OPENFGA_BEARER_TOKEN")
         .ok()
         .filter(|s| !s.is_empty());

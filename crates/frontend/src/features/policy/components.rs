@@ -1,6 +1,4 @@
-//! Attendance policy editor: a grouped form (general / flex / overtime / balance)
-//! seeded from the current values. Editable for Director / HR; read-only for
-//! everyone else (the server is the real gate).
+//! Attendance policy editor; editable for Director/HR, read-only otherwise (server is the real gate).
 
 use leptos::{prelude::*, task};
 

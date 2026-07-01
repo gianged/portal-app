@@ -1,5 +1,4 @@
-//! Attendance policy HTTP wrappers. `GET /policy` is readable by any user; the
-//! `PUT` is HR/Director and rejected server-side otherwise.
+//! Attendance policy HTTP wrappers; `PUT` is HR/Director-gated server-side.
 
 use shared::dto::policy::{PolicyDto, UpdatePolicyRequest};
 

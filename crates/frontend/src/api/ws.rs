@@ -1,11 +1,8 @@
-//! The single chat WebSocket client. Built once at the app root and shared via
-//! context; chat components send [`ClientFrame`]s through [`WsClient::send`] and
-//! react to incoming [`ServerFrame`]s by tracking [`WsClient::last_frame`].
-//!
-//! A background task owns the (non-`Send`) socket and runs on the JS event loop
-//! via `spawn_local`. Outbound frames flow through an unbounded channel so the
-//! `WsClient` handle stays cheap and `Copy`; the task reconnects with backoff and
-//! a separate heartbeat task keeps presence alive with periodic `Ping`s.
+//! The single chat WebSocket client, built once at the app root and shared via
+//! context. A background task owns the (non-`Send`) socket on the JS event loop
+//! via `spawn_local`, reconnecting with backoff; a heartbeat task keeps presence
+//! alive with periodic `Ping`s. Outbound frames flow through an unbounded channel
+//! so the `WsClient` handle stays cheap and `Copy`.
 
 use futures::{
     SinkExt, StreamExt,
@@ -27,9 +24,8 @@ pub struct WsClient {
     /// Holds the receiver until [`WsClient::start`] hands it to the read task.
     rx: StoredValue<Option<UnboundedReceiver<ClientFrame>>>,
     started: RwSignal<bool>,
-    /// The most recent frame pushed by the server. Subscribers react in an
-    /// `Effect`; each socket message arrives in its own task poll, so frames are
-    /// observed one at a time rather than coalesced.
+    /// The most recent frame pushed by the server; each arrives in its own task
+    /// poll, so subscribers observe frames one at a time rather than coalesced.
     pub last_frame: RwSignal<Option<ServerFrame>>,
     pub connected: RwSignal<bool>,
 }

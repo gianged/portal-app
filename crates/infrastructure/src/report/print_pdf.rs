@@ -420,7 +420,6 @@ fn tickets_section(c: &mut Canvas, t: &TicketSummary) {
         .collect();
     c.bar_chart(&by_cat, accent(), CONTENT_W, 38.0);
 
-    // status counts as a compact line
     let status_line = t
         .by_status
         .iter()

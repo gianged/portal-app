@@ -124,9 +124,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         Arc::new(ApalisAuditQueue::new(audit_storage.clone())),
     ));
 
-    // Leave-expiry sweep service. Needs Permissions (built from OpenFGA, mirroring
-    // the server) to satisfy the service constructor; the sweep itself uses no
-    // authz. The cached PolicyProvider supplies the expiry window + policy.
+    // Leave-expiry sweep service; Permissions only satisfies the constructor (the sweep uses no authz), PolicyProvider supplies the expiry window.
     let model_json = fs::read_to_string(&cfg.openfga_model_path)
         .await
         .with_context(|| {
@@ -169,8 +167,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         events.clone(),
     ));
 
-    // Flex reconciliation sweep service. Reuses the cached policy provider; the
-    // sweep itself uses no authz, but the constructor wants Permissions.
+    // Flex reconciliation sweep service; the constructor wants Permissions though the sweep uses no authz.
     let flex_repo: Arc<dyn FlexHoursRepository> = Arc::new(PgFlexRepo::new(pool.clone()));
     let flex = Arc::new(FlexHoursService::new(
         flex_repo,
@@ -240,8 +237,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     // Dedicated queue handle for the report scheduler's email fan-out.
     let email_queue: Arc<dyn JobQueue> = Arc::new(ApalisEmailQueue::new(email_store.clone()));
 
-    // Health registry + per-backend probes. Workers touch Postgres, Scylla, and
-    // Redis (no OpenFGA), so only those are tracked.
+    // Health registry + per-backend probes; workers touch Postgres, Scylla, and Redis (no OpenFGA).
     let health_registry = Arc::new(HealthRegistry::new(&[
         BackendId::Postgres,
         BackendId::Scylla,

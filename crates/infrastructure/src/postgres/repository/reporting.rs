@@ -473,9 +473,7 @@ impl ReportStatsRepository for PgReportingRepo {
         .await
         .map_err(mappers::map_pg_error)?;
 
-        // Approved leave days by kind, over requests intersecting the month (same
-        // overlap rule the work-percentage denominator uses). Approximation: a
-        // request spanning two months is counted in full in each overlapping month.
+        // Approved leave days by kind; cross-month requests count fully in each overlapping month.
         let leave_rows = sqlx::query!(
             r#"SELECT
                  kind AS "kind: SqlDayOffKind",

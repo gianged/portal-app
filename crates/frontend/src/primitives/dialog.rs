@@ -29,8 +29,7 @@ pub fn Dialog(
         p = space::D6,
     ));
 
-    // Close on Escape while open. Registered once for the component's lifetime;
-    // reads `open` untracked since the handler is not a reactive context.
+    // Close on Escape; reads `open` untracked since the handler is not a reactive context.
     let handle = window_event_listener(keydown, move |ev: KeyboardEvent| {
         if open.get_untracked()
             && ev.key() == "Escape"

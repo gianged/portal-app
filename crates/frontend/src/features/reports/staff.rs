@@ -32,8 +32,7 @@ pub fn StaffMonthlyTab() -> impl IntoView {
     let user_input = RwSignal::new(self_id);
     let report: Loadable<StaffMonthlyReportDto> = RwSignal::new(None);
 
-    // Leaders / HR / Directors may pull another user's report; everyone else is
-    // pinned to their own (the server gates it regardless).
+    // Leaders / HR / Directors may pull another user's report; the server gates it regardless.
     let can_pick = Signal::derive(move || {
         auth.user.with(|u| {
             u.as_ref().is_some_and(|u| {

@@ -1,7 +1,6 @@
-//! Presentation helpers shared across features: compact relative timestamps, a
-//! deterministic avatar tone, and domain status to [`BadgeVariant`] mappings.
-//! Labels are not duplicated here; every status/priority enum in `shared::dto`
-//! already exposes `.label()`, so these mappers only choose the badge color.
+//! Presentation helpers: compact relative timestamps, a deterministic avatar
+//! tone, and domain status to [`BadgeVariant`] mappings. Enums own `.label()`,
+//! so these mappers only choose the badge color.
 
 use shared::dto::{
     project::ProjectStatus,
@@ -132,7 +131,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn relative_time_reads_browser_clock() {
         // Exercises the `time/wasm-bindgen` feature: `now_utc()` resolves through
-        // the JS `Date` shim in-browser. A just-created timestamp reads "just now".
+        // the JS `Date` shim in-browser.
         let now = OffsetDateTime::now_utc();
         assert_eq!(relative_time(now), "just now");
     }

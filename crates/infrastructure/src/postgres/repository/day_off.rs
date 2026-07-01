@@ -135,8 +135,7 @@ impl DayOffRepository for PgDayOffRepo {
         month: u32,
     ) -> Result<f64, RepositoryError> {
         let (first, last) = mappers::month_bounds(year, month)?;
-        // Approximation: a leave request spanning two months is counted in full in
-        // each overlapping month; accurate proration would need per-day expansion.
+        // Approximation: a request spanning two months counts in full in each overlapping month.
         let row = sqlx::query!(
             r#"SELECT COALESCE(SUM(days), 0)::float8 AS "days!"
                FROM attendance.dayoff

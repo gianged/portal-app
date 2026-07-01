@@ -1,7 +1,6 @@
-//! Per-backend liveness probes implementing [`HealthCheck`]. Each probe is the
-//! cheapest round-trip that proves the backend answers, wrapped in a short
-//! timeout so a hung backend reports `Down` quickly instead of blocking the
-//! prober.
+//! Per-backend liveness probes implementing [`HealthCheck`]. Each is the cheapest
+//! round-trip that proves the backend answers, under a short timeout so a hung
+//! backend reports `Down` quickly.
 
 use std::{sync::Arc, time::Duration};
 

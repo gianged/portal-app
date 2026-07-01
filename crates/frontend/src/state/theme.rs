@@ -1,7 +1,6 @@
-//! Light/dark theme state. The chosen theme is persisted to `localStorage` and
-//! reflected onto `<html data-theme>`, which drives the CSS variables defined in
-//! [`crate::theme::global_stylesheet`]. Provided once at the app root; the root
-//! also runs an effect that calls [`apply_theme`] whenever the signal changes.
+//! Light/dark theme state, persisted to `localStorage` and reflected onto
+//! `<html data-theme>`, which drives the CSS variables in
+//! [`crate::theme::global_stylesheet`]. Provided once at the app root.
 
 use leptos::prelude::*;
 

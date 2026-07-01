@@ -1,7 +1,6 @@
-//! Presentation model for errors. Maps a [`FrontendError`] to the structured
-//! Title / code / message shape the UI renders via
-//! [`crate::primitives::error::ErrorCallout`] and the toast host. Keeps the
-//! user-facing copy, severity, and request-id policy out of the wire contract.
+//! Presentation model for errors: maps a [`FrontendError`] to the Title / code /
+//! message shape the UI renders, keeping user-facing copy and severity out of the
+//! wire contract.
 
 use shared::dto::common::ErrorCode;
 

@@ -45,9 +45,7 @@ pub struct ChatIngest {
     chat: Arc<ChatService>,
     chats: Arc<dyn ChatRepository>,
     events: Arc<EventBus>,
-    // When set, a batch that fails to persist is spilled here (durable) instead
-    // of dropped, since optimistic ack already told senders it succeeded. The
-    // drainer replays the spool once the backend recovers.
+    // Failed batches spill here (durable) and replay on recovery, honouring the optimistic ack.
     spool: Option<Arc<dyn Spool>>,
     tx: mpsc::Sender<Message>,
     cfg: ChatIngestConfig,
@@ -88,9 +86,7 @@ impl ChatIngest {
     #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn enqueue(&self, actor: UserId, cmd: PostMessageCommand) -> Result<Message> {
         let message = self.chat.prepare_message(actor, cmd).await?;
-        // Backpressure: shed load rather than await capacity. A full buffer means
-        // the drain can't keep up, so surface `chat_overloaded` and let the client
-        // retry instead of stalling the WS task.
+        // Backpressure: shed load rather than await capacity, so a full buffer never stalls the WS task.
         match self.tx.try_send(message.clone()) {
             Ok(()) => Ok(message),
             Err(mpsc::error::TrySendError::Full(_)) => {
@@ -130,9 +126,7 @@ impl ChatIngest {
                     }
                 }
                 _ = ticker.tick() => self.flush(&mut buf).await,
-                // Shutdown signalled: stop accepting, sweep what's queued, and flush
-                // the tail so optimistically-acked messages survive exit. Later
-                // sends land on a closed channel and are rejected.
+                // Shutdown: stop accepting, sweep and flush the tail so optimistically-acked messages survive exit.
                 _ = &mut shutdown => {
                     rx.close();
                     while let Ok(message) = rx.try_recv() {
@@ -162,7 +156,6 @@ impl ChatIngest {
             return;
         }
 
-        // Build one event per persisted message, draining the buffer.
         let events: Vec<DomainEvent> = buf
             .drain(..)
             .map(|message| DomainEvent::MessagePosted {
@@ -183,9 +176,7 @@ impl ChatIngest {
             }
         }
 
-        // Notifications enqueued after the fan-out so a slow job queue never stalls
-        // broadcast ordering. Only mention-bearing messages notify; chat is absent
-        // from AUDIT_TOPICS, so there are no audit jobs here.
+        // Notifications enqueued after fan-out so a slow job queue never stalls broadcast ordering; only mentions notify.
         for event in &events {
             let mentioned = matches!(
                 event,

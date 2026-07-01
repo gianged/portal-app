@@ -143,10 +143,8 @@ async fn handle_empty(resp: Response) -> Result<(), FrontendError> {
     Ok(())
 }
 
-/// Build a structured [`FrontendError::Http`] from a non-2xx response: parse the
-/// server's stable `{ code, message }` body and keep the `x-request-id` header
-/// for support references. A non-JSON body (e.g. a proxy/gateway error page)
-/// falls back to `Unknown` with the raw text as the message.
+/// Build a structured [`FrontendError::Http`] from a non-2xx response; a non-JSON
+/// body falls back to `Unknown` with the raw text as the message.
 async fn http_error(resp: Response) -> FrontendError {
     let status = resp.status();
     let request_id = resp.headers().get("x-request-id");

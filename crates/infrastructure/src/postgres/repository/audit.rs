@@ -57,8 +57,7 @@ impl AuditRepository for PgAuditRepo {
     async fn append(&self, e: &AuditLog) -> Result<(), RepositoryError> {
         // Immutable append (invariant 5): plain INSERT, no UPSERT.
         let action = SqlAuditAction::from(e.action);
-        // Bind payload_* as TEXT and cast ::text::jsonb in SQL; a direct ::jsonb
-        // would make sqlx infer serde_json::Value and force parsing opaque JSON.
+        // Bind payload_* as TEXT and cast ::text::jsonb; a direct ::jsonb makes sqlx infer serde_json::Value.
         sqlx::query!(
             r#"INSERT INTO audit.audit_log
                  (id, actor_user_id, action, entity_schema, entity_table, entity_id,

@@ -40,8 +40,7 @@ fn main() -> anyhow::Result<()> {
 async fn run() -> anyhow::Result<()> {
     // Populate the process env from the repo-root .env before config is parsed.
     dotenvy::dotenv().ok();
-    // Capture panics as structured logs, then stand up the log sinks. The guard
-    // keeps the file-writer flush thread alive for the process lifetime.
+    // Capture panics as structured logs, then stand up the log sinks; the guard keeps the file-writer flush thread alive.
     telemetry::install_panic_hook();
     let _log_guard = telemetry::init(&config::telemetry_config());
 
@@ -74,8 +73,7 @@ async fn run() -> anyhow::Result<()> {
         });
     }
 
-    // Periodic maintenance loops run alongside the queue consumer. Each handles its own
-    // errors and never returns; supervised so a panic restarts the loop with backoff.
+    // Periodic maintenance loops run alongside the queue consumer; supervised so a panic restarts the loop with backoff.
     {
         let m = maintenance.clone();
         let (retention, interval) = (cfg.notification_retention, cfg.cleanup_interval);
@@ -111,8 +109,7 @@ async fn run() -> anyhow::Result<()> {
         drop((report, email_queue));
     }
 
-    // Daily leave-balance expiry sweep: warns on near-expiry grants and lapses
-    // expired ones (recording work % per policy). Supervised like the others.
+    // Daily leave-balance expiry sweep: warns on near-expiry grants and lapses expired ones (recording work % per policy).
     if cfg.leave_expiry_enabled {
         let leave = leave.clone();
         let interval = cfg.leave_expiry_interval;
@@ -124,8 +121,7 @@ async fn run() -> anyhow::Result<()> {
         drop(leave);
     }
 
-    // Month-end flex reconciliation: warns users whose approved flex hours don't
-    // net to the expected monthly total. Supervised like the others.
+    // Month-end flex reconciliation: warns users whose approved flex hours don't net to the expected monthly total.
     if cfg.flex_recon_enabled {
         let flex = flex.clone();
         let interval = cfg.flex_recon_interval;
@@ -137,10 +133,8 @@ async fn run() -> anyhow::Result<()> {
         drop(flex);
     }
 
-    // One worker per durable queue. Separate queues isolate the non-idempotent
-    // notification fan-out from the audit projector so a retry never re-runs the other.
-    // The Postgres breaker gates the two PG-writing handlers: while it is open they
-    // return a retryable error so the job stays queued, paced by the breaker cooldown.
+    // One worker per durable queue; separate queues keep a notification retry from re-running the audit projector.
+    // The Postgres breaker gates both PG-writing handlers, returning a retryable error while open.
     let notify_worker = WorkerBuilder::new("notifications")
         .data(fanout)
         .data(pg_breaker.clone())

@@ -1,6 +1,4 @@
-//! Report HTTP wrappers (Director/HR only; the server enforces a 403). Stats power
-//! the dashboard; the `generate_*` calls render + store a PDF and return a signed
-//! download URL.
+//! Report HTTP wrappers (Director/HR only, server-enforced); `generate_*` store a PDF and return a signed download URL.
 
 use uuid::Uuid;
 

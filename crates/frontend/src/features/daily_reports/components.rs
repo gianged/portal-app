@@ -1,5 +1,4 @@
-//! Daily reports UI: a "My day" editor (date, summary, typed entries with an
-//! optional request link + progress hint) and a leader/HR "Team daily reports"
+//! Daily reports UI: a "My day" editor and a leader/HR "Team daily reports"
 //! review view. The server is the real authorization gate; non-leaders simply
 //! see an access error when they open the team view.
 
