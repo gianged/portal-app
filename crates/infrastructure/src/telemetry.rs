@@ -8,7 +8,9 @@
 //! - JSON to a daily-rolling file under `log_dir`;
 //! - OTLP spans to a collector when `otlp_endpoint` is set (off by default).
 
-use std::{backtrace::Backtrace, collections::HashMap, path::PathBuf, time::Duration};
+use std::{
+    backtrace::Backtrace, collections::HashMap, fs, panic, path::PathBuf, thread, time::Duration,
+};
 
 use opentelemetry::{
     global,
@@ -17,7 +19,7 @@ use opentelemetry::{
 use opentelemetry_otlp::{SpanExporter, WithExportConfig};
 use opentelemetry_sdk::{Resource, propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use tracing::Span;
-use tracing_appender::non_blocking::WorkerGuard;
+use tracing_appender::{non_blocking::WorkerGuard, rolling};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{
     EnvFilter, Layer, Registry, fmt, fmt::format::FmtSpan, layer::Layered, prelude::*,
@@ -89,7 +91,7 @@ impl Drop for TelemetryGuard {
 /// with the supervisor and the HTTP catch-panic layer, an unwinding panic in a
 /// supervised task or a request handler is logged once and recovered.
 pub fn install_panic_hook() {
-    std::panic::set_hook(Box::new(|info| {
+    panic::set_hook(Box::new(|info| {
         let payload = info.payload();
         let message = payload
             .downcast_ref::<&str>()
@@ -101,7 +103,7 @@ pub fn install_panic_hook() {
             |l| format!("{}:{}:{}", l.file(), l.line(), l.column()),
         );
         let backtrace = Backtrace::force_capture();
-        let thread = std::thread::current();
+        let thread = thread::current();
         let thread_name = thread.name().unwrap_or("<unnamed>");
         tracing::error!(
             target: "panic",
@@ -123,8 +125,8 @@ pub fn init(cfg: &TelemetryConfig) -> TelemetryGuard {
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,portal=debug"));
 
     // Best-effort: a missing dir would otherwise just drop file logs silently.
-    let _ = std::fs::create_dir_all(&cfg.log_dir);
-    let file_appender = tracing_appender::rolling::daily(&cfg.log_dir, &cfg.file_prefix);
+    let _ = fs::create_dir_all(&cfg.log_dir);
+    let file_appender = rolling::daily(&cfg.log_dir, &cfg.file_prefix);
     let (file_writer, file_guard) = tracing_appender::non_blocking(file_appender);
     let file_layer = fmt::layer()
         .json()

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use apalis_redis::RedisStorage;
+use tokio::fs;
 
 use application::{
     AuditProjector, EmailNotifier, FlexHoursService, LeaveBalanceService, MaintenanceService,
@@ -126,7 +127,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     // Leave-expiry sweep service. Needs Permissions (built from OpenFGA, mirroring
     // the server) to satisfy the service constructor; the sweep itself uses no
     // authz. The cached PolicyProvider supplies the expiry window + policy.
-    let model_json = tokio::fs::read_to_string(&cfg.openfga_model_path)
+    let model_json = fs::read_to_string(&cfg.openfga_model_path)
         .await
         .with_context(|| {
             format!(

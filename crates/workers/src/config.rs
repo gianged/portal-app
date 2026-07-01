@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Duration as StdDuration};
+use std::{env, path::PathBuf, time::Duration as StdDuration};
 
 use anyhow::Context;
 use time::Duration;
@@ -14,7 +14,7 @@ pub fn telemetry_config() -> TelemetryConfig {
         file_prefix: "workers".to_owned(),
         service_name: "portal-workers".to_owned(),
         format: LogFormat::from_env(&optional("LOG_FORMAT", "tree")),
-        otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+        otlp_endpoint: env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
             .ok()
             .filter(|s| !s.is_empty()),
     }
@@ -122,7 +122,7 @@ pub fn from_env() -> anyhow::Result<Config> {
 
     // OpenFGA wiring, needed to construct the leave service for the expiry sweep.
     // Mirrors the server so both binaries share the same store/model resolution.
-    let openfga_bearer_token = std::env::var("OPENFGA_BEARER_TOKEN")
+    let openfga_bearer_token = env::var("OPENFGA_BEARER_TOKEN")
         .ok()
         .filter(|s| !s.is_empty());
     let openfga_allow_no_auth: bool = optional("OPENFGA_ALLOW_NO_AUTH", "false")
@@ -151,8 +151,8 @@ pub fn from_env() -> anyhow::Result<Config> {
     let email_enabled: bool = optional("EMAIL_ENABLED", "false")
         .parse()
         .context("invalid EMAIL_ENABLED (expected true/false)")?;
-    let smtp_host = std::env::var("SMTP_HOST").ok().filter(|s| !s.is_empty());
-    let smtp_from = std::env::var("SMTP_FROM").ok().filter(|s| !s.is_empty());
+    let smtp_host = env::var("SMTP_HOST").ok().filter(|s| !s.is_empty());
+    let smtp_from = env::var("SMTP_FROM").ok().filter(|s| !s.is_empty());
     let smtp_tls = optional("SMTP_TLS", "starttls");
     if !matches!(smtp_tls.as_str(), "starttls" | "none") {
         anyhow::bail!("invalid SMTP_TLS (expected starttls or none)");
@@ -192,12 +192,8 @@ pub fn from_env() -> anyhow::Result<Config> {
         smtp_port: optional("SMTP_PORT", "587")
             .parse()
             .context("invalid SMTP_PORT")?,
-        smtp_username: std::env::var("SMTP_USERNAME")
-            .ok()
-            .filter(|s| !s.is_empty()),
-        smtp_password: std::env::var("SMTP_PASSWORD")
-            .ok()
-            .filter(|s| !s.is_empty()),
+        smtp_username: env::var("SMTP_USERNAME").ok().filter(|s| !s.is_empty()),
+        smtp_password: env::var("SMTP_PASSWORD").ok().filter(|s| !s.is_empty()),
         smtp_from,
         smtp_tls,
         portal_base_url: optional("PORTAL_BASE_URL", "http://localhost:8081"),
@@ -213,9 +209,9 @@ pub fn from_env() -> anyhow::Result<Config> {
 }
 
 fn required(key: &str) -> anyhow::Result<String> {
-    std::env::var(key).with_context(|| format!("missing required env var {key}"))
+    env::var(key).with_context(|| format!("missing required env var {key}"))
 }
 
 fn optional(key: &str, default: &str) -> String {
-    std::env::var(key).unwrap_or_else(|_| default.to_string())
+    env::var(key).unwrap_or_else(|_| default.to_string())
 }

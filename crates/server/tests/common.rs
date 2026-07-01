@@ -10,6 +10,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    env,
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -1055,7 +1056,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
     let realtime = Realtime::new(publisher, "redis://invalid.test");
     let signed_url = Arc::new(SignedUrl::new(b"test-secret"));
     let storage = Arc::new(LocalStorage::new(
-        std::env::temp_dir().join("portal-test-uploads"),
+        env::temp_dir().join("portal-test-uploads"),
         "/files",
         signed_url.clone(),
     ));

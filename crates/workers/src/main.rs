@@ -12,7 +12,7 @@ mod report_schedule;
 mod ticket_autoclose;
 mod uploads;
 
-use std::time::Duration;
+use std::{process, time::Duration};
 
 use apalis::prelude::*;
 use application::resilience;
@@ -193,5 +193,5 @@ async fn force_exit_watchdog() {
         () = terminate => {}
     }
     tokio::time::sleep(FORCE_EXIT_GRACE).await;
-    std::process::exit(0);
+    process::exit(0);
 }

@@ -7,7 +7,7 @@
 //! via `cargo make seed` (after the SQL). `OpenFGA` rejects re-writing an existing
 //! tuple, so a re-run logs per-tuple warnings and is otherwise a no-op.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, env, sync::Arc};
 
 use anyhow::{Context, Result};
 use application::permissions::Permissions;
@@ -20,6 +20,7 @@ use infrastructure::{
     openfga::{self, OpenFgaAuthzClient},
     postgres::{PgGroupRepo, PgProjectRepo, PgTicketRepo, PgUserRepo, build_pool},
 };
+use tokio::fs;
 
 /// Tallies successful vs. rejected tuple writes (rejections are mostly
 /// "already exists" on a re-run).
@@ -45,11 +46,11 @@ impl Tally {
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
 
-    let database_url = std::env::var("DATABASE_URL").context("missing DATABASE_URL")?;
-    let openfga_api_url = std::env::var("OPENFGA_API_URL").context("missing OPENFGA_API_URL")?;
-    let model_path = std::env::var("OPENFGA_MODEL_PATH")
+    let database_url = env::var("DATABASE_URL").context("missing DATABASE_URL")?;
+    let openfga_api_url = env::var("OPENFGA_API_URL").context("missing OPENFGA_API_URL")?;
+    let model_path = env::var("OPENFGA_MODEL_PATH")
         .unwrap_or_else(|_| "infra/openfga/authorization-model.json".to_owned());
-    let bearer_token = std::env::var("OPENFGA_BEARER_TOKEN")
+    let bearer_token = env::var("OPENFGA_BEARER_TOKEN")
         .ok()
         .filter(|s| !s.is_empty());
 
@@ -64,7 +65,7 @@ async fn main() -> Result<()> {
 
     // Resolve (get-or-create) the OpenFGA store + authorization model, exactly as
     // the server does at startup, so this runs against the same store.
-    let model_json = tokio::fs::read_to_string(&model_path)
+    let model_json = fs::read_to_string(&model_path)
         .await
         .with_context(|| format!("reading openfga model from {model_path}"))?;
     let fga_config = openfga::resolve_config(&openfga_api_url, "portal", &model_json, bearer_token)

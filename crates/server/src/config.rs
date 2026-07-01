@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, path::PathBuf};
+use std::{env, net::SocketAddr, path::PathBuf};
 
 use anyhow::Context;
 
@@ -15,7 +15,7 @@ pub fn telemetry_config() -> TelemetryConfig {
         file_prefix: "server".to_owned(),
         service_name: "portal-server".to_owned(),
         format: LogFormat::from_env(&optional("LOG_FORMAT", "tree")),
-        otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+        otlp_endpoint: env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
             .ok()
             .filter(|s| !s.is_empty()),
     }
@@ -71,7 +71,7 @@ pub fn from_env() -> anyhow::Result<Config> {
     // Without a bearer token the OpenFGA API accepts unauthenticated writes to
     // the entire authorization graph, so its absence must be an explicit,
     // dev-only opt-in rather than a silent default.
-    let openfga_bearer_token = std::env::var("OPENFGA_BEARER_TOKEN")
+    let openfga_bearer_token = env::var("OPENFGA_BEARER_TOKEN")
         .ok()
         .filter(|s| !s.is_empty());
     let openfga_allow_no_auth: bool = optional("OPENFGA_ALLOW_NO_AUTH", "false")
@@ -146,7 +146,7 @@ pub fn from_env() -> anyhow::Result<Config> {
 }
 
 fn required(key: &str) -> anyhow::Result<String> {
-    std::env::var(key).with_context(|| format!("missing required env var {key}"))
+    env::var(key).with_context(|| format!("missing required env var {key}"))
 }
 
 /// [`required`] for secrets: rejects values short enough to brute-force and the
@@ -164,5 +164,5 @@ fn required_secret(key: &str) -> anyhow::Result<String> {
 }
 
 fn optional(key: &str, default: &str) -> String {
-    std::env::var(key).unwrap_or_else(|_| default.to_string())
+    env::var(key).unwrap_or_else(|_| default.to_string())
 }

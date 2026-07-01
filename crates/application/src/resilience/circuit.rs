@@ -239,6 +239,8 @@ fn is_transport_fault(err: &Error) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::thread;
+
     use super::*;
 
     fn fast_cfg() -> CircuitConfig {
@@ -268,7 +270,7 @@ mod tests {
         cb.record_failure();
         cb.record_failure();
         // Sleep past max_cooldown so the jittered cooldown has certainly elapsed.
-        std::thread::sleep(Duration::from_millis(60));
+        thread::sleep(Duration::from_millis(60));
         // Cooldown elapsed: first acquire flips to half-open and is admitted.
         assert!(cb.acquire());
         assert_eq!(cb.status(), HealthStatus::Degraded);

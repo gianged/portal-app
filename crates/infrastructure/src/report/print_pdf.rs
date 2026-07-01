@@ -1,3 +1,5 @@
+use std::mem;
+
 use printpdf::{
     BuiltinFont, Color, Line, LinePoint, Mm, Op, PaintMode, PdfDocument, PdfFontHandle, PdfPage,
     PdfSaveOptions, Point, Polygon, PolygonRing, Pt, Rgb, TextItem, WindingOrder,
@@ -182,7 +184,7 @@ impl Canvas {
 
     /// Push the current page and start a fresh one.
     fn page_break(&mut self) {
-        let ops = std::mem::take(&mut self.ops);
+        let ops = mem::take(&mut self.ops);
         self.pages.push(ops);
         self.y = TOP;
     }

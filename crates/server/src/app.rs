@@ -8,6 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
+use tokio::fs;
 use tower_http::{
     catch_panic::CatchPanicLayer,
     cors::{AllowOrigin, CorsLayer},
@@ -199,7 +200,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
     );
 
     // OpenFGA: resolve store + authorization model at startup.
-    let model_json = tokio::fs::read_to_string(&cfg.openfga_model_path)
+    let model_json = fs::read_to_string(&cfg.openfga_model_path)
         .await
         .with_context(|| {
             format!(

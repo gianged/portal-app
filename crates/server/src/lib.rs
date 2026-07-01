@@ -18,7 +18,7 @@ pub mod realtime;
 pub mod resolve;
 pub mod routes;
 
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, process, time::Duration};
 
 use infrastructure::telemetry;
 
@@ -62,7 +62,7 @@ async fn force_exit_watchdog() {
     wait_for_shutdown().await;
     tokio::time::sleep(FORCE_EXIT_GRACE).await;
     tracing::warn!("graceful shutdown timed out; forcing exit");
-    std::process::exit(0);
+    process::exit(0);
 }
 
 /// Resolves on the first shutdown signal: Ctrl-C on every platform, plus

@@ -27,6 +27,7 @@
 
 use std::{
     collections::HashSet,
+    env,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -396,13 +397,13 @@ fn parse_marked_message(payload: &[u8], marker: &str) -> Option<Uuid> {
 }
 
 fn require_env(key: &str) -> String {
-    std::env::var(key).unwrap_or_else(|_| {
+    env::var(key).unwrap_or_else(|_| {
         panic!("{key} must be set (source .env / run cargo make bootstrap first)")
     })
 }
 
 fn env_or(key: &str, default: &str) -> String {
-    std::env::var(key).unwrap_or_else(|_| default.to_string())
+    env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
 // --- No-op test doubles for the side channels the post path doesn't exercise ---
