@@ -13,13 +13,14 @@ use domain::{
     ids::{DayOffId, GroupId, UserId},
     model::DayOff,
 };
-use shared::{
-    dto::day_off::{CreateDayOffRequest, DayOffDto, DecideDayOffRequest},
-    validation::day_off::validate_day_off,
-};
+use shared::dto::day_off::{CreateDayOffRequest, DayOffDto, DecideDayOffRequest};
 
 use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    resolve, routes,
 };
 
 pub fn router() -> Router<AppState> {
@@ -49,9 +50,8 @@ struct GroupQuery {
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<CreateDayOffRequest>,
+    ValidatedJson(body): ValidatedJson<CreateDayOffRequest>,
 ) -> Result<Json<DayOffDto>, AppError> {
-    validate_day_off(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     let start = routes::parse_date(&body.start_date)?;
     let end = routes::parse_date(&body.end_date)?;
     let cmd = dto::create_day_off_command(start, end, body);
@@ -103,7 +103,7 @@ async fn leader_decision(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<DecideDayOffRequest>,
+    ValidatedJson(body): ValidatedJson<DecideDayOffRequest>,
 ) -> Result<Json<DayOffDto>, AppError> {
     let cmd = dto::decide_day_off_command(body);
     let day_off = state
@@ -117,7 +117,7 @@ async fn hr_decision(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<DecideDayOffRequest>,
+    ValidatedJson(body): ValidatedJson<DecideDayOffRequest>,
 ) -> Result<Json<DayOffDto>, AppError> {
     let cmd = dto::decide_day_off_command(body);
     let day_off = state

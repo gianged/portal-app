@@ -31,8 +31,9 @@ use application::{
 use domain::{
     health::{BackendId, HealthStatus},
     ports::{
-        file_storage::FileStorage, health::HealthCheck, presence::Presence, rate_limit::RateLimit,
-        report_renderer::ReportRenderer, spool::Spool, token_revocation::TokenRevocation,
+        event_subscriber::EventSubscriber, file_storage::FileStorage, health::HealthCheck,
+        presence::Presence, rate_limit::RateLimit, report_renderer::ReportRenderer, spool::Spool,
+        token_revocation::TokenRevocation,
     },
     repository::{
         AuditRepository, ChatAttachmentRepository, ChatRepository, CommentRepository,
@@ -53,7 +54,10 @@ use infrastructure::{
         PgOvertimeRepo, PgPolicyRepo, PgProjectRepo, PgReportingRepo, PgRequestRepo, PgTicketRepo,
         PgUserRepo,
     },
-    redis::{PresenceStore, RateLimiter, RedisEventPublisher, RedisSpool, RedisTokenRevocation},
+    redis::{
+        PresenceStore, RateLimiter, RedisEventPublisher, RedisEventSubscriber, RedisSpool,
+        RedisTokenRevocation,
+    },
     report::PrintPdfReportRenderer,
     scylla::{self, ScyllaChatRepo},
     signed_url::SignedUrl,
@@ -167,6 +171,9 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
             .await
             .context("connecting redis (events)")?,
     );
+    let subscriber: Arc<dyn EventSubscriber> = Arc::new(
+        RedisEventSubscriber::new(&cfg.redis_url).context("building redis event subscriber")?,
+    );
     let presence: Arc<dyn Presence> = Arc::new(
         PresenceStore::new(&cfg.redis_url)
             .await
@@ -274,7 +281,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
         cfg.session_ttl_secs,
         cfg.cookie_secure,
     ));
-    let realtime = Realtime::new(publisher, cfg.redis_url.clone());
+    let realtime = Realtime::new(publisher, subscriber);
 
     // Health registry + per-backend probes (Postgres, Scylla, Redis, OpenFGA).
     // The prober drives the breakers and feeds `/readyz`; it is supervised so a

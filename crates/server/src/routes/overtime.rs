@@ -13,13 +13,14 @@ use domain::{
     ids::{GroupId, OvertimeId, UserId},
     model::Overtime,
 };
-use shared::{
-    dto::overtime::{CreateOvertimeRequest, DecideOvertimeRequest, OvertimeDto},
-    validation::overtime::validate_overtime,
-};
+use shared::dto::overtime::{CreateOvertimeRequest, DecideOvertimeRequest, OvertimeDto};
 
 use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    resolve, routes,
 };
 
 pub fn router() -> Router<AppState> {
@@ -49,9 +50,8 @@ struct GroupQuery {
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<CreateOvertimeRequest>,
+    ValidatedJson(body): ValidatedJson<CreateOvertimeRequest>,
 ) -> Result<Json<OvertimeDto>, AppError> {
-    validate_overtime(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     let work_date = routes::parse_date(&body.work_date)?;
     let cmd = dto::create_overtime_command(work_date, body);
     let overtime = state.overtime.create(auth.user_id, cmd).await?;
@@ -102,7 +102,7 @@ async fn leader_decision(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<DecideOvertimeRequest>,
+    ValidatedJson(body): ValidatedJson<DecideOvertimeRequest>,
 ) -> Result<Json<OvertimeDto>, AppError> {
     let cmd = dto::decide_overtime_command(body);
     let overtime = state
@@ -116,7 +116,7 @@ async fn hr_decision(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<DecideOvertimeRequest>,
+    ValidatedJson(body): ValidatedJson<DecideOvertimeRequest>,
 ) -> Result<Json<OvertimeDto>, AppError> {
     let cmd = dto::decide_overtime_command(body);
     let overtime = state

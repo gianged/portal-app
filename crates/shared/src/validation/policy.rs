@@ -1,4 +1,8 @@
-use crate::{dto::policy::UpdatePolicyRequest, errors::SharedError, validation::common};
+use crate::{
+    dto::policy::UpdatePolicyRequest,
+    errors::SharedError,
+    validation::{Validate, common},
+};
 
 /// Parses a `"HH:MM"` clock time into `(hour, minute)`, or `None` if malformed.
 #[must_use]
@@ -70,4 +74,10 @@ pub fn validate_policy(req: &UpdatePolicyRequest) -> Result<(), SharedError> {
         ));
     }
     Ok(())
+}
+
+impl Validate for UpdatePolicyRequest {
+    fn validate(&self) -> Result<(), SharedError> {
+        validate_policy(self)
+    }
 }

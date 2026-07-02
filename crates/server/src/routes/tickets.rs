@@ -15,16 +15,17 @@ use domain::{
     ids::{CommentId, TicketId, UserId},
     model::{Comment, CommentEntity, Ticket},
 };
-use shared::{
-    dto::{
-        comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest},
-        ticket::{AssignTicketRequest, RaiseTicketRequest, TicketDto, TriageTicketRequest},
-    },
-    validation::{comment, ticket},
+use shared::dto::{
+    comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest},
+    ticket::{AssignTicketRequest, RaiseTicketRequest, TicketDto, TriageTicketRequest},
 };
 
 use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    resolve, routes,
 };
 
 pub fn router() -> Router<AppState> {
@@ -77,9 +78,8 @@ async fn add_comment(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<CreateCommentRequest>,
+    ValidatedJson(body): ValidatedJson<CreateCommentRequest>,
 ) -> Result<Json<CommentDto>, AppError> {
-    comment::validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
     let entity = CommentEntity::Ticket {
         ticket_id: TicketId(id),
     };
@@ -91,9 +91,8 @@ async fn edit_comment(
     State(state): State<AppState>,
     auth: AuthUser,
     Path((id, comment_id)): Path<(Uuid, Uuid)>,
-    Json(body): Json<UpdateCommentRequest>,
+    ValidatedJson(body): ValidatedJson<UpdateCommentRequest>,
 ) -> Result<Json<CommentDto>, AppError> {
-    comment::validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
     let entity = CommentEntity::Ticket {
         ticket_id: TicketId(id),
     };
@@ -176,11 +175,8 @@ struct ListQuery {
 async fn raise(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<RaiseTicketRequest>,
+    ValidatedJson(body): ValidatedJson<RaiseTicketRequest>,
 ) -> Result<Json<TicketDto>, AppError> {
-    ticket::validate_ticket_title(&body.title).map_err(|e| AppError::Validation(e.to_string()))?;
-    ticket::validate_ticket_description(&body.description)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
     let ticket = state
         .ticket
         .raise(auth.user_id, dto::raise_ticket_command(body))

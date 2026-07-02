@@ -11,14 +11,17 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use domain::ids::UserId;
-use shared::{
-    dto::leave_balance::{
-        AdjustBalanceRequest, LeaveBalanceDto, LeaveStatementDto, SetLeaveGrantRequest,
-    },
-    validation::leave_balance::{validate_adjust, validate_grant},
+use shared::dto::leave_balance::{
+    AdjustBalanceRequest, LeaveBalanceDto, LeaveStatementDto, SetLeaveGrantRequest,
 };
 
-use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, routes};
+use crate::{
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    routes,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -67,9 +70,8 @@ async fn set_grant(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<SetLeaveGrantRequest>,
+    ValidatedJson(body): ValidatedJson<SetLeaveGrantRequest>,
 ) -> Result<Json<LeaveBalanceDto>, AppError> {
-    validate_grant(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     let target = UserId(id);
     let cmd = dto::set_leave_grant_command(target, body);
     state.leave.set_grant(auth.user_id, cmd).await?;
@@ -80,9 +82,8 @@ async fn adjust(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<AdjustBalanceRequest>,
+    ValidatedJson(body): ValidatedJson<AdjustBalanceRequest>,
 ) -> Result<Json<LeaveBalanceDto>, AppError> {
-    validate_adjust(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     let target = UserId(id);
     let cmd = dto::adjust_balance_command(target, body);
     state.leave.adjust(auth.user_id, cmd).await?;

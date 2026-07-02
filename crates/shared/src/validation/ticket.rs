@@ -1,6 +1,10 @@
 use crate::{
+    dto::ticket::RaiseTicketRequest,
     errors::SharedError,
-    validation::common::{self, DESCRIPTION_MAX, NAME_MIN, TITLE_MAX},
+    validation::{
+        Validate,
+        common::{self, DESCRIPTION_MAX, NAME_MIN, TITLE_MAX},
+    },
 };
 
 /// # Errors
@@ -19,4 +23,11 @@ pub fn validate_ticket_title(title: &str) -> Result<(), SharedError> {
 /// [`DESCRIPTION_MAX`].
 pub fn validate_ticket_description(description: &str) -> Result<(), SharedError> {
     common::max_len("Ticket description", description, DESCRIPTION_MAX)
+}
+
+impl Validate for RaiseTicketRequest {
+    fn validate(&self) -> Result<(), SharedError> {
+        validate_ticket_title(&self.title)?;
+        validate_ticket_description(&self.description)
+    }
 }

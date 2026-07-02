@@ -3,12 +3,14 @@
 
 use axum::{Json, Router, extract::State, routing};
 
-use shared::{
-    dto::policy::{PolicyDto, UpdatePolicyRequest},
-    validation::policy::validate_policy,
-};
+use shared::dto::policy::{PolicyDto, UpdatePolicyRequest};
 
-use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser};
+use crate::{
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+};
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/policy", routing::get(get_policy).put(update_policy))
@@ -24,9 +26,8 @@ async fn get_policy(
 async fn update_policy(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<UpdatePolicyRequest>,
+    ValidatedJson(body): ValidatedJson<UpdatePolicyRequest>,
 ) -> Result<Json<PolicyDto>, AppError> {
-    validate_policy(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     let cmd = dto::update_policy_command(body).map_err(|e| AppError::Validation(e.to_string()))?;
     let policy = state.policy.update(auth.user_id, cmd).await?;
     Ok(Json(dto::policy_dto(&policy)))

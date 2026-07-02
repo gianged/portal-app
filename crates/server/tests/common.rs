@@ -52,6 +52,7 @@ use domain::{
     ports::{
         authz_client::{AuthzClient, RelationTuple},
         event_publisher::EventPublisher,
+        event_subscriber::{EventSubscriber, Subscription},
         job_queue::JobQueue,
         presence::Presence,
         rate_limit::RateLimit,
@@ -606,6 +607,25 @@ impl EventPublisher for FakePublisher {
     }
 }
 
+/// Quiet topic: subscriptions open fine but never yield a payload.
+struct FakeSubscription;
+
+#[async_trait]
+impl Subscription for FakeSubscription {
+    async fn next(&mut self) -> Option<Vec<u8>> {
+        std::future::pending().await
+    }
+}
+
+struct FakeSubscriber;
+
+#[async_trait]
+impl EventSubscriber for FakeSubscriber {
+    async fn subscribe(&self, _topic: &str) -> Result<Box<dyn Subscription>, EventError> {
+        Ok(Box::new(FakeSubscription))
+    }
+}
+
 struct FakeJobs;
 
 #[async_trait]
@@ -1090,7 +1110,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
     ));
 
     let publisher: Arc<dyn EventPublisher> = Arc::new(FakePublisher);
-    let realtime = Realtime::new(publisher, "redis://invalid.test");
+    let realtime = Realtime::new(publisher, Arc::new(FakeSubscriber));
     let signed_url = Arc::new(SignedUrl::new(b"test-secret"));
     let storage = Arc::new(LocalStorage::new(
         env::temp_dir().join("portal-test-uploads"),

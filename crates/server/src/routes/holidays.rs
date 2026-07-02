@@ -11,12 +11,15 @@ use serde::Deserialize;
 use time::{Date, Month};
 
 use domain::model::Holiday;
-use shared::{
-    dto::holiday::{HolidayDto, SetHolidayRequest},
-    validation::holiday::validate_holiday,
-};
+use shared::dto::holiday::{HolidayDto, SetHolidayRequest};
 
-use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, routes};
+use crate::{
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    routes,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -46,10 +49,9 @@ async fn set(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(date): Path<String>,
-    Json(body): Json<SetHolidayRequest>,
+    ValidatedJson(body): ValidatedJson<SetHolidayRequest>,
 ) -> Result<Json<HolidayDto>, AppError> {
     let date = routes::parse_date(&date)?;
-    validate_holiday(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     state
         .holiday
         .set(auth.user_id, date, body.name.clone())

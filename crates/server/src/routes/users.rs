@@ -10,16 +10,17 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use domain::ids::UserId;
-use shared::{
-    dto::user::{
-        CreateUserRequest, ResetPasswordRequest, UpdateProfileRequest, UserDto, UserProfileDto,
-        UserRole,
-    },
-    validation::user,
+use shared::dto::user::{
+    CreateUserRequest, ResetPasswordRequest, UpdateProfileRequest, UserDto, UserProfileDto,
+    UserRole,
 };
 
 use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    resolve, routes,
 };
 
 pub fn router() -> Router<AppState> {
@@ -42,9 +43,8 @@ struct ListQuery {
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<CreateUserRequest>,
+    ValidatedJson(body): ValidatedJson<CreateUserRequest>,
 ) -> Result<Json<UserProfileDto>, AppError> {
-    user::validate_create_user(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     let user = state
         .user
         .create_user(auth.user_id, dto::create_user_command(body))
@@ -89,9 +89,8 @@ async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<UpdateProfileRequest>,
+    ValidatedJson(body): ValidatedJson<UpdateProfileRequest>,
 ) -> Result<Json<UserProfileDto>, AppError> {
-    user::validate_update_profile(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     let user = state
         .user
         .update_profile(auth.user_id, UserId(id), dto::update_profile_command(body))
@@ -122,9 +121,8 @@ async fn reset_password(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<ResetPasswordRequest>,
+    ValidatedJson(body): ValidatedJson<ResetPasswordRequest>,
 ) -> Result<StatusCode, AppError> {
-    user::validate_reset_password(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     state
         .user
         .admin_reset_password(auth.user_id, UserId(id), body.new_password)

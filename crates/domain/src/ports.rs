@@ -1,5 +1,6 @@
 pub mod authz_client;
 pub mod event_publisher;
+pub mod event_subscriber;
 pub mod file_storage;
 pub mod health;
 pub mod job_queue;

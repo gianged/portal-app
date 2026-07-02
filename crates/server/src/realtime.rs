@@ -1,20 +1,19 @@
-//! Real-time plumbing for the chat WebSocket: a thin handle over Redis pub/sub.
+//! Real-time plumbing for the chat WebSocket: a thin handle over the pub/sub ports.
 //!
-//! Two planes share one Redis: durable `application::DomainEvent`s on `portal.*`
+//! Two planes share one broker: durable `application::DomainEvent`s on `portal.*`
 //! topics that the WS task projects to `ServerFrame`s, and ephemeral `WsSignal`s
 //! (typing/presence/read-markers) on `portal.ws` that are best-effort, never persisted.
 
 use std::{pin::Pin, sync::Arc};
 
-use futures::Stream;
+use futures::{Stream, stream};
 use serde::{Deserialize, Serialize};
 
 use domain::{
     error::EventError,
     ids::{ChannelId, MessageId, UserId},
-    ports::event_publisher::EventPublisher,
+    ports::{event_publisher::EventPublisher, event_subscriber::EventSubscriber},
 };
-use infrastructure::redis;
 
 /// Topic for ephemeral WS signals (not persisted, best-effort).
 pub const WS_TOPIC: &str = "portal.ws";
@@ -39,20 +38,20 @@ pub enum WsSignal {
     },
 }
 
-/// Shared handle stored in `AppState`: the publisher connection for the
-/// ephemeral plane plus the Redis URL used to open per-connection subscriptions.
+/// Shared handle stored in `AppState`: the publisher for the ephemeral plane
+/// plus the subscriber used to open per-connection topic feeds.
 #[derive(Clone)]
 pub struct Realtime {
     publisher: Arc<dyn EventPublisher>,
-    redis_url: Arc<str>,
+    subscriber: Arc<dyn EventSubscriber>,
 }
 
 impl Realtime {
     #[must_use]
-    pub fn new(publisher: Arc<dyn EventPublisher>, redis_url: impl Into<Arc<str>>) -> Self {
+    pub fn new(publisher: Arc<dyn EventPublisher>, subscriber: Arc<dyn EventSubscriber>) -> Self {
         Self {
             publisher,
-            redis_url: redis_url.into(),
+            subscriber,
         }
     }
 
@@ -68,12 +67,15 @@ impl Realtime {
         self.publisher.publish(WS_TOPIC, &payload).await
     }
 
-    /// Opens a Redis subscription to `topic`, yielding raw payload bytes. The
-    /// returned stream owns its own connection for its lifetime.
+    /// Subscribes to `topic`, yielding raw payload bytes. The returned stream
+    /// owns its backend subscription for its lifetime.
     pub async fn subscribe(
         &self,
         topic: &str,
     ) -> Result<Pin<Box<dyn Stream<Item = Vec<u8>> + Send>>, EventError> {
-        redis::subscribe(&self.redis_url, topic).await
+        let sub = self.subscriber.subscribe(topic).await?;
+        Ok(Box::pin(stream::unfold(sub, |mut sub| async move {
+            sub.next().await.map(|payload| (payload, sub))
+        })))
     }
 }

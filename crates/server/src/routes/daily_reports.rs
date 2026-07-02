@@ -13,13 +13,16 @@ use domain::{
     ids::{DailyReportId, GroupId, UserId},
     model::DailyReport,
 };
-use shared::{
-    dto::daily_report::{DailyReportDto, ReviewDailyReportRequest, UpsertDailyReportRequest},
-    validation::daily_report::validate_daily_report,
+use shared::dto::daily_report::{
+    DailyReportDto, ReviewDailyReportRequest, UpsertDailyReportRequest,
 };
 
 use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    resolve, routes,
 };
 
 pub fn router() -> Router<AppState> {
@@ -75,10 +78,9 @@ async fn upsert(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(date): Path<String>,
-    Json(body): Json<UpsertDailyReportRequest>,
+    ValidatedJson(body): ValidatedJson<UpsertDailyReportRequest>,
 ) -> Result<Json<DailyReportDto>, AppError> {
     let date = routes::parse_date(&date)?;
-    validate_daily_report(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     let cmd = dto::upsert_daily_report_command(date, body);
     let report = state.daily_report.upsert_draft(auth.user_id, cmd).await?;
     Ok(Json(single(&state, &report).await?))
@@ -100,7 +102,7 @@ async fn review(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<ReviewDailyReportRequest>,
+    ValidatedJson(body): ValidatedJson<ReviewDailyReportRequest>,
 ) -> Result<Json<DailyReportDto>, AppError> {
     let report = state
         .daily_report

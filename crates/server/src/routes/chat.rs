@@ -24,10 +24,16 @@ use shared::{
         ChannelDto, ChannelSummaryDto, ChatAttachmentDto, EditMessageRequest, MessageDto,
         SendMessageRequest,
     },
-    validation::{chat, file},
+    validation::file,
 };
 
-use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
+use crate::{
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    resolve,
+};
 
 /// Chat-attachment upload cap; overrides the global 1 MiB body limit for this route.
 const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
@@ -115,11 +121,8 @@ async fn post_message(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<SendMessageRequest>,
+    ValidatedJson(body): ValidatedJson<SendMessageRequest>,
 ) -> Result<Json<MessageDto>, AppError> {
-    chat::validate_message_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
-    chat::validate_message_extras(body.mentions.len(), &body.attachment_keys)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
     let message = state
         .chat
         .post_message(auth.user_id, dto::post_message_command(ChannelId(id), body))
@@ -131,9 +134,8 @@ async fn edit_message(
     State(state): State<AppState>,
     auth: AuthUser,
     Path((id, message_id)): Path<(Uuid, Uuid)>,
-    Json(body): Json<EditMessageRequest>,
+    ValidatedJson(body): ValidatedJson<EditMessageRequest>,
 ) -> Result<Json<MessageDto>, AppError> {
-    chat::validate_message_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
     let message = state
         .chat
         .edit_message(

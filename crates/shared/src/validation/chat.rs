@@ -1,7 +1,9 @@
 use crate::{
+    dto::chat::{EditMessageRequest, SendMessageRequest},
     errors::SharedError,
-    validation::common::{
-        self, ATTACHMENT_KEYS_MAX, MENTIONS_MAX, MESSAGE_BODY_MAX, STORAGE_KEY_MAX,
+    validation::{
+        Validate,
+        common::{self, ATTACHMENT_KEYS_MAX, MENTIONS_MAX, MESSAGE_BODY_MAX, STORAGE_KEY_MAX},
     },
 };
 
@@ -33,4 +35,17 @@ pub fn validate_message_extras(
         common::max_len("Attachment key", key, STORAGE_KEY_MAX)?;
     }
     Ok(())
+}
+
+impl Validate for SendMessageRequest {
+    fn validate(&self) -> Result<(), SharedError> {
+        validate_message_body(&self.body)?;
+        validate_message_extras(self.mentions.len(), &self.attachment_keys)
+    }
+}
+
+impl Validate for EditMessageRequest {
+    fn validate(&self) -> Result<(), SharedError> {
+        validate_message_body(&self.body)
+    }
 }

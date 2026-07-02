@@ -28,11 +28,15 @@ use shared::{
             RequestDto, RequestStatus, SetRequestProgressRequest, UpdateRequestRequest,
         },
     },
-    validation::{comment, file, request},
+    validation::file,
 };
 
 use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    resolve, routes,
 };
 
 /// Upload cap for a single attachment (the default axum body limit is 2 MiB).
@@ -96,9 +100,8 @@ async fn add_comment(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<CreateCommentRequest>,
+    ValidatedJson(body): ValidatedJson<CreateCommentRequest>,
 ) -> Result<Json<CommentDto>, AppError> {
-    comment::validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
     let entity = CommentEntity::Request {
         request_id: RequestId(id),
     };
@@ -110,9 +113,8 @@ async fn edit_comment(
     State(state): State<AppState>,
     auth: AuthUser,
     Path((id, comment_id)): Path<(Uuid, Uuid)>,
-    Json(body): Json<UpdateCommentRequest>,
+    ValidatedJson(body): ValidatedJson<UpdateCommentRequest>,
 ) -> Result<Json<CommentDto>, AppError> {
-    comment::validate_comment_body(&body.body).map_err(|e| AppError::Validation(e.to_string()))?;
     let entity = CommentEntity::Request {
         request_id: RequestId(id),
     };
@@ -189,12 +191,8 @@ struct ListQuery {
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<CreateRequestRequest>,
+    ValidatedJson(body): ValidatedJson<CreateRequestRequest>,
 ) -> Result<Json<RequestDto>, AppError> {
-    request::validate_request_title(&body.title)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
-    request::validate_request_description(&body.description)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
     let request = state
         .request
         .create(auth.user_id, dto::create_request_command(body))
@@ -263,15 +261,8 @@ async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<UpdateRequestRequest>,
+    ValidatedJson(body): ValidatedJson<UpdateRequestRequest>,
 ) -> Result<Json<RequestDto>, AppError> {
-    if let Some(title) = &body.title {
-        request::validate_request_title(title).map_err(|e| AppError::Validation(e.to_string()))?;
-    }
-    if let Some(description) = &body.description {
-        request::validate_request_description(description)
-            .map_err(|e| AppError::Validation(e.to_string()))?;
-    }
     let request = state
         .request
         .update_metadata(
@@ -357,10 +348,8 @@ async fn set_progress(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<SetRequestProgressRequest>,
+    ValidatedJson(body): ValidatedJson<SetRequestProgressRequest>,
 ) -> Result<Json<RequestDto>, AppError> {
-    request::validate_request_progress(body.progress)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
     let request = state
         .request
         .set_progress(auth.user_id, RequestId(id), body.progress)

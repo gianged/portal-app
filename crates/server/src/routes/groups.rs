@@ -11,15 +11,18 @@ use axum::{
 use uuid::Uuid;
 
 use domain::ids::{GroupId, UserId};
-use shared::{
-    dto::group::{
-        AddMemberRequest, ChangeMemberRoleRequest, CreateGroupRequest, GroupDetailDto, GroupDto,
-        MembershipDto, TransferLeadershipRequest, UpdateGroupRequest,
-    },
-    validation::group,
+use shared::dto::group::{
+    AddMemberRequest, ChangeMemberRoleRequest, CreateGroupRequest, GroupDetailDto, GroupDto,
+    MembershipDto, TransferLeadershipRequest, UpdateGroupRequest,
 };
 
-use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
+use crate::{
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    resolve,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -39,11 +42,8 @@ pub fn router() -> Router<AppState> {
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<CreateGroupRequest>,
+    ValidatedJson(body): ValidatedJson<CreateGroupRequest>,
 ) -> Result<Json<GroupDto>, AppError> {
-    group::validate_group_name(&body.name).map_err(|e| AppError::Validation(e.to_string()))?;
-    group::validate_group_description(&body.description)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
     let group = state
         .group
         .create_group(auth.user_id, dto::create_group_command(body))
@@ -69,15 +69,8 @@ async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<UpdateGroupRequest>,
+    ValidatedJson(body): ValidatedJson<UpdateGroupRequest>,
 ) -> Result<Json<GroupDto>, AppError> {
-    if let Some(name) = &body.name {
-        group::validate_group_name(name).map_err(|e| AppError::Validation(e.to_string()))?;
-    }
-    if let Some(description) = &body.description {
-        group::validate_group_description(description)
-            .map_err(|e| AppError::Validation(e.to_string()))?;
-    }
     let group = state
         .group
         .update_metadata(

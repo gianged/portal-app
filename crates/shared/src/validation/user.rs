@@ -3,8 +3,9 @@ use crate::{
         ChangePasswordRequest, CreateUserRequest, ResetPasswordRequest, UpdateProfileRequest,
     },
     errors::SharedError,
-    validation::common::{
-        self, NAME_MAX, NAME_MIN, PASSWORD_MAX, PASSWORD_MIN, PHONE_MAX, TIMEZONE_MAX,
+    validation::{
+        Validate,
+        common::{self, NAME_MAX, NAME_MIN, PASSWORD_MAX, PASSWORD_MIN, PHONE_MAX, TIMEZONE_MAX},
     },
 };
 
@@ -149,6 +150,30 @@ pub fn validate_update_profile(req: &UpdateProfileRequest) -> Result<(), SharedE
         validate_timezone(timezone)?;
     }
     Ok(())
+}
+
+impl Validate for CreateUserRequest {
+    fn validate(&self) -> Result<(), SharedError> {
+        validate_create_user(self)
+    }
+}
+
+impl Validate for ChangePasswordRequest {
+    fn validate(&self) -> Result<(), SharedError> {
+        validate_change_password(self)
+    }
+}
+
+impl Validate for ResetPasswordRequest {
+    fn validate(&self) -> Result<(), SharedError> {
+        validate_reset_password(self)
+    }
+}
+
+impl Validate for UpdateProfileRequest {
+    fn validate(&self) -> Result<(), SharedError> {
+        validate_update_profile(self)
+    }
 }
 
 #[cfg(test)]

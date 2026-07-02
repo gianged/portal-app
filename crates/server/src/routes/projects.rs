@@ -16,17 +16,18 @@ use domain::{
     ids::{GroupId, ProjectId, ProjectInviteId, UserId},
     model::{Project, ProjectInvite, ProjectStatus},
 };
-use shared::{
-    dto::project::{
-        ChangeProjectStatusRequest, CreateProjectRequest, InviteGroupRequest, ProjectDetailDto,
-        ProjectDto, ProjectInviteDto, ProjectStatus as WireProjectStatus, RespondInviteRequest,
-        SetProjectProgressRequest, UpdateProjectMetadataRequest,
-    },
-    validation::project,
+use shared::dto::project::{
+    ChangeProjectStatusRequest, CreateProjectRequest, InviteGroupRequest, ProjectDetailDto,
+    ProjectDto, ProjectInviteDto, ProjectStatus as WireProjectStatus, RespondInviteRequest,
+    SetProjectProgressRequest, UpdateProjectMetadataRequest,
 };
 
 use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    resolve, routes,
 };
 
 pub fn router() -> Router<AppState> {
@@ -63,11 +64,8 @@ struct InviteQuery {
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<CreateProjectRequest>,
+    ValidatedJson(body): ValidatedJson<CreateProjectRequest>,
 ) -> Result<Json<ProjectDto>, AppError> {
-    project::validate_project_name(&body.name).map_err(|e| AppError::Validation(e.to_string()))?;
-    project::validate_project_description(&body.description)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
     let project = state
         .project
         .create_project(auth.user_id, dto::create_project_command(body))
@@ -129,15 +127,8 @@ async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<UpdateProjectMetadataRequest>,
+    ValidatedJson(body): ValidatedJson<UpdateProjectMetadataRequest>,
 ) -> Result<Json<ProjectDto>, AppError> {
-    if let Some(name) = &body.name {
-        project::validate_project_name(name).map_err(|e| AppError::Validation(e.to_string()))?;
-    }
-    if let Some(description) = &body.description {
-        project::validate_project_description(description)
-            .map_err(|e| AppError::Validation(e.to_string()))?;
-    }
     let project = state
         .project
         .update_metadata(
@@ -182,10 +173,8 @@ async fn set_progress(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<SetProjectProgressRequest>,
+    ValidatedJson(body): ValidatedJson<SetProjectProgressRequest>,
 ) -> Result<Json<ProjectDto>, AppError> {
-    project::validate_project_progress(body.progress)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
     let project = state
         .project
         .set_progress(auth.user_id, ProjectId(id), body.progress)

@@ -1,7 +1,10 @@
 use crate::{
     dto::daily_report::{DailyReportEntryKind, ReviewDailyReportRequest, UpsertDailyReportRequest},
     errors::SharedError,
-    validation::common::{self, DESCRIPTION_MAX},
+    validation::{
+        Validate,
+        common::{self, DESCRIPTION_MAX},
+    },
 };
 
 /// Upper bound on entries in one report.
@@ -71,4 +74,16 @@ pub fn validate_daily_report(req: &UpsertDailyReportRequest) -> Result<(), Share
 pub fn validate_review_daily_report(req: &ReviewDailyReportRequest) -> Result<(), SharedError> {
     common::max_len("Note", &req.note, DESCRIPTION_MAX)?;
     Ok(())
+}
+
+impl Validate for UpsertDailyReportRequest {
+    fn validate(&self) -> Result<(), SharedError> {
+        validate_daily_report(self)
+    }
+}
+
+impl Validate for ReviewDailyReportRequest {
+    fn validate(&self) -> Result<(), SharedError> {
+        validate_review_daily_report(self)
+    }
 }

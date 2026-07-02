@@ -4,17 +4,14 @@ use axum::{Json, Router, extract::State, http::StatusCode, routing};
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use time::OffsetDateTime;
 
-use shared::{
-    dto::user::{ChangePasswordRequest, LoginRequest, LoginResponse, UserDto},
-    validation::user,
-};
+use shared::dto::user::{ChangePasswordRequest, LoginRequest, LoginResponse, UserDto};
 
 use crate::{
     app::AppState,
     auth::SESSION_COOKIE,
     dto,
     error::{AppError, AuthError},
-    extractors::auth_user::AuthUser,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
     resolve,
 };
 
@@ -91,9 +88,8 @@ async fn me(State(state): State<AppState>, auth: AuthUser) -> Result<Json<UserDt
 async fn change_password(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<ChangePasswordRequest>,
+    ValidatedJson(body): ValidatedJson<ChangePasswordRequest>,
 ) -> Result<StatusCode, AppError> {
-    user::validate_change_password(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     state
         .user
         .change_password(auth.user_id, &body.current_password, body.new_password)

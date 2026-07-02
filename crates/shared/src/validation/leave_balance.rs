@@ -1,7 +1,10 @@
 use crate::{
     dto::leave_balance::{AdjustBalanceRequest, SetLeaveGrantRequest},
     errors::SharedError,
-    validation::common::{self, DESCRIPTION_MAX},
+    validation::{
+        Validate,
+        common::{self, DESCRIPTION_MAX},
+    },
 };
 
 /// Sane upper bound on a single year's entitlement (days).
@@ -37,4 +40,16 @@ pub fn validate_adjust(req: &AdjustBalanceRequest) -> Result<(), SharedError> {
     common::half_step("Adjustment", req.delta)?;
     common::max_len("Reason", &req.reason, DESCRIPTION_MAX)?;
     Ok(())
+}
+
+impl Validate for SetLeaveGrantRequest {
+    fn validate(&self) -> Result<(), SharedError> {
+        validate_grant(self)
+    }
+}
+
+impl Validate for AdjustBalanceRequest {
+    fn validate(&self) -> Result<(), SharedError> {
+        validate_adjust(self)
+    }
 }

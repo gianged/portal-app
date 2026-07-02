@@ -18,9 +18,14 @@ use domain::{
 use shared::dto::announcement::{
     AnnouncementDto, EditAnnouncementRequest, PostAnnouncementRequest,
 };
-use shared::validation::announcement;
 
-use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve};
+use crate::{
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    resolve,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -39,10 +44,8 @@ struct ListQuery {
 async fn post_announcement(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<PostAnnouncementRequest>,
+    ValidatedJson(body): ValidatedJson<PostAnnouncementRequest>,
 ) -> Result<Json<AnnouncementDto>, AppError> {
-    announcement::validate_announcement_body(&body.body)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
     let announcement = state
         .announcement
         .post(auth.user_id, dto::post_announcement_command(body))
@@ -73,10 +76,8 @@ async fn edit(
     State(state): State<AppState>,
     auth: AuthUser,
     Path((channel_id, announcement_id)): Path<(Uuid, Uuid)>,
-    Json(body): Json<EditAnnouncementRequest>,
+    ValidatedJson(body): ValidatedJson<EditAnnouncementRequest>,
 ) -> Result<Json<AnnouncementDto>, AppError> {
-    announcement::validate_announcement_body(&body.body)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
     let announcement = state
         .announcement
         .edit(
