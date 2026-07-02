@@ -5,6 +5,7 @@ use crate::{
     },
     errors::SharedError,
     validation::{
+        Validate,
         common::{self, DESCRIPTION_MAX},
         policy,
     },
@@ -97,4 +98,10 @@ pub fn validate_flex(req: &RequestFlexRequest, policy: &PolicyDto) -> Result<(),
 pub fn validate_decide_flex(req: &DecideFlexRequest) -> Result<(), SharedError> {
     common::max_len("Note", &req.note, DESCRIPTION_MAX)?;
     Ok(())
+}
+
+impl Validate for DecideFlexRequest {
+    fn validate(&self) -> Result<(), SharedError> {
+        validate_decide_flex(self)
+    }
 }

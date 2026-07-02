@@ -17,6 +17,10 @@ pub enum AppError {
     Auth(#[from] AuthError),
     #[error("validation failed: {0}")]
     Validation(String),
+    /// Body rejected during extraction; keeps the rejection's own status
+    /// (400 syntax, 413 too large, 415 media type, 422 data error).
+    #[error("body rejected: {1}")]
+    JsonRejection(StatusCode, String),
     /// Too many requests in the current window, surfaced by the rate-limit
     /// middleware as `429 Too Many Requests`.
     #[error("rate limit exceeded")]
@@ -44,6 +48,9 @@ impl AppError {
                 ErrorCode::Validation,
                 message.clone(),
             ),
+            Self::JsonRejection(status, message) => {
+                (*status, ErrorCode::Validation, message.clone())
+            }
             Self::RateLimited => (
                 StatusCode::TOO_MANY_REQUESTS,
                 ErrorCode::RateLimited,
@@ -138,6 +145,11 @@ mod tests {
             (
                 AppError::Validation("bad field".to_owned()),
                 StatusCode::BAD_REQUEST,
+                ErrorCode::Validation,
+            ),
+            (
+                AppError::JsonRejection(StatusCode::PAYLOAD_TOO_LARGE, "too big".to_owned()),
+                StatusCode::PAYLOAD_TOO_LARGE,
                 ErrorCode::Validation,
             ),
             (

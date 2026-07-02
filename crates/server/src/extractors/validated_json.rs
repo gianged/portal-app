@@ -1,7 +1,7 @@
 //! `ValidatedJson`: a `Json` body extractor that also runs the DTO's
 //! `shared::validation::Validate` impl, so handlers cannot skip validation.
-//! Malformed JSON rejects with the same `{ code, message }` body as a
-//! validation failure instead of axum's plain-text default.
+//! Body rejections keep axum's status (400/413/415/422) but reject with the
+//! same `{ code, message }` body as a validation failure.
 
 use axum::{
     Json,
@@ -27,7 +27,7 @@ where
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
         let Json(body) = Json::<T>::from_request(req, state)
             .await
-            .map_err(|e| AppError::Validation(e.body_text()))?;
+            .map_err(|e| AppError::JsonRejection(e.status(), e.body_text()))?;
         body.validate()
             .map_err(|e| AppError::Validation(e.to_string()))?;
         Ok(Self(body))
@@ -90,5 +90,19 @@ mod tests {
             .await
             .expect_err("malformed JSON must reject");
         assert_eq!(rejection.into_response().status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn missing_content_type_keeps_415() {
+        let req = HttpRequest::builder()
+            .body(Body::from(r#"{"name":"a"}"#))
+            .expect("build request");
+        let rejection = ValidatedJson::<Probe>::from_request(req, &())
+            .await
+            .expect_err("missing content type must reject");
+        assert_eq!(
+            rejection.into_response().status(),
+            StatusCode::UNSUPPORTED_MEDIA_TYPE
+        );
     }
 }

@@ -19,7 +19,11 @@ use shared::{
 };
 
 use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser, resolve, routes,
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    resolve, routes,
 };
 
 pub fn router() -> Router<AppState> {
@@ -114,7 +118,7 @@ async fn decision(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<DecideFlexRequest>,
+    ValidatedJson(body): ValidatedJson<DecideFlexRequest>,
 ) -> Result<Json<FlexHoursDto>, AppError> {
     let cmd = dto::decide_flex_command(body);
     let flex = state

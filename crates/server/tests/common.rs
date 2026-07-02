@@ -10,7 +10,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    env,
+    env, future,
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -613,7 +613,7 @@ struct FakeSubscription;
 #[async_trait]
 impl Subscription for FakeSubscription {
     async fn next(&mut self) -> Option<Vec<u8>> {
-        std::future::pending().await
+        future::pending().await
     }
 }
 
