@@ -40,6 +40,13 @@ pub struct StaffArchiveOutcome {
     pub failed: u32,
 }
 
+/// Scope and attribution of a stored report: company-wide (optionally credited
+/// to the requesting actor) or private to one staff member.
+enum Attribution {
+    Company { generated_by: Option<UserId> },
+    Staff(UserId),
+}
+
 /// Aggregates report data, renders PDFs, and archives the artifacts.
 ///
 /// System-level: it performs no authorization. The Director/HR gate lives at the
@@ -124,7 +131,8 @@ impl ReportService {
 
         let month_u8 =
             u8::try_from(month).map_err(|_| Error::Validation("month must be 1-12".into()))?;
-        self.assemble_staff_monthly(subject, year, month_u8).await
+        self.assemble_staff_monthly(subject, month_period(year, month_u8)?)
+            .await
     }
 
     /// Generates (or returns the existing) monthly PDF, storing the artifact.
@@ -280,10 +288,9 @@ impl ReportService {
             .persist(
                 period,
                 ReportKind::Monthly,
-                None,
+                Attribution::Company { generated_by },
                 storage_key,
                 bytes.clone(),
-                generated_by,
             )
             .await?;
         Ok(GeneratedReport {
@@ -304,22 +311,21 @@ impl ReportService {
         {
             return Ok(false);
         }
-        let (y, m) = (period.start.year(), u8::from(period.start.month()));
-        let data = self.assemble_staff_monthly(subject.id, y, m).await?;
+        let data = self.assemble_staff_monthly(subject.id, period).await?;
         let renderer = self.renderer.clone();
         let name = subject.full_name.clone();
         let bytes =
             tokio::task::spawn_blocking(move || renderer.render_staff_monthly(&name, &data))
                 .await
                 .map_err(|e| Error::Render(RenderError::Backend(e.to_string())))??;
+        let (y, m) = (period.start.year(), u8::from(period.start.month()));
         let storage_key = format!("reports/monthly/{y:04}-{m:02}/staff/{}.pdf", subject.id.0);
         self.persist(
             period,
             ReportKind::Monthly,
-            Some(subject.id),
+            Attribution::Staff(subject.id),
             storage_key,
             bytes,
-            None,
         )
         .await?;
         Ok(true)
@@ -353,10 +359,9 @@ impl ReportService {
             .persist(
                 period,
                 ReportKind::Yearly,
-                None,
+                Attribution::Company { generated_by },
                 storage_key,
                 bytes.clone(),
-                generated_by,
             )
             .await?;
         Ok(GeneratedReport {
@@ -366,24 +371,21 @@ impl ReportService {
         })
     }
 
-    /// Stores the PDF bytes and inserts the archive row. A `subject` makes the
-    /// report staff-scoped; otherwise it is company-scoped.
+    /// Stores the PDF bytes and inserts the archive row.
     async fn persist(
         &self,
         period: Period,
         kind: ReportKind,
-        subject: Option<UserId>,
+        attribution: Attribution,
         storage_key: String,
         bytes: Vec<u8>,
-        generated_by: Option<UserId>,
     ) -> Result<Report> {
         self.storage
             .put(&storage_key, CONTENT_TYPE, bytes.clone())
             .await?;
-        let scope = if subject.is_some() {
-            ReportScope::Staff
-        } else {
-            ReportScope::Company
+        let (scope, subject, generated_by) = match attribution {
+            Attribution::Company { generated_by } => (ReportScope::Company, None, generated_by),
+            Attribution::Staff(subject) => (ReportScope::Staff, Some(subject), None),
         };
         let report = Report {
             id: ReportId(Uuid::now_v7()),
@@ -408,10 +410,10 @@ impl ReportService {
     async fn assemble_staff_monthly(
         &self,
         subject: UserId,
-        year: i32,
-        month: u8,
+        period: Period,
     ) -> Result<StaffMonthlyReport> {
-        let period = month_period(year, month)?;
+        let year = period.start.year();
+        let month = u32::from(u8::from(period.start.month()));
         // Balance as of the last day of the report month.
         let asof = period
             .end
@@ -420,14 +422,8 @@ impl ReportService {
             .ok_or_else(|| Error::Validation("invalid report period".into()))?;
 
         let stats = self.stats.staff_monthly_stats(subject, period).await?;
-        let work_percentage = pct(self
-            .leave
-            .work_percentage(subject, year, u32::from(month))
-            .await?);
-        let flex_month_delta = self
-            .flex
-            .month_delta(subject, year, u32::from(month))
-            .await?;
+        let work_percentage = pct(self.leave.work_percentage(subject, year, month).await?);
+        let flex_month_delta = self.flex.month_delta(subject, year, month).await?;
         let balance_remaining = self.leave.available(subject, asof).await?;
 
         Ok(StaffMonthlyReport {

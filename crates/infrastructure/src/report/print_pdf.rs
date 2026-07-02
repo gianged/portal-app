@@ -9,8 +9,8 @@ use time::OffsetDateTime;
 use domain::{
     error::RenderError,
     model::{
-        GroupReportRow, MonthlyReportData, StaffMonthlyReport, StaffSummary, TicketSummary,
-        YearlyReportData,
+        DayOffKind, GroupReportRow, MonthlyReportData, StaffMonthlyReport, StaffSummary,
+        TicketCategory, TicketStatus, TicketSummary, YearlyReportData,
     },
     ports::report_renderer::ReportRenderer,
 };
@@ -426,14 +426,14 @@ fn tickets_section(c: &mut Canvas, t: &TicketSummary) {
     let by_cat: Vec<(String, f64)> = t
         .by_category
         .iter()
-        .map(|(cat, n)| (format!("{cat:?}"), f64::from(*n)))
+        .map(|(cat, n)| (ticket_category_label(*cat).to_owned(), f64::from(*n)))
         .collect();
     c.bar_chart(&by_cat, accent(), CONTENT_W, 38.0);
 
     let status_line = t
         .by_status
         .iter()
-        .map(|(s, n)| format!("{s:?}: {n}"))
+        .map(|(s, n)| format!("{}: {n}", ticket_status_label(*s)))
         .collect::<Vec<_>>()
         .join("    ");
     c.caption(&status_line);
@@ -561,7 +561,7 @@ impl ReportRenderer for PrintPdfReportRenderer {
             let by_kind = data
                 .leave_days_by_kind
                 .iter()
-                .map(|(kind, days)| format!("{kind:?}: {days:.1}"))
+                .map(|(kind, days)| format!("{}: {days:.1}", leave_kind_label(*kind)))
                 .collect::<Vec<_>>()
                 .join("    ");
             c.caption(&by_kind);
@@ -589,4 +589,35 @@ impl ReportRenderer for PrintPdfReportRenderer {
 
 fn period_label(start: OffsetDateTime) -> (i32, u8) {
     (start.year(), u8::from(start.month()))
+}
+
+fn ticket_status_label(s: TicketStatus) -> &'static str {
+    match s {
+        TicketStatus::Open => "Open",
+        TicketStatus::Triaged => "Triaged",
+        TicketStatus::Assigned => "Assigned",
+        TicketStatus::InProgress => "In progress",
+        TicketStatus::Resolved => "Resolved",
+        TicketStatus::Closed => "Closed",
+        TicketStatus::Reopened => "Reopened",
+    }
+}
+
+fn ticket_category_label(c: TicketCategory) -> &'static str {
+    match c {
+        TicketCategory::Hardware => "Hardware",
+        TicketCategory::Software => "Software",
+        TicketCategory::Access => "Access",
+        TicketCategory::Other => "Other",
+    }
+}
+
+fn leave_kind_label(k: DayOffKind) -> &'static str {
+    match k {
+        DayOffKind::AnnualLeave => "Annual leave",
+        DayOffKind::SickLeave => "Sick leave",
+        DayOffKind::UnpaidLeave => "Unpaid leave",
+        DayOffKind::Remote => "Remote",
+        DayOffKind::Other => "Other",
+    }
 }

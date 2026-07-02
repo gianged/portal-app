@@ -118,11 +118,8 @@ pub fn from_env() -> anyhow::Result<Config> {
     let ip_allowlist_enabled: bool = optional("IP_ALLOWLIST_ENABLED", "true")
         .parse()
         .context("invalid IP_ALLOWLIST_ENABLED (expected true/false)")?;
-    let ip_allowlist = parse_allowlist(
-        "IP_ALLOWLIST",
-        &optional("IP_ALLOWLIST", DEFAULT_IP_ALLOWLIST),
-    )?;
-    let trusted_proxies = parse_allowlist("TRUSTED_PROXIES", &optional("TRUSTED_PROXIES", ""))?;
+    let ip_allowlist = parse_allowlist("IP_ALLOWLIST", DEFAULT_IP_ALLOWLIST)?;
+    let trusted_proxies = parse_allowlist("TRUSTED_PROXIES", "")?;
 
     Ok(Config {
         database_url: required("DATABASE_URL")?,
@@ -177,11 +174,12 @@ pub fn from_env() -> anyhow::Result<Config> {
 const DEFAULT_IP_ALLOWLIST: &str =
     "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7";
 
-/// Parses a comma-separated network list. Each token is a CIDR (`10.0.0.0/8`) or a
-/// bare address promoted to a host route (`/32` or `/128`). A malformed token fails
-/// startup rather than silently narrowing the gate.
-fn parse_allowlist(var: &str, raw: &str) -> anyhow::Result<Vec<IpNet>> {
-    raw.split(',')
+/// Reads `var` as a comma-separated network list. Each token is a CIDR (`10.0.0.0/8`)
+/// or a bare address promoted to a host route (`/32` or `/128`). A malformed token
+/// fails startup rather than silently narrowing the gate.
+fn parse_allowlist(var: &str, default: &str) -> anyhow::Result<Vec<IpNet>> {
+    optional(var, default)
+        .split(',')
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|tok| {
