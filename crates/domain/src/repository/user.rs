@@ -6,6 +6,10 @@ use crate::{error::RepositoryError, ids::UserId, model::User};
 pub trait UserRepository: Send + Sync {
     async fn find_by_id(&self, id: UserId) -> Result<Option<User>, RepositoryError>;
 
+    /// Users for a batch of ids, any status (historical references must resolve);
+    /// missing ids are simply absent. Backs batched summary resolution.
+    async fn find_by_ids(&self, ids: &[UserId]) -> Result<Vec<User>, RepositoryError>;
+
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, RepositoryError>;
 
     /// `q` is a case-insensitive substring filter on name/email; `None` lists

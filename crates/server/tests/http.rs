@@ -233,6 +233,7 @@ async fn allowlisted_peer_passes_gate() {
     app.state.ip_allowlist = IpAllowlist {
         enabled: true,
         nets: ["10.0.0.0/8".parse().unwrap()].into(),
+        trusted_proxies: [].into(),
     };
     let response = router(app.state)
         .oneshot(get_from("/healthz", "10.1.2.3:5000"))
@@ -247,6 +248,7 @@ async fn out_of_range_peer_is_403() {
     app.state.ip_allowlist = IpAllowlist {
         enabled: true,
         nets: ["10.0.0.0/8".parse().unwrap()].into(),
+        trusted_proxies: [].into(),
     };
     let response = router(app.state)
         .oneshot(get_from("/healthz", "203.0.113.5:5000"))
@@ -264,6 +266,7 @@ async fn enabled_gate_without_peer_addr_is_403() {
     app.state.ip_allowlist = IpAllowlist {
         enabled: true,
         nets: ["10.0.0.0/8".parse().unwrap()].into(),
+        trusted_proxies: [].into(),
     };
     let response = router(app.state).oneshot(get("/healthz")).await.unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);

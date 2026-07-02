@@ -108,6 +108,7 @@ impl UserService {
             timezone: cmd.timezone,
             status: UserStatus::Pending,
             system_role: cmd.system_role,
+            email_notifications: true,
             first_logged_in_at: None,
             deactivated_at: None,
             created_at: now,
@@ -327,6 +328,9 @@ impl UserService {
         if cmd.avatar_storage_key.is_some() {
             user.avatar_storage_key = cmd.avatar_storage_key;
         }
+        if let Some(email_notifications) = cmd.email_notifications {
+            user.email_notifications = email_notifications;
+        }
         user.updated_at = now;
 
         self.users.save(&user).await?;
@@ -423,6 +427,15 @@ impl UserService {
     #[tracing::instrument(skip_all, fields(id = ?id))]
     pub async fn find(&self, id: UserId) -> Result<Option<User>> {
         Ok(self.users.find_by_id(id).await?)
+    }
+
+    /// Users for a batch of ids, any status; missing ids are simply absent.
+    ///
+    /// # Errors
+    /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(count = ids.len()))]
+    pub async fn find_by_ids(&self, ids: &[UserId]) -> Result<Vec<User>> {
+        Ok(self.users.find_by_ids(ids).await?)
     }
 
     /// Looks up a user by email, returning `None` if it does not exist.

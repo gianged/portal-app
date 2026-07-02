@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 email,\n                 password_hash,\n                 full_name,\n                 avatar_storage_key,\n                 phone,\n                 timezone,\n                 status            AS \"status: SqlUserStatus\",\n                 system_role       AS \"system_role: SqlSystemRole\",\n                 first_logged_in_at,\n                 deactivated_at,\n                 created_at,\n                 updated_at\n               FROM auth.users\n               WHERE id = $1",
+  "query": "SELECT\n                 id,\n                 email,\n                 password_hash,\n                 full_name,\n                 avatar_storage_key,\n                 phone,\n                 timezone,\n                 status            AS \"status: SqlUserStatus\",\n                 system_role       AS \"system_role: SqlSystemRole\",\n                 email_notifications,\n                 first_logged_in_at,\n                 deactivated_at,\n                 created_at,\n                 updated_at\n               FROM auth.users\n               WHERE status = $1\n                 AND ($4::text IS NULL OR full_name ILIKE $4 OR email ILIKE $4)\n               ORDER BY created_at\n               LIMIT $2\n               OFFSET $3",
   "describe": {
     "columns": [
       {
@@ -125,6 +125,17 @@
       },
       {
         "ordinal": 9,
+        "name": "email_notifications",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "auth.users",
+            "name": "email_notifications"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
         "name": "first_logged_in_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -135,7 +146,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "deactivated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -146,7 +157,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -157,7 +168,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -170,7 +181,21 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        {
+          "Custom": {
+            "name": "auth.user_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "active",
+                "deactivated"
+              ]
+            }
+          }
+        },
+        "Int8",
+        "Int8",
+        "Text"
       ]
     },
     "nullable": [
@@ -183,11 +208,12 @@
       false,
       false,
       true,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "fd9eefb09b73a856f8ed03d829f70426aa6ecdf45c2c26051d1e9d9f4ab80c02"
+  "hash": "c6e4330ad1fefaa63b3053c95ed00c72123a4ee422288d427eb68bcff0a07aea"
 }

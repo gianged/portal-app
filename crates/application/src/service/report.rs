@@ -5,7 +5,7 @@ use domain::{
     ids::{ReportId, UserId},
     model::{
         GroupReportRow, GrowthPoint, GrowthSeries, MonthlyReportData, Period, Report, ReportKind,
-        ReportScope, StaffMonthlyReport, StaffSummary, TicketSummary, YearlyReportData,
+        ReportScope, StaffMonthlyReport, StaffSummary, TicketSummary, User, YearlyReportData,
         YearlyTotals,
     },
     ports::{file_storage::FileStorage, report_renderer::ReportRenderer},
@@ -30,6 +30,14 @@ pub struct GeneratedReport {
     pub report: Report,
     pub bytes: Vec<u8>,
     pub created: bool,
+}
+
+/// Tally of a per-staff archival sweep; one bucket per active user processed.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StaffArchiveOutcome {
+    pub created: u32,
+    pub skipped: u32,
+    pub failed: u32,
 }
 
 /// Aggregates report data, renders PDFs, and archives the artifacts.
@@ -116,39 +124,7 @@ impl ReportService {
 
         let month_u8 =
             u8::try_from(month).map_err(|_| Error::Validation("month must be 1-12".into()))?;
-        let period = month_period(year, month_u8)?;
-        // Balance as of the last day of the report month.
-        let asof = period
-            .end
-            .date()
-            .previous_day()
-            .ok_or_else(|| Error::Validation("invalid report period".into()))?;
-
-        // TODO: I8 - scheduled per-staff PDF archival (extend the monthly scheduler
-        // to render/store a per-staff PDF per active user) is deferred.
-        let stats = self.stats.staff_monthly_stats(subject, period).await?;
-        let work_percentage = pct(self.leave.work_percentage(subject, year, month).await?);
-        let flex_month_delta = self.flex.month_delta(subject, year, month).await?;
-        let balance_remaining = self.leave.available(subject, asof).await?;
-
-        Ok(StaffMonthlyReport {
-            user_id: subject,
-            period,
-            days_reported: stats.days_reported,
-            hours_request_work: stats.hours_request_work,
-            hours_learning: stats.hours_learning,
-            hours_other: stats.hours_other,
-            leave_days_by_kind: stats.leave_days_by_kind,
-            overtime_hours: stats.overtime_hours,
-            flex_days: stats.flex_days,
-            flex_month_delta,
-            work_percentage,
-            balance_remaining,
-            balance_expiring_soon: stats.balance_expiring_soon,
-            requests_completed: stats.requests_completed,
-            requests_open: stats.requests_open,
-            avg_request_progress: stats.avg_request_progress,
-        })
+        self.assemble_staff_monthly(subject, year, month_u8).await
     }
 
     /// Generates (or returns the existing) monthly PDF, storing the artifact.
@@ -195,7 +171,67 @@ impl ReportService {
         self.store_monthly(period, None).await
     }
 
-    /// Lists archived reports, newest first.
+    /// Worker entry: idempotently render and archive one staff member's monthly
+    /// PDF. Returns `true` when this call created the artifact.
+    ///
+    /// # Errors
+    /// Returns `NotFound` for an unknown subject, `Validation` for an invalid
+    /// month, or a repository, storage, or render error.
+    #[tracing::instrument(skip_all, fields(subject = ?subject, year, month))]
+    pub async fn generate_and_store_staff_monthly(
+        &self,
+        subject: UserId,
+        year: i32,
+        month: u8,
+    ) -> Result<bool> {
+        let user = self
+            .users
+            .find_by_id(subject)
+            .await?
+            .ok_or(Error::NotFound("user"))?;
+        self.store_staff_monthly(&user, month_period(year, month)?)
+            .await
+    }
+
+    /// Worker entry: archive the monthly PDF for every active user. Idempotent;
+    /// a per-user failure is logged and counted, never sinks the sweep.
+    ///
+    /// # Errors
+    /// Returns `Validation` for an invalid month, or a repository error from the
+    /// user listing itself.
+    #[tracing::instrument(skip_all, fields(year, month))]
+    pub async fn archive_staff_monthly_reports(
+        &self,
+        year: i32,
+        month: u8,
+    ) -> Result<StaffArchiveOutcome> {
+        const PAGE: u32 = 200;
+        let period = month_period(year, month)?;
+        let mut outcome = StaffArchiveOutcome::default();
+        let mut offset = 0_u32;
+        loop {
+            let page = self.users.list_active(PAGE, offset, None).await?;
+            let page_len = page.len();
+            for user in page {
+                match self.store_staff_monthly(&user, period).await {
+                    Ok(true) => outcome.created += 1,
+                    Ok(false) => outcome.skipped += 1,
+                    Err(e) => {
+                        outcome.failed += 1;
+                        tracing::error!(error = %e, subject = ?user.id, "staff report archival failed");
+                    }
+                }
+            }
+            if page_len < PAGE as usize {
+                break;
+            }
+            offset += PAGE;
+        }
+        Ok(outcome)
+    }
+
+    /// Lists archived company/group reports, newest first. Staff-scoped
+    /// artifacts are excluded; they are private to the subject's report path.
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
@@ -244,6 +280,7 @@ impl ReportService {
             .persist(
                 period,
                 ReportKind::Monthly,
+                None,
                 storage_key,
                 bytes.clone(),
                 generated_by,
@@ -254,6 +291,38 @@ impl ReportService {
             bytes,
             created: true,
         })
+    }
+
+    /// Idempotently renders and archives one staff member's monthly PDF; `true`
+    /// when this call created the artifact, `false` when it already existed.
+    async fn store_staff_monthly(&self, subject: &User, period: Period) -> Result<bool> {
+        if self
+            .archive
+            .find_by_period_for_subject(ReportKind::Monthly, period.start, subject.id)
+            .await?
+            .is_some()
+        {
+            return Ok(false);
+        }
+        let (y, m) = (period.start.year(), u8::from(period.start.month()));
+        let data = self.assemble_staff_monthly(subject.id, y, m).await?;
+        let renderer = self.renderer.clone();
+        let name = subject.full_name.clone();
+        let bytes =
+            tokio::task::spawn_blocking(move || renderer.render_staff_monthly(&name, &data))
+                .await
+                .map_err(|e| Error::Render(RenderError::Backend(e.to_string())))??;
+        let storage_key = format!("reports/monthly/{y:04}-{m:02}/staff/{}.pdf", subject.id.0);
+        self.persist(
+            period,
+            ReportKind::Monthly,
+            Some(subject.id),
+            storage_key,
+            bytes,
+            None,
+        )
+        .await?;
+        Ok(true)
     }
 
     async fn store_yearly(
@@ -284,6 +353,7 @@ impl ReportService {
             .persist(
                 period,
                 ReportKind::Yearly,
+                None,
                 storage_key,
                 bytes.clone(),
                 generated_by,
@@ -296,10 +366,13 @@ impl ReportService {
         })
     }
 
+    /// Stores the PDF bytes and inserts the archive row. A `subject` makes the
+    /// report staff-scoped; otherwise it is company-scoped.
     async fn persist(
         &self,
         period: Period,
         kind: ReportKind,
+        subject: Option<UserId>,
         storage_key: String,
         bytes: Vec<u8>,
         generated_by: Option<UserId>,
@@ -307,11 +380,17 @@ impl ReportService {
         self.storage
             .put(&storage_key, CONTENT_TYPE, bytes.clone())
             .await?;
+        let scope = if subject.is_some() {
+            ReportScope::Staff
+        } else {
+            ReportScope::Company
+        };
         let report = Report {
             id: ReportId(Uuid::now_v7()),
             kind,
-            scope: ReportScope::Company,
+            scope,
             group_id: None,
+            subject_user_id: subject,
             period_start: period.start,
             period_end: period.end,
             storage_key,
@@ -322,6 +401,53 @@ impl ReportService {
         };
         self.archive.insert(&report).await?;
         Ok(report)
+    }
+
+    /// Assembles one user's monthly report without an authorization gate; callers
+    /// either check the actor (`staff_monthly`) or run in system context.
+    async fn assemble_staff_monthly(
+        &self,
+        subject: UserId,
+        year: i32,
+        month: u8,
+    ) -> Result<StaffMonthlyReport> {
+        let period = month_period(year, month)?;
+        // Balance as of the last day of the report month.
+        let asof = period
+            .end
+            .date()
+            .previous_day()
+            .ok_or_else(|| Error::Validation("invalid report period".into()))?;
+
+        let stats = self.stats.staff_monthly_stats(subject, period).await?;
+        let work_percentage = pct(self
+            .leave
+            .work_percentage(subject, year, u32::from(month))
+            .await?);
+        let flex_month_delta = self
+            .flex
+            .month_delta(subject, year, u32::from(month))
+            .await?;
+        let balance_remaining = self.leave.available(subject, asof).await?;
+
+        Ok(StaffMonthlyReport {
+            user_id: subject,
+            period,
+            days_reported: stats.days_reported,
+            hours_request_work: stats.hours_request_work,
+            hours_learning: stats.hours_learning,
+            hours_other: stats.hours_other,
+            leave_days_by_kind: stats.leave_days_by_kind,
+            overtime_hours: stats.overtime_hours,
+            flex_days: stats.flex_days,
+            flex_month_delta,
+            work_percentage,
+            balance_remaining,
+            balance_expiring_soon: stats.balance_expiring_soon,
+            requests_completed: stats.requests_completed,
+            requests_open: stats.requests_open,
+            avg_request_progress: stats.avg_request_progress,
+        })
     }
 
     async fn assemble_monthly(&self, period: Period) -> Result<MonthlyReportData> {

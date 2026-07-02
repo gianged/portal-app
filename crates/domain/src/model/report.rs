@@ -251,6 +251,8 @@ pub enum ReportKind {
 pub enum ReportScope {
     Company,
     Group,
+    /// One user's monthly attendance + workload archive.
+    Staff,
 }
 
 /// A generated report whose PDF payload lives in file storage under `storage_key`.
@@ -260,6 +262,8 @@ pub struct Report {
     pub kind: ReportKind,
     pub scope: ReportScope,
     pub group_id: Option<GroupId>,
+    /// `Some` iff `scope` is `Staff`.
+    pub subject_user_id: Option<UserId>,
     pub period_start: OffsetDateTime,
     pub period_end: OffsetDateTime,
     pub storage_key: String,

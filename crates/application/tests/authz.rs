@@ -130,6 +130,16 @@ impl UserRepository for FakeUsers {
             .find(|u| u.id == id)
             .cloned())
     }
+    async fn find_by_ids(&self, ids: &[UserId]) -> Result<Vec<User>, RepositoryError> {
+        Ok(self
+            .users
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|u| ids.contains(&u.id))
+            .cloned()
+            .collect())
+    }
     async fn find_by_email(&self, _email: &str) -> Result<Option<User>, RepositoryError> {
         Ok(None)
     }
@@ -169,6 +179,16 @@ impl GroupRepository for FakeGroups {
             .iter()
             .find(|g| g.id == id)
             .cloned())
+    }
+    async fn find_by_ids(&self, ids: &[GroupId]) -> Result<Vec<Group>, RepositoryError> {
+        Ok(self
+            .groups
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|g| ids.contains(&g.id))
+            .cloned()
+            .collect())
     }
     async fn list_all(&self) -> Result<Vec<Group>, RepositoryError> {
         Ok(self.groups.lock().unwrap().clone())
@@ -567,6 +587,7 @@ fn user(system_role: Option<SystemRole>) -> User {
         timezone: "UTC".into(),
         status: UserStatus::Active,
         system_role,
+        email_notifications: true,
         first_logged_in_at: Some(now),
         deactivated_at: None,
         created_at: now,

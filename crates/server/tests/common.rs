@@ -46,8 +46,8 @@ use domain::{
         Group, GroupProjectStats, GroupRequestStats, GroupStaffStats, Holiday, LeaveGrant,
         LeaveTransaction, Membership, Message, MonthlyBucket, MonthlyReportData, Notification,
         Overtime, Period, Project, ProjectCollaborator, ProjectInvite, Report, ReportKind, Request,
-        RequestAttachment, RequestStatus, StaffMonthlyStats, Ticket, TicketStats, User, UserStatus,
-        YearlyReportData,
+        RequestAttachment, RequestStatus, StaffMonthlyReport, StaffMonthlyStats, Ticket,
+        TicketStats, User, UserStatus, YearlyReportData,
     },
     ports::{
         authz_client::{AuthzClient, RelationTuple},
@@ -90,6 +90,16 @@ impl UserRepository for FakeUsers {
             .iter()
             .find(|u| u.id == id)
             .cloned())
+    }
+    async fn find_by_ids(&self, ids: &[UserId]) -> Result<Vec<User>, RepositoryError> {
+        Ok(self
+            .users
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|u| ids.contains(&u.id))
+            .cloned()
+            .collect())
     }
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, RepositoryError> {
         Ok(self
@@ -136,6 +146,16 @@ impl GroupRepository for FakeGroups {
             .iter()
             .find(|g| g.id == id)
             .cloned())
+    }
+    async fn find_by_ids(&self, ids: &[GroupId]) -> Result<Vec<Group>, RepositoryError> {
+        Ok(self
+            .groups
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|g| ids.contains(&g.id))
+            .cloned()
+            .collect())
     }
     async fn list_all(&self) -> Result<Vec<Group>, RepositoryError> {
         Ok(self.groups.lock().unwrap().clone())
@@ -985,6 +1005,14 @@ impl ReportArchiveRepository for FakeReportArchive {
     ) -> Result<Option<Report>, RepositoryError> {
         Ok(None)
     }
+    async fn find_by_period_for_subject(
+        &self,
+        _kind: ReportKind,
+        _period_start: OffsetDateTime,
+        _subject: UserId,
+    ) -> Result<Option<Report>, RepositoryError> {
+        Ok(None)
+    }
     async fn list_all_storage_keys(&self) -> Result<Vec<String>, RepositoryError> {
         Ok(Vec::new())
     }
@@ -997,6 +1025,13 @@ impl ReportRenderer for FakeRenderer {
         Ok(Vec::new())
     }
     fn render_yearly(&self, _data: &YearlyReportData) -> Result<Vec<u8>, RenderError> {
+        Ok(Vec::new())
+    }
+    fn render_staff_monthly(
+        &self,
+        _subject_name: &str,
+        _data: &StaffMonthlyReport,
+    ) -> Result<Vec<u8>, RenderError> {
         Ok(Vec::new())
     }
 }
@@ -1017,6 +1052,7 @@ pub fn active_user(id: UserId, email: &str) -> User {
         timezone: "UTC".to_owned(),
         status: UserStatus::Active,
         system_role: None,
+        email_notifications: true,
         first_logged_in_at: Some(now),
         deactivated_at: None,
         created_at: now,
@@ -1225,6 +1261,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         ip_allowlist: IpAllowlist {
             enabled: false,
             nets: Arc::from([]),
+            trusted_proxies: Arc::from([]),
         },
         storage,
         signed_url,

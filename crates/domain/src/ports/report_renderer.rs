@@ -1,6 +1,6 @@
 use crate::{
     error::RenderError,
-    model::{MonthlyReportData, YearlyReportData},
+    model::{MonthlyReportData, StaffMonthlyReport, YearlyReportData},
 };
 
 /// Renders aggregated report data into a PDF document.
@@ -13,4 +13,12 @@ pub trait ReportRenderer: Send + Sync {
     fn render_monthly(&self, data: &MonthlyReportData) -> Result<Vec<u8>, RenderError>;
 
     fn render_yearly(&self, data: &YearlyReportData) -> Result<Vec<u8>, RenderError>;
+
+    /// One staff member's monthly archive. `subject_name` is resolved by the
+    /// caller so the renderer stays IO-free.
+    fn render_staff_monthly(
+        &self,
+        subject_name: &str,
+        data: &StaffMonthlyReport,
+    ) -> Result<Vec<u8>, RenderError>;
 }

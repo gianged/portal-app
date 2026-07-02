@@ -99,3 +99,10 @@ pub struct AddMemberRequest {
 pub struct ChangeMemberRoleRequest {
     pub role: GroupRole,
 }
+
+/// Hands the single leader slot from `from_user_id` to `to_user_id`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferLeadershipRequest {
+    pub from_user_id: UserId,
+    pub to_user_id: UserId,
+}

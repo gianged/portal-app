@@ -112,6 +112,7 @@ struct ReportRow {
     kind: SqlReportKind,
     scope: SqlReportScope,
     group_id: Option<Uuid>,
+    subject_user_id: Option<Uuid>,
     period_start: OffsetDateTime,
     period_end: OffsetDateTime,
     storage_key: String,
@@ -132,6 +133,7 @@ impl TryFrom<ReportRow> for Report {
             kind: r.kind.into(),
             scope: r.scope.into(),
             group_id: r.group_id.map(GroupId),
+            subject_user_id: r.subject_user_id.map(UserId),
             period_start: r.period_start,
             period_end: r.period_end,
             storage_key: r.storage_key,
@@ -593,14 +595,15 @@ impl ReportArchiveRepository for PgReportingRepo {
             .map_err(|_| RepositoryError::Backend("size_bytes exceeds i64::MAX".into()))?;
         sqlx::query!(
             r#"INSERT INTO reporting.reports
-                 (id, kind, scope, group_id, period_start, period_end,
+                 (id, kind, scope, group_id, subject_user_id, period_start, period_end,
                   storage_key, content_type, size_bytes, generated_by, generated_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                ON CONFLICT DO NOTHING"#,
             report.id.0,
             kind as SqlReportKind,
             scope as SqlReportScope,
             report.group_id.map(|g| g.0),
+            report.subject_user_id.map(|u| u.0),
             report.period_start,
             report.period_end,
             report.storage_key,
@@ -624,6 +627,7 @@ impl ReportArchiveRepository for PgReportingRepo {
                  kind        AS "kind: SqlReportKind",
                  scope       AS "scope: SqlReportScope",
                  group_id,
+                 subject_user_id,
                  period_start,
                  period_end,
                  storage_key,
@@ -632,6 +636,7 @@ impl ReportArchiveRepository for PgReportingRepo {
                  generated_by,
                  generated_at
                FROM reporting.reports
+               WHERE scope <> 'staff'
                ORDER BY generated_at DESC
                LIMIT $1"#,
             i64::from(limit),
@@ -651,6 +656,7 @@ impl ReportArchiveRepository for PgReportingRepo {
                  kind        AS "kind: SqlReportKind",
                  scope       AS "scope: SqlReportScope",
                  group_id,
+                 subject_user_id,
                  period_start,
                  period_end,
                  storage_key,
@@ -682,6 +688,7 @@ impl ReportArchiveRepository for PgReportingRepo {
                  kind        AS "kind: SqlReportKind",
                  scope       AS "scope: SqlReportScope",
                  group_id,
+                 subject_user_id,
                  period_start,
                  period_end,
                  storage_key,
@@ -692,6 +699,42 @@ impl ReportArchiveRepository for PgReportingRepo {
                FROM reporting.reports
                WHERE kind = $1 AND scope = 'company' AND period_start = $2"#,
             kind as SqlReportKind,
+            period_start,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(mappers::map_pg_error)?;
+        row.map(Report::try_from).transpose()
+    }
+
+    #[tracing::instrument(skip_all, fields(subject = ?subject))]
+    async fn find_by_period_for_subject(
+        &self,
+        kind: ReportKind,
+        period_start: OffsetDateTime,
+        subject: UserId,
+    ) -> Result<Option<Report>, RepositoryError> {
+        let kind = SqlReportKind::from(kind);
+        let row = sqlx::query_as!(
+            ReportRow,
+            r#"SELECT
+                 id,
+                 kind        AS "kind: SqlReportKind",
+                 scope       AS "scope: SqlReportScope",
+                 group_id,
+                 subject_user_id,
+                 period_start,
+                 period_end,
+                 storage_key,
+                 content_type,
+                 size_bytes,
+                 generated_by,
+                 generated_at
+               FROM reporting.reports
+               WHERE kind = $1 AND scope = 'staff'
+                 AND subject_user_id = $2 AND period_start = $3"#,
+            kind as SqlReportKind,
+            subject.0,
             period_start,
         )
         .fetch_optional(&self.pool)

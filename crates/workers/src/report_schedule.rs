@@ -1,5 +1,6 @@
-//! Monthly company-report scheduler: on/after the configured day, generates the
-//! previous month's report (idempotently) and emails the PDF to Director/HR recipients.
+//! Monthly report scheduler: on/after the configured day, generates the previous
+//! month's company report (idempotently), emails the PDF to Director/HR
+//! recipients, and archives a per-staff PDF for every active user.
 
 use std::{sync::Arc, time::Duration as StdDuration};
 
@@ -34,6 +35,26 @@ pub async fn run(
                 tracing::debug!(year, month, "monthly report already exists; nothing to do");
             }
             Err(e) => tracing::error!(error = %e, year, month, "monthly report generation failed"),
+        }
+        // Per-staff archival is idempotent, so re-running on every tick only
+        // fills gaps (users who failed last time or activated since).
+        match reports.archive_staff_monthly_reports(year, month).await {
+            Ok(outcome) if outcome.created > 0 || outcome.failed > 0 => {
+                tracing::info!(
+                    year,
+                    month,
+                    created = outcome.created,
+                    skipped = outcome.skipped,
+                    failed = outcome.failed,
+                    "staff report archival sweep finished"
+                );
+            }
+            Ok(_) => {
+                tracing::debug!(year, month, "staff report archive already complete");
+            }
+            Err(e) => {
+                tracing::error!(error = %e, year, month, "staff report archival sweep failed")
+            }
         }
     }
 }

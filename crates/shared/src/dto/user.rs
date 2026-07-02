@@ -95,6 +95,8 @@ pub struct UserProfileDto {
     pub timezone: String,
     pub status: UserStatus,
     pub system_role: Option<SystemRole>,
+    /// Opt-out switch for the email notification side-channel.
+    pub email_notifications: bool,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }
@@ -129,6 +131,7 @@ pub struct UpdateProfileRequest {
     pub phone: Option<String>,
     pub timezone: Option<String>,
     pub avatar_storage_key: Option<String>,
+    pub email_notifications: Option<bool>,
 }
 
 /// Self-service password change: the current password is re-verified before

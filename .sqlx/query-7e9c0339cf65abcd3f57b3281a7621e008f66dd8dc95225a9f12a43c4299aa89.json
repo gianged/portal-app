@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 email,\n                 password_hash,\n                 full_name,\n                 avatar_storage_key,\n                 phone,\n                 timezone,\n                 status            AS \"status: SqlUserStatus\",\n                 system_role       AS \"system_role: SqlSystemRole\",\n                 first_logged_in_at,\n                 deactivated_at,\n                 created_at,\n                 updated_at\n               FROM auth.users\n               WHERE email = $1",
+  "query": "SELECT\n                 id,\n                 email,\n                 password_hash,\n                 full_name,\n                 avatar_storage_key,\n                 phone,\n                 timezone,\n                 status            AS \"status: SqlUserStatus\",\n                 system_role       AS \"system_role: SqlSystemRole\",\n                 email_notifications,\n                 first_logged_in_at,\n                 deactivated_at,\n                 created_at,\n                 updated_at\n               FROM auth.users\n               WHERE email = $1",
   "describe": {
     "columns": [
       {
@@ -125,6 +125,17 @@
       },
       {
         "ordinal": 9,
+        "name": "email_notifications",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "auth.users",
+            "name": "email_notifications"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
         "name": "first_logged_in_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -135,7 +146,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "deactivated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -146,7 +157,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -157,7 +168,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -183,11 +194,12 @@
       false,
       false,
       true,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "d3df6287228bbe5925b4ef5be2172192d380b6f2711597641976691a3a85529d"
+  "hash": "7e9c0339cf65abcd3f57b3281a7621e008f66dd8dc95225a9f12a43c4299aa89"
 }

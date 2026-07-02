@@ -254,6 +254,7 @@ async fn setup() -> Harness {
         timezone: "UTC".into(),
         status: UserStatus::Active,
         system_role: Some(SystemRole::Hr),
+        email_notifications: true,
         // Active users must carry a first-login time (chk_users_status_first_login_consistency).
         first_logged_in_at: Some(now),
         deactivated_at: None,

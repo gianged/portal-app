@@ -136,7 +136,7 @@ Generate each with `openssl rand -hex 32`. These are placeholders in `.env.examp
 
 ### Network access gate
 
-An IP allowlist middleware runs before auth and any handler. With `IP_ALLOWLIST_ENABLED=true` (default) only peers matching `IP_ALLOWLIST` reach the API — others get `403`. When `IP_ALLOWLIST` is unset it defaults to loopback + private ranges, so LAN and VPN clients pass; set your real networks in production. The gate fails closed: a request with no resolvable peer IP is rejected. Behind a reverse proxy, enforce this at the proxy for now (`X-Forwarded-For` trust is a TODO).
+An IP allowlist middleware runs before auth and any handler. With `IP_ALLOWLIST_ENABLED=true` (default) only clients matching `IP_ALLOWLIST` reach the API — others get `403`. When `IP_ALLOWLIST` is unset it defaults to loopback + private ranges, so LAN and VPN clients pass; set your real networks in production. Behind a reverse proxy, set `TRUSTED_PROXIES` to the proxy's addresses (CIDR, comma-separated): when the immediate peer matches, the client is taken from `X-Forwarded-For` (rightmost non-trusted hop); from any other peer the header is ignored, since it is spoofable. The gate fails closed: a request with no resolvable peer IP — or a trusted proxy forwarding a missing/malformed chain — is rejected.
 
 ### Production-only authorization hardening
 

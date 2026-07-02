@@ -406,6 +406,15 @@ impl GroupService {
         Ok(self.groups.find_group(id).await?)
     }
 
+    /// Groups for a batch of ids; missing ids are simply absent.
+    ///
+    /// # Errors
+    /// Returns a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(count = ids.len()))]
+    pub async fn find_by_ids(&self, ids: &[GroupId]) -> Result<Vec<Group>> {
+        Ok(self.groups.find_by_ids(ids).await?)
+    }
+
     /// Org-wide group directory; any active user may read it.
     ///
     /// # Errors

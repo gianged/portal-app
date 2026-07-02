@@ -97,6 +97,31 @@ impl GroupRepository for PgGroupRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    #[tracing::instrument(skip_all, fields(count = ids.len()))]
+    async fn find_by_ids(&self, ids: &[GroupId]) -> Result<Vec<Group>, RepositoryError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let raw: Vec<Uuid> = ids.iter().map(|id| id.0).collect();
+        let rows = sqlx::query_as!(
+            GroupRow,
+            r#"SELECT
+                 id,
+                 name,
+                 description,
+                 kind AS "kind: SqlGroupKind",
+                 created_at,
+                 updated_at
+               FROM org.groups
+               WHERE id = ANY($1)"#,
+            &raw,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(mappers::map_pg_error)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
     #[tracing::instrument(skip_all)]
     async fn list_all(&self) -> Result<Vec<Group>, RepositoryError> {
         let rows = sqlx::query_as!(

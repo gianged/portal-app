@@ -1,8 +1,8 @@
 //! Async resolution of denormalized references for wire DTOs.
 //!
 //! DTOs embed `UserSummaryDto` but domain models carry only ids; these helpers
-//! fetch and project the referenced users. List endpoints dedupe via a map.
-//! TODO: replace the N-query resolution with a repository-side join if volume grows.
+//! fetch and project the referenced users. List endpoints dedupe via a map
+//! backed by batched repository fetches.
 
 use std::collections::{HashMap, HashSet};
 
@@ -53,8 +53,8 @@ pub async fn opt_user_summary(
     }
 }
 
-/// Loads a deduplicated map of resolved user summaries for a batch of ids. Roles
-/// come from one batched membership fetch plus one IT-group lookup.
+/// Loads a deduplicated map of resolved user summaries for a batch of ids: one
+/// batched user fetch, one batched membership fetch, one IT-group lookup.
 pub async fn user_map(
     users: &UserService,
     groups: &GroupService,
@@ -65,14 +65,10 @@ pub async fn user_map(
     let memberships = groups.active_memberships_for_users(&id_vec).await?;
     let it_group = groups.it_group_id().await?;
     let mut map = HashMap::with_capacity(unique.len());
-    for id in unique {
-        if let Some(user) = users.find(id).await? {
-            let m = memberships.get(&id).map_or(&[][..], Vec::as_slice);
-            map.insert(
-                id,
-                dto::user_summary_dto(&user, compute_role(&user, m, it_group)),
-            );
-        }
+    for user in users.find_by_ids(&id_vec).await? {
+        let m = memberships.get(&user.id).map_or(&[][..], Vec::as_slice);
+        let summary = dto::user_summary_dto(&user, compute_role(&user, m, it_group));
+        map.insert(user.id, summary);
     }
     Ok(map)
 }
@@ -121,19 +117,19 @@ pub async fn group_summary(
     })
 }
 
-/// Loads a deduplicated map of groups for a batch of ids.
+/// Loads a deduplicated map of groups for a batch of ids with one batched fetch.
 pub async fn group_map(
     groups: &GroupService,
     ids: impl IntoIterator<Item = GroupId>,
 ) -> Result<HashMap<GroupId, Group>, AppError> {
     let unique: HashSet<GroupId> = ids.into_iter().collect();
-    let mut map = HashMap::with_capacity(unique.len());
-    for id in unique {
-        if let Some(group) = groups.find(id).await? {
-            map.insert(id, group);
-        }
-    }
-    Ok(map)
+    let id_vec: Vec<GroupId> = unique.iter().copied().collect();
+    Ok(groups
+        .find_by_ids(&id_vec)
+        .await?
+        .into_iter()
+        .map(|g| (g.id, g))
+        .collect())
 }
 
 /// Group summary from a preloaded map, with the dangling-ref fallback.

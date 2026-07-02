@@ -724,6 +724,7 @@ impl From<SqlReportKind> for ReportKind {
 pub(crate) enum SqlReportScope {
     Company,
     Group,
+    Staff,
 }
 
 impl From<ReportScope> for SqlReportScope {
@@ -731,6 +732,7 @@ impl From<ReportScope> for SqlReportScope {
         match v {
             ReportScope::Company => Self::Company,
             ReportScope::Group => Self::Group,
+            ReportScope::Staff => Self::Staff,
         }
     }
 }
@@ -740,6 +742,7 @@ impl From<SqlReportScope> for ReportScope {
         match v {
             SqlReportScope::Company => Self::Company,
             SqlReportScope::Group => Self::Group,
+            SqlReportScope::Staff => Self::Staff,
         }
     }
 }

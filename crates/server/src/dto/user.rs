@@ -84,6 +84,7 @@ pub fn user_profile_dto(user: &model::User) -> UserProfileDto {
         timezone: user.timezone.clone(),
         status: user_status_dto(user.status),
         system_role: user.system_role.map(system_role_dto),
+        email_notifications: user.email_notifications,
         created_at: user.created_at,
     }
 }
@@ -129,6 +130,7 @@ pub fn update_profile_command(req: UpdateProfileRequest) -> UpdateProfileCommand
         phone: req.phone,
         timezone: req.timezone,
         avatar_storage_key: req.avatar_storage_key,
+        email_notifications: req.email_notifications,
     }
 }
 

@@ -363,6 +363,7 @@ fn EditProfileDialog(
             phone: (!phone_val.is_empty()).then_some(phone_val),
             timezone: Some(tz.get_untracked()),
             avatar_storage_key: None,
+            email_notifications: None,
         };
         if let Err(e) = user::validate_update_profile(&req) {
             toast.error(e.to_string());

@@ -14,5 +14,5 @@ pub use service::{
     CommentService, DailyReportService, DayOffService, EmailNotifier, FlexHoursService,
     GeneratedReport, GroupService, HolidayService, LeaveBalanceService, MaintenanceService,
     NotificationFanout, NotificationService, OvertimeService, PolicyProvider, PolicyService,
-    ProjectService, ReportService, RequestService, TicketService, UserService,
+    ProjectService, ReportService, RequestService, StaffArchiveOutcome, TicketService, UserService,
 };

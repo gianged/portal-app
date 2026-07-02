@@ -10,6 +10,10 @@ use crate::{
 pub trait GroupRepository: Send + Sync {
     async fn find_group(&self, id: GroupId) -> Result<Option<Group>, RepositoryError>;
 
+    /// Groups for a batch of ids; missing ids are simply absent. Backs batched
+    /// summary resolution.
+    async fn find_by_ids(&self, ids: &[GroupId]) -> Result<Vec<Group>, RepositoryError>;
+
     /// Every group, ordered by name. Backs the org-wide group directory.
     async fn list_all(&self) -> Result<Vec<Group>, RepositoryError>;
 

@@ -34,4 +34,5 @@ pub struct UpdateProfileCommand {
     pub phone: Option<String>,
     pub timezone: Option<String>,
     pub avatar_storage_key: Option<String>,
+    pub email_notifications: Option<bool>,
 }

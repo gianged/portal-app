@@ -33,7 +33,7 @@ pub use notification::{EmailNotifier, NotificationFanout, NotificationService};
 pub use overtime::OvertimeService;
 pub use policy::{PolicyProvider, PolicyService};
 pub use project::ProjectService;
-pub use report::{GeneratedReport, ReportService};
+pub use report::{GeneratedReport, ReportService, StaffArchiveOutcome};
 pub use request::RequestService;
 pub use ticket::TicketService;
 pub use user::UserService;

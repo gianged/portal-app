@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 kind        AS \"kind: SqlReportKind\",\n                 scope       AS \"scope: SqlReportScope\",\n                 group_id,\n                 period_start,\n                 period_end,\n                 storage_key,\n                 content_type,\n                 size_bytes,\n                 generated_by,\n                 generated_at\n               FROM reporting.reports\n               WHERE id = $1",
+  "query": "SELECT\n                 id,\n                 kind        AS \"kind: SqlReportKind\",\n                 scope       AS \"scope: SqlReportScope\",\n                 group_id,\n                 subject_user_id,\n                 period_start,\n                 period_end,\n                 storage_key,\n                 content_type,\n                 size_bytes,\n                 generated_by,\n                 generated_at\n               FROM reporting.reports\n               WHERE kind = $1 AND scope = 'company' AND period_start = $2",
   "describe": {
     "columns": [
       {
@@ -44,7 +44,8 @@
             "kind": {
               "Enum": [
                 "company",
-                "group"
+                "group",
+                "staff"
               ]
             }
           }
@@ -69,6 +70,17 @@
       },
       {
         "ordinal": 4,
+        "name": "subject_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "reporting.reports",
+            "name": "subject_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
         "name": "period_start",
         "type_info": "Timestamptz",
         "origin": {
@@ -79,7 +91,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "period_end",
         "type_info": "Timestamptz",
         "origin": {
@@ -90,7 +102,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "storage_key",
         "type_info": "Text",
         "origin": {
@@ -101,7 +113,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "content_type",
         "type_info": "Text",
         "origin": {
@@ -112,7 +124,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "size_bytes",
         "type_info": "Int8",
         "origin": {
@@ -123,7 +135,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "generated_by",
         "type_info": "Uuid",
         "origin": {
@@ -134,7 +146,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "generated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -147,13 +159,25 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        {
+          "Custom": {
+            "name": "reporting.report_kind",
+            "kind": {
+              "Enum": [
+                "monthly",
+                "yearly"
+              ]
+            }
+          }
+        },
+        "Timestamptz"
       ]
     },
     "nullable": [
       false,
       false,
       false,
+      true,
       true,
       false,
       false,
@@ -164,5 +188,5 @@
       false
     ]
   },
-  "hash": "92eadd9bdf5f20785da712a8adbcc1f0380d7dd0edd58dff0332e6ee7f84ddfe"
+  "hash": "426b1e929ee968fdc92811731e095a32ace4532b0fa33372fd324886d649c88f"
 }

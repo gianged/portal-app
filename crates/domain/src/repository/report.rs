@@ -56,6 +56,8 @@ pub trait ReportStatsRepository: Send + Sync {
 pub trait ReportArchiveRepository: Send + Sync {
     async fn insert(&self, report: &Report) -> Result<(), RepositoryError>;
 
+    /// Company/group reports, newest first. Staff-scoped artifacts are private
+    /// and excluded; they are reached through the staff report path only.
     async fn list(&self, limit: u32) -> Result<Vec<Report>, RepositoryError>;
 
     async fn find_by_id(&self, id: ReportId) -> Result<Option<Report>, RepositoryError>;
@@ -66,6 +68,15 @@ pub trait ReportArchiveRepository: Send + Sync {
         &self,
         kind: ReportKind,
         period_start: OffsetDateTime,
+    ) -> Result<Option<Report>, RepositoryError>;
+
+    /// Idempotency guard for per-staff archival: a staff-scoped report of this
+    /// kind already stored for `subject` and the period starting at `period_start`.
+    async fn find_by_period_for_subject(
+        &self,
+        kind: ReportKind,
+        period_start: OffsetDateTime,
+        subject: UserId,
     ) -> Result<Option<Report>, RepositoryError>;
 
     /// Every stored report's storage key. Keeps the upload orphan-sweep from

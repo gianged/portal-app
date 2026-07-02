@@ -8,14 +8,13 @@ use axum::{
     http::StatusCode,
     routing,
 };
-use serde::Deserialize;
 use uuid::Uuid;
 
 use domain::ids::{GroupId, UserId};
 use shared::{
     dto::group::{
         AddMemberRequest, ChangeMemberRoleRequest, CreateGroupRequest, GroupDetailDto, GroupDto,
-        MembershipDto, UpdateGroupRequest,
+        MembershipDto, TransferLeadershipRequest, UpdateGroupRequest,
     },
     validation::group,
 };
@@ -171,26 +170,24 @@ async fn remove_member(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Server-local request DTO. TODO: promote to `shared::dto::group` when the UI consumes it.
-#[derive(Deserialize)]
-struct TransferLeadershipRequest {
-    from_user_id: Uuid,
-    to_user_id: Uuid,
-}
-
 async fn transfer_leadership(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
     Json(body): Json<TransferLeadershipRequest>,
 ) -> Result<StatusCode, AppError> {
+    if body.from_user_id == body.to_user_id {
+        return Err(AppError::Validation(
+            "cannot transfer leadership to the same user".into(),
+        ));
+    }
     state
         .group
         .transfer_leadership(
             auth.user_id,
             GroupId(id),
-            UserId(body.from_user_id),
-            UserId(body.to_user_id),
+            UserId(body.from_user_id.0),
+            UserId(body.to_user_id.0),
         )
         .await?;
     Ok(StatusCode::NO_CONTENT)

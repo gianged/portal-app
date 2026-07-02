@@ -491,6 +491,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
         ip_allowlist: IpAllowlist {
             enabled: cfg.ip_allowlist_enabled,
             nets: cfg.ip_allowlist.iter().copied().collect(),
+            trusted_proxies: cfg.trusted_proxies.iter().copied().collect(),
         },
         storage,
         signed_url,

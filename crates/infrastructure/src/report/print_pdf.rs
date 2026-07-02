@@ -8,7 +8,10 @@ use time::OffsetDateTime;
 
 use domain::{
     error::RenderError,
-    model::{GroupReportRow, MonthlyReportData, StaffSummary, TicketSummary, YearlyReportData},
+    model::{
+        GroupReportRow, MonthlyReportData, StaffMonthlyReport, StaffSummary, TicketSummary,
+        YearlyReportData,
+    },
     ports::report_renderer::ReportRenderer,
 };
 
@@ -190,10 +193,13 @@ impl Canvas {
     }
 
     /// Ensure `needed` mm of vertical space remain, else start a new page.
-    fn ensure(&mut self, needed: f64) {
+    /// Returns `true` when a page break fired.
+    fn ensure(&mut self, needed: f64) -> bool {
         if self.y - needed < BOTTOM {
             self.page_break();
+            return true;
         }
+        false
     }
 
     /// Drop the flow cursor by `dy` mm.
@@ -342,7 +348,7 @@ const COL_STUCK: f64 = MARGIN + 96.0;
 const COL_REQ: f64 = MARGIN + 116.0;
 const COL_STAFF: f64 = MARGIN + 150.0;
 
-fn group_table(c: &mut Canvas, groups: &[GroupReportRow]) {
+fn group_table_header(c: &mut Canvas) {
     c.ensure(8.0);
     c.text(COL_GROUP, c.y, 8.0, muted(), "Group");
     c.text(COL_PROJ, c.y, 8.0, muted(), "Projects");
@@ -357,10 +363,14 @@ fn group_table(c: &mut Canvas, groups: &[GroupReportRow]) {
         0.4,
     );
     c.advance(5.0);
+}
 
+fn group_table(c: &mut Canvas, groups: &[GroupReportRow]) {
+    group_table_header(c);
     for g in groups {
-        c.ensure(6.5);
-        // TODO: re-draw the header row after a page break.
+        if c.ensure(6.5) {
+            group_table_header(c);
+        }
         c.text(COL_GROUP, c.y, 8.5, ink(), &truncate(&g.group_name, 26));
         c.text(
             COL_PROJ,
@@ -518,6 +528,62 @@ impl ReportRenderer for PrintPdfReportRenderer {
         );
 
         Ok(c.finish("Yearly Report"))
+    }
+
+    fn render_staff_monthly(
+        &self,
+        subject_name: &str,
+        data: &StaffMonthlyReport,
+    ) -> Result<Vec<u8>, RenderError> {
+        let mut c = Canvas::new();
+        let (y, m) = period_label(data.period.start);
+        c.heading(&format!("Staff Report — {} {y}", month_name(m)));
+        c.caption(&format!(
+            "{} — monthly attendance and workload",
+            truncate(subject_name, 60)
+        ));
+        c.advance(2.0);
+
+        c.subheading("Attendance");
+        c.caption(&format!(
+            "Days reported: {}    Work percentage: {}%    Overtime: {:.1}h",
+            data.days_reported, data.work_percentage, data.overtime_hours
+        ));
+        c.caption(&format!(
+            "Hours — request work: {:.1}    Learning: {:.1}    Other: {:.1}",
+            data.hours_request_work, data.hours_learning, data.hours_other
+        ));
+
+        c.subheading("Leave");
+        if data.leave_days_by_kind.is_empty() {
+            c.caption("No leave taken this month");
+        } else {
+            let by_kind = data
+                .leave_days_by_kind
+                .iter()
+                .map(|(kind, days)| format!("{kind:?}: {days:.1}"))
+                .collect::<Vec<_>>()
+                .join("    ");
+            c.caption(&by_kind);
+        }
+        c.caption(&format!(
+            "Balance remaining: {:.1}    Expiring soon: {:.1}",
+            data.balance_remaining, data.balance_expiring_soon
+        ));
+
+        c.subheading("Flexible hours");
+        c.caption(&format!(
+            "Flex days: {}    Month delta: {:+.1}h",
+            data.flex_days, data.flex_month_delta
+        ));
+
+        c.subheading("Requests");
+        c.caption(&format!(
+            "Completed: {}    Open: {}    Avg progress: {}%",
+            data.requests_completed, data.requests_open, data.avg_request_progress
+        ));
+
+        Ok(c.finish("Staff Monthly Report"))
     }
 }
 

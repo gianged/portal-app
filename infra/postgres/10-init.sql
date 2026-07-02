@@ -200,7 +200,8 @@ CREATE TYPE reporting.report_kind AS ENUM (
 
 CREATE TYPE reporting.report_scope AS ENUM (
     'company',
-    'group'
+    'group',
+    'staff'
 );
 
 -- ticket
@@ -287,6 +288,7 @@ CREATE TABLE auth.users (
     timezone            TEXT        NOT NULL DEFAULT 'UTC',
     status              auth.user_status NOT NULL DEFAULT 'pending',
     system_role         auth.system_role,
+    email_notifications BOOLEAN     NOT NULL DEFAULT TRUE,
     first_logged_in_at  TIMESTAMPTZ,
     deactivated_at      TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -508,7 +510,8 @@ CREATE TABLE reporting.reports (
     id            UUID        NOT NULL,
     kind          reporting.report_kind  NOT NULL,
     scope         reporting.report_scope NOT NULL,
-    group_id      UUID,                       -- NULL iff scope = 'company'
+    group_id      UUID,                       -- NOT NULL iff scope = 'group'
+    subject_user_id UUID,                     -- NOT NULL iff scope = 'staff'
     period_start  TIMESTAMPTZ NOT NULL,       -- inclusive (first instant of month / Jan 1)
     period_end    TIMESTAMPTZ NOT NULL,       -- exclusive (first instant of next period)
     storage_key   TEXT        NOT NULL,
@@ -522,7 +525,9 @@ CREATE TABLE reporting.reports (
     CONSTRAINT chk_reports_size_positive CHECK (size_bytes > 0),
     CONSTRAINT chk_reports_period_order CHECK (period_end > period_start),
     CONSTRAINT chk_reports_scope_group_consistency
-        CHECK ((scope = 'group') = (group_id IS NOT NULL))
+        CHECK ((scope = 'group') = (group_id IS NOT NULL)),
+    CONSTRAINT chk_reports_scope_subject_consistency
+        CHECK ((scope = 'staff') = (subject_user_id IS NOT NULL))
 );
 
 -- ticket.tickets -------------------------------------------------------------
@@ -887,6 +892,11 @@ ALTER TABLE reporting.reports
     ON DELETE RESTRICT;
 
 ALTER TABLE reporting.reports
+    ADD CONSTRAINT fk_reports_subject_user_id
+    FOREIGN KEY (subject_user_id) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
+ALTER TABLE reporting.reports
     ADD CONSTRAINT fk_reports_generated_by
     FOREIGN KEY (generated_by) REFERENCES auth.users (id)
     ON DELETE RESTRICT;
@@ -1142,8 +1152,9 @@ CREATE INDEX idx_reports_group_id_period
     WHERE group_id IS NOT NULL;
 
 -- Idempotency for the scheduler: at most one company report per (kind, period),
--- and one per-group report per (kind, group, period). Split because group_id is
--- NULL for company scope (NULLs are distinct in a plain unique index).
+-- one per-group report per (kind, group, period), and one per-staff report per
+-- (kind, subject, period). Split because group_id / subject_user_id are NULL
+-- outside their scope (NULLs are distinct in a plain unique index).
 CREATE UNIQUE INDEX uq_reports_company_period
     ON reporting.reports (kind, period_start)
     WHERE scope = 'company';
@@ -1151,6 +1162,10 @@ CREATE UNIQUE INDEX uq_reports_company_period
 CREATE UNIQUE INDEX uq_reports_group_period
     ON reporting.reports (kind, group_id, period_start)
     WHERE scope = 'group';
+
+CREATE UNIQUE INDEX uq_reports_staff_period
+    ON reporting.reports (kind, subject_user_id, period_start)
+    WHERE scope = 'staff';
 
 -- notification.notifications
 CREATE INDEX idx_notifications_recipient_user_id_unread

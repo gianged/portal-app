@@ -92,7 +92,6 @@ impl EmailNotifier {
     /// enqueue) is logged and swallowed.
     #[tracing::instrument(skip_all)]
     pub async fn notify(&self, recipients: &[UserId], payload: &NotificationPayload) {
-        // TODO: per-user email preference check goes here.
         if !Self::wants_email(payload.kind()) {
             return;
         }
@@ -108,7 +107,7 @@ impl EmailNotifier {
                     continue;
                 }
             };
-            if user.status != UserStatus::Active {
+            if user.status != UserStatus::Active || !user.email_notifications {
                 continue;
             }
             let message = EmailMessage {
@@ -154,6 +153,13 @@ mod tests {
     impl UserRepository for FakeUsers {
         async fn find_by_id(&self, id: UserId) -> Result<Option<User>, RepositoryError> {
             Ok((self.user.id == id).then(|| self.user.clone()))
+        }
+        async fn find_by_ids(&self, ids: &[UserId]) -> Result<Vec<User>, RepositoryError> {
+            Ok(ids
+                .contains(&self.user.id)
+                .then(|| self.user.clone())
+                .into_iter()
+                .collect())
         }
         async fn find_by_email(&self, _email: &str) -> Result<Option<User>, RepositoryError> {
             Ok(None)
@@ -202,6 +208,7 @@ mod tests {
             timezone: "UTC".to_owned(),
             status,
             system_role: None,
+            email_notifications: true,
             first_logged_in_at: None,
             deactivated_at: None,
             created_at: now,
@@ -251,6 +258,21 @@ mod tests {
     async fn inactive_recipients_are_skipped() {
         let queue = Arc::new(RecordingQueue::default());
         let (notifier, uid) = notifier(UserStatus::Deactivated, queue.clone());
+        let payload = NotificationPayload::TicketAssigned {
+            ticket_id: TicketId(Uuid::nil()),
+        };
+        notifier.notify(&[uid], &payload).await;
+        assert!(queue.sent.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn opted_out_recipients_are_skipped() {
+        let queue = Arc::new(RecordingQueue::default());
+        let uid = UserId(Uuid::from_u128(1));
+        let mut opted_out = user(uid, UserStatus::Active);
+        opted_out.email_notifications = false;
+        let users = Arc::new(FakeUsers { user: opted_out });
+        let notifier = EmailNotifier::new(users, queue.clone(), "http://portal.test/".to_owned());
         let payload = NotificationPayload::TicketAssigned {
             ticket_id: TicketId(Uuid::nil()),
         };

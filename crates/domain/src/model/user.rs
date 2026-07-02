@@ -14,6 +14,8 @@ pub struct User {
     pub timezone: String,
     pub status: UserStatus,
     pub system_role: Option<SystemRole>,
+    /// Opt-out switch for the email notification side-channel.
+    pub email_notifications: bool,
     pub first_logged_in_at: Option<OffsetDateTime>,
     pub deactivated_at: Option<OffsetDateTime>,
     pub created_at: OffsetDateTime,
@@ -119,6 +121,7 @@ mod tests {
             timezone: "UTC".to_owned(),
             status,
             system_role: None,
+            email_notifications: true,
             first_logged_in_at: None,
             deactivated_at: None,
             created_at: t0,

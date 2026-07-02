@@ -36,6 +36,7 @@ struct UserRow {
     timezone: String,
     status: SqlUserStatus,
     system_role: Option<SqlSystemRole>,
+    email_notifications: bool,
     first_logged_in_at: Option<OffsetDateTime>,
     deactivated_at: Option<OffsetDateTime>,
     created_at: OffsetDateTime,
@@ -54,6 +55,7 @@ impl From<UserRow> for User {
             timezone: r.timezone,
             status: r.status.into(),
             system_role: r.system_role.map(Into::into),
+            email_notifications: r.email_notifications,
             first_logged_in_at: r.first_logged_in_at,
             deactivated_at: r.deactivated_at,
             created_at: r.created_at,
@@ -78,6 +80,7 @@ impl UserRepository for PgUserRepo {
                  timezone,
                  status            AS "status: SqlUserStatus",
                  system_role       AS "system_role: SqlSystemRole",
+                 email_notifications,
                  first_logged_in_at,
                  deactivated_at,
                  created_at,
@@ -90,6 +93,39 @@ impl UserRepository for PgUserRepo {
         .await
         .map_err(mappers::map_pg_error)
         .map(|opt| opt.map(Into::into))
+    }
+
+    #[tracing::instrument(skip_all, fields(count = ids.len()))]
+    async fn find_by_ids(&self, ids: &[UserId]) -> Result<Vec<User>, RepositoryError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let raw: Vec<Uuid> = ids.iter().map(|id| id.0).collect();
+        let rows = sqlx::query_as!(
+            UserRow,
+            r#"SELECT
+                 id,
+                 email,
+                 password_hash,
+                 full_name,
+                 avatar_storage_key,
+                 phone,
+                 timezone,
+                 status            AS "status: SqlUserStatus",
+                 system_role       AS "system_role: SqlSystemRole",
+                 email_notifications,
+                 first_logged_in_at,
+                 deactivated_at,
+                 created_at,
+                 updated_at
+               FROM auth.users
+               WHERE id = ANY($1)"#,
+            &raw,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(mappers::map_pg_error)?;
+        Ok(rows.into_iter().map(Into::into).collect())
     }
 
     #[tracing::instrument(skip_all)]
@@ -106,6 +142,7 @@ impl UserRepository for PgUserRepo {
                  timezone,
                  status            AS "status: SqlUserStatus",
                  system_role       AS "system_role: SqlSystemRole",
+                 email_notifications,
                  first_logged_in_at,
                  deactivated_at,
                  created_at,
@@ -141,6 +178,7 @@ impl UserRepository for PgUserRepo {
                  timezone,
                  status            AS "status: SqlUserStatus",
                  system_role       AS "system_role: SqlSystemRole",
+                 email_notifications,
                  first_logged_in_at,
                  deactivated_at,
                  created_at,
@@ -169,20 +207,21 @@ impl UserRepository for PgUserRepo {
         sqlx::query!(
             r#"INSERT INTO auth.users
                  (id, email, password_hash, full_name, avatar_storage_key, phone,
-                  timezone, status, system_role, first_logged_in_at, deactivated_at,
-                  created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                  timezone, status, system_role, email_notifications,
+                  first_logged_in_at, deactivated_at, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                ON CONFLICT (id) DO UPDATE SET
-                 email              = EXCLUDED.email,
-                 password_hash      = EXCLUDED.password_hash,
-                 full_name          = EXCLUDED.full_name,
-                 avatar_storage_key = EXCLUDED.avatar_storage_key,
-                 phone              = EXCLUDED.phone,
-                 timezone           = EXCLUDED.timezone,
-                 status             = EXCLUDED.status,
-                 system_role        = EXCLUDED.system_role,
-                 first_logged_in_at = EXCLUDED.first_logged_in_at,
-                 deactivated_at     = EXCLUDED.deactivated_at"#,
+                 email               = EXCLUDED.email,
+                 password_hash       = EXCLUDED.password_hash,
+                 full_name           = EXCLUDED.full_name,
+                 avatar_storage_key  = EXCLUDED.avatar_storage_key,
+                 phone               = EXCLUDED.phone,
+                 timezone            = EXCLUDED.timezone,
+                 status              = EXCLUDED.status,
+                 system_role         = EXCLUDED.system_role,
+                 email_notifications = EXCLUDED.email_notifications,
+                 first_logged_in_at  = EXCLUDED.first_logged_in_at,
+                 deactivated_at      = EXCLUDED.deactivated_at"#,
             user.id.0,
             user.email,
             user.password_hash,
@@ -192,6 +231,7 @@ impl UserRepository for PgUserRepo {
             user.timezone,
             status as SqlUserStatus,
             system_role as Option<SqlSystemRole>,
+            user.email_notifications,
             user.first_logged_in_at,
             user.deactivated_at,
             user.created_at,
@@ -229,6 +269,7 @@ impl UserRepository for PgUserRepo {
                  timezone,
                  status            AS "status: SqlUserStatus",
                  system_role       AS "system_role: SqlSystemRole",
+                 email_notifications,
                  first_logged_in_at,
                  deactivated_at,
                  created_at,

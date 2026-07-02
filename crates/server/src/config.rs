@@ -70,6 +70,10 @@ pub struct Config {
     /// Allowed source networks (CIDR). Defaults to loopback + RFC1918/ULA private
     /// ranges so LAN and VPN clients pass; override with `IP_ALLOWLIST`.
     pub ip_allowlist: Vec<IpNet>,
+    /// Reverse proxies whose `X-Forwarded-For` is trusted (CIDR). When the peer
+    /// matches, the gate judges the forwarded client instead of the peer. Empty
+    /// (the default) means the header is never trusted. Set via `TRUSTED_PROXIES`.
+    pub trusted_proxies: Vec<IpNet>,
 }
 
 pub fn from_env() -> anyhow::Result<Config> {
@@ -114,7 +118,11 @@ pub fn from_env() -> anyhow::Result<Config> {
     let ip_allowlist_enabled: bool = optional("IP_ALLOWLIST_ENABLED", "true")
         .parse()
         .context("invalid IP_ALLOWLIST_ENABLED (expected true/false)")?;
-    let ip_allowlist = parse_allowlist(&optional("IP_ALLOWLIST", DEFAULT_IP_ALLOWLIST))?;
+    let ip_allowlist = parse_allowlist(
+        "IP_ALLOWLIST",
+        &optional("IP_ALLOWLIST", DEFAULT_IP_ALLOWLIST),
+    )?;
+    let trusted_proxies = parse_allowlist("TRUSTED_PROXIES", &optional("TRUSTED_PROXIES", ""))?;
 
     Ok(Config {
         database_url: required("DATABASE_URL")?,
@@ -160,6 +168,7 @@ pub fn from_env() -> anyhow::Result<Config> {
         ),
         ip_allowlist_enabled,
         ip_allowlist,
+        trusted_proxies,
     })
 }
 
@@ -171,14 +180,14 @@ const DEFAULT_IP_ALLOWLIST: &str =
 /// Parses a comma-separated network list. Each token is a CIDR (`10.0.0.0/8`) or a
 /// bare address promoted to a host route (`/32` or `/128`). A malformed token fails
 /// startup rather than silently narrowing the gate.
-fn parse_allowlist(raw: &str) -> anyhow::Result<Vec<IpNet>> {
+fn parse_allowlist(var: &str, raw: &str) -> anyhow::Result<Vec<IpNet>> {
     raw.split(',')
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|tok| {
             IpNet::from_str(tok)
                 .or_else(|_| IpAddr::from_str(tok).map(IpNet::from))
-                .with_context(|| format!("invalid IP_ALLOWLIST entry: {tok}"))
+                .with_context(|| format!("invalid {var} entry: {tok}"))
         })
         .collect()
 }
