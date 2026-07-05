@@ -95,7 +95,7 @@ pub fn YearlyTab() -> impl IntoView {
             {move || match report.get() {
                 None => load::note("Loading report…"),
                 Some(Err(e)) => load::load_error(&e),
-                Some(Ok(data)) => yearly_view(data),
+                Some(Ok(data)) => yearly_view(&data),
             }}
         </Stack>
     }
@@ -105,7 +105,7 @@ fn month_labels() -> Vec<String> {
     (1..=12u8).map(|m| month_abbr(m).to_owned()).collect()
 }
 
-fn yearly_view(data: YearlyReportDto) -> AnyView {
+fn yearly_view(data: &YearlyReportDto) -> AnyView {
     let totals = data.totals;
     let labels = month_labels();
     let labels_activity = labels.clone();

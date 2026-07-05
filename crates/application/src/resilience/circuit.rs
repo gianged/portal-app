@@ -3,13 +3,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use domain::{
-    error::{RenderError, RepositoryError, StorageError},
-    health::HealthStatus,
-};
+use domain::health::HealthStatus;
 
 use super::backoff::Backoff;
-use crate::error::{Error, Result};
 
 /// Tunables for one breaker.
 #[derive(Debug, Clone, Copy)]
@@ -188,53 +184,6 @@ impl CircuitBreaker {
         // still readable and self-correcting, so recover rather than propagate.
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
     }
-}
-
-/// Runs `op` behind `breaker`: fail-fast with `Backend("circuit_open")` when the
-/// breaker rejects, otherwise record the outcome and propagate it. The single
-/// wrapper a backend-touching call site uses. Only transport faults trip the
-/// breaker; logical errors (validation, not-found, forbidden) count as the
-/// backend having answered.
-///
-/// # Errors
-/// Returns `Repository(Backend("circuit_open"))` when the breaker is open and
-/// rejects the call; otherwise propagates the error `op` produced.
-pub async fn guarded<F, Fut, T>(breaker: &CircuitBreaker, op: F) -> Result<T>
-where
-    F: FnOnce() -> Fut,
-    Fut: Future<Output = Result<T>>,
-{
-    if !breaker.acquire() {
-        return Err(Error::Repository(RepositoryError::Backend(
-            "circuit_open".into(),
-        )));
-    }
-    match op().await {
-        Ok(value) => {
-            breaker.record_success();
-            Ok(value)
-        }
-        Err(err) => {
-            if is_transport_fault(&err) {
-                breaker.record_failure();
-            } else {
-                breaker.record_success();
-            }
-            Err(err)
-        }
-    }
-}
-
-/// Whether an error reflects the backend being unreachable (vs a logical reply).
-fn is_transport_fault(err: &Error) -> bool {
-    matches!(
-        err,
-        Error::Repository(RepositoryError::Backend(_))
-            | Error::Storage(StorageError::Backend(_))
-            | Error::Event(_)
-            | Error::Job(_)
-            | Error::Render(RenderError::Backend(_))
-    )
 }
 
 #[cfg(test)]

@@ -58,29 +58,11 @@ pub enum ChannelKind {
 
 impl Channel {
     #[must_use]
-    pub const fn kind(&self) -> ChannelKind {
-        match self {
-            Self::Group(_) => ChannelKind::Group,
-            Self::General(_) => ChannelKind::General,
-            Self::Direct(_) => ChannelKind::Direct,
-        }
-    }
-
-    #[must_use]
     pub const fn id(&self) -> ChannelId {
         match self {
             Self::Group(c) => c.id,
             Self::General(c) => c.id,
             Self::Direct(c) => c.id,
-        }
-    }
-
-    #[must_use]
-    pub const fn created_at(&self) -> OffsetDateTime {
-        match self {
-            Self::Group(c) => c.created_at,
-            Self::General(c) => c.created_at,
-            Self::Direct(c) => c.created_at,
         }
     }
 }

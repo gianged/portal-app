@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, sync::LazyLock};
 
 use async_trait::async_trait;
 use redis::{AsyncCommands, Client, Script, aio::ConnectionManager};
@@ -16,14 +16,22 @@ pub struct RedisTokenRevocation {
 }
 
 /// `INCR` then refresh `EXPIRE` atomically, so a failure between them can't strand a permanent key.
-const INCR_WITH_TTL: &str = "local v = redis.call('INCR', KEYS[1])\n\
-                             redis.call('EXPIRE', KEYS[1], ARGV[1])\n\
-                             return v";
+static INCR_WITH_TTL: LazyLock<Script> = LazyLock::new(|| {
+    Script::new(
+        "local v = redis.call('INCR', KEYS[1])\n\
+         redis.call('EXPIRE', KEYS[1], ARGV[1])\n\
+         return v",
+    )
+});
 
 /// `GET` (missing key reads as 0) and refresh the TTL when the key exists.
-const GET_WITH_TTL: &str = "local v = redis.call('GET', KEYS[1])\n\
-                            if v then redis.call('EXPIRE', KEYS[1], ARGV[1]) return v end\n\
-                            return 0";
+static GET_WITH_TTL: LazyLock<Script> = LazyLock::new(|| {
+    Script::new(
+        "local v = redis.call('GET', KEYS[1])\n\
+         if v then redis.call('EXPIRE', KEYS[1], ARGV[1]) return v end\n\
+         return 0",
+    )
+});
 
 impl RedisTokenRevocation {
     pub async fn new(url: &str, version_ttl_secs: u64) -> Result<Self, RepositoryError> {
@@ -61,7 +69,7 @@ impl TokenRevocation for RedisTokenRevocation {
     #[tracing::instrument(skip_all, fields(user = ?user))]
     async fn version(&self, user: UserId) -> Result<u64, RepositoryError> {
         let mut conn = self.conn.clone();
-        Script::new(GET_WITH_TTL)
+        GET_WITH_TTL
             .key(version_key(user))
             .arg(self.version_ttl_secs)
             .invoke_async(&mut conn)
@@ -72,7 +80,7 @@ impl TokenRevocation for RedisTokenRevocation {
     #[tracing::instrument(skip_all, fields(user = ?user))]
     async fn bump_version(&self, user: UserId) -> Result<u64, RepositoryError> {
         let mut conn = self.conn.clone();
-        Script::new(INCR_WITH_TTL)
+        INCR_WITH_TTL
             .key(version_key(user))
             .arg(self.version_ttl_secs)
             .invoke_async(&mut conn)

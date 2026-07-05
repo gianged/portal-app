@@ -69,27 +69,6 @@ pub enum DailyReportEntryKind {
     Other,
 }
 
-impl DailyReportEntryKind {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::RequestWork => "request_work",
-            Self::Learning => "learning",
-            Self::Other => "other",
-        }
-    }
-
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "request_work" => Some(Self::RequestWork),
-            "learning" => Some(Self::Learning),
-            "other" => Some(Self::Other),
-            _ => None,
-        }
-    }
-}
-
 /// One line of a daily report. `request_id` is required when `kind` is
 /// `RequestWork` (enforced by the schema CHECK); `hours` is optional.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -197,17 +176,5 @@ mod tests {
             assert!(s.try_approve().is_err());
             assert!(s.try_return().is_err());
         }
-    }
-
-    #[test]
-    fn entry_kind_round_trips() {
-        for k in [
-            DailyReportEntryKind::RequestWork,
-            DailyReportEntryKind::Learning,
-            DailyReportEntryKind::Other,
-        ] {
-            assert_eq!(DailyReportEntryKind::parse(k.as_str()), Some(k));
-        }
-        assert_eq!(DailyReportEntryKind::parse("nope"), None);
     }
 }

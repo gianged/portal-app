@@ -9,7 +9,7 @@ use domain::{
     model::{
         Announcement, Comment, CommentEntity, FlexStatus, Group, GroupRole, Message,
         OvertimeStatus, Project, ProjectInviteStatus, ProjectStatus, Request, RequestStatus,
-        Ticket, TicketPriority, TicketStatus, User,
+        Ticket, TicketPriority, TicketStatus,
     },
     ports::{event_publisher::EventPublisher, job_queue::JobQueue},
 };
@@ -22,38 +22,32 @@ use crate::error::Result;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DomainEvent {
+    // No `User` payloads anywhere here: serializing one would put the password
+    // hash on the event bus, and no consumer reads more than the ids.
     UserCreated {
         user_id: UserId,
         actor: UserId,
         at: OffsetDateTime,
-        after: User,
     },
     UserActivated {
         user_id: UserId,
         at: OffsetDateTime,
-        after: User,
     },
     UserDeactivated {
         user_id: UserId,
         actor: UserId,
         at: OffsetDateTime,
-        before: User,
-        after: User,
     },
     UserReactivated {
         user_id: UserId,
         actor: UserId,
         at: OffsetDateTime,
-        after: User,
     },
     UserProfileUpdated {
         user_id: UserId,
         actor: UserId,
         at: OffsetDateTime,
-        before: User,
-        after: User,
     },
-    // No `User` payload: serializing it would put the password hash on the event bus.
     UserPasswordChanged {
         user_id: UserId,
         at: OffsetDateTime,

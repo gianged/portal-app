@@ -6,8 +6,10 @@ use std::{
 };
 
 use async_trait::async_trait;
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use time::OffsetDateTime;
 use tokio::fs;
+use uuid::Uuid;
 
 use domain::{
     error::StorageError,
@@ -16,6 +18,13 @@ use domain::{
 };
 
 use crate::signed_url::SignedUrl;
+
+// RFC 3986 unreserved characters stay literal; everything else is encoded.
+const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'~');
 
 /// Local-filesystem implementation of [`FileStorage`]. Objects are written
 /// under `root` (configured as `STORAGE_ROOT`). Keys are validated to stay
@@ -44,11 +53,11 @@ impl LocalStorage {
         for comp in Path::new(key).components() {
             match comp {
                 Component::Normal(c) => safe.push(c),
-                _ => return Err(StorageError::Backend(format!("invalid storage key: {key}"))),
+                _ => return Err(StorageError::InvalidKey(key.to_owned())),
             }
         }
         if safe.as_os_str().is_empty() {
-            return Err(StorageError::Backend(format!("empty storage key: {key}")));
+            return Err(StorageError::InvalidKey(key.to_owned()));
         }
         Ok(self.root.join(safe))
     }
@@ -90,9 +99,17 @@ impl FileStorage for LocalStorage {
                 .await
                 .map_err(|e| StorageError::Backend(e.to_string()))?;
         }
-        fs::write(&path, bytes)
+        // Write-then-rename so a crash or full disk never leaves a truncated
+        // object visible at the final key.
+        let tmp = path.with_extension(format!("tmp-{}", Uuid::now_v7().simple()));
+        fs::write(&tmp, bytes)
             .await
-            .map_err(|e| StorageError::Backend(e.to_string()))
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+        if let Err(e) = fs::rename(&tmp, &path).await {
+            let _ = fs::remove_file(&tmp).await;
+            return Err(StorageError::Backend(e.to_string()));
+        }
+        Ok(())
     }
 
     #[tracing::instrument(skip_all)]
@@ -127,8 +144,15 @@ impl FileStorage for LocalStorage {
         let (exp, sig) = self
             .signer
             .sign_for(key, user, ttl, OffsetDateTime::now_utc());
+        // Filenames may contain `?`, `#`, `%`, etc.; the signature covers the
+        // raw key, which the route sees again after axum percent-decodes.
+        let encoded = key
+            .split('/')
+            .map(|seg| utf8_percent_encode(seg, PATH_SEGMENT).to_string())
+            .collect::<Vec<_>>()
+            .join("/");
         Ok(format!(
-            "{}/files/{key}?exp={exp}&sig={sig}",
+            "{}/files/{encoded}?exp={exp}&sig={sig}",
             self.public_base
         ))
     }

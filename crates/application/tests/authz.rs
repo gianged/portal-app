@@ -538,6 +538,7 @@ impl ChatRepository for FakeChats {
     async fn list_announcements(
         &self,
         _channel_id: ChannelId,
+        _limit: u32,
     ) -> Result<Vec<Announcement>, RepositoryError> {
         Ok(Vec::new())
     }

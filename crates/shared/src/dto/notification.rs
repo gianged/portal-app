@@ -126,6 +126,12 @@ pub struct MarkReadRequest {
     pub notification_ids: Vec<NotificationId>,
 }
 
+/// Unread-notification counter for the bell badge.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct UnreadCountDto {
+    pub count: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use uuid::Uuid;

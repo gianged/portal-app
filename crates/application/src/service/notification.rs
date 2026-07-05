@@ -10,10 +10,7 @@ use domain::{
 };
 use time::OffsetDateTime;
 
-use crate::{
-    error::{Error, Result},
-    permissions::Permissions,
-};
+use crate::{error::Result, permissions::Permissions};
 
 pub use email::EmailNotifier;
 pub use fanout::NotificationFanout;
@@ -62,28 +59,18 @@ impl NotificationService {
         Ok(self.notifications.count_unread(actor).await?)
     }
 
-    /// Marks one of the actor's notifications read.
+    /// Marks the given notifications read for the actor in one statement; an
+    /// empty list marks all unread. Ids the actor does not own are ignored
+    /// (ownership is enforced in the repository query). Returns the number
+    /// marked.
     ///
     /// # Errors
-    /// Returns `Forbidden` if the actor is not active or is not the recipient,
-    /// `NotFound` if the notification does not exist, or a repository error if the
-    /// datastore is unavailable.
-    #[tracing::instrument(skip_all, fields(actor = ?actor, notification_id = ?notification_id))]
-    pub async fn mark_read(&self, actor: UserId, notification_id: NotificationId) -> Result<()> {
+    /// Returns `Forbidden` if the actor is not active, or a repository error if
+    /// the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, ids = ids.len()))]
+    pub async fn mark_read_many(&self, actor: UserId, ids: &[NotificationId]) -> Result<u64> {
         self.perms.require_active(actor).await?;
-        let notification = self
-            .notifications
-            .find_by_id(notification_id)
-            .await?
-            .ok_or(Error::NotFound("notification"))?;
-        if notification.recipient_user_id != actor {
-            return Err(Error::Forbidden);
-        }
-        if notification.read_at.is_some() {
-            return Ok(());
-        }
         let now = OffsetDateTime::now_utc();
-        self.notifications.mark_read(notification_id, now).await?;
-        Ok(())
+        Ok(self.notifications.mark_read_many(actor, ids, now).await?)
     }
 }

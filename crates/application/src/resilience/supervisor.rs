@@ -1,13 +1,13 @@
 use std::time::{Duration, Instant};
 
-use tokio::task::JoinHandle;
+use tokio::{task::JoinHandle, time};
 
 use super::backoff::Backoff;
 
 /// Restart delay floor / ceiling and the run duration that counts as "stable".
 const RESTART_BASE: Duration = Duration::from_secs(1);
-const RESTART_CAP: Duration = Duration::from_secs(60);
-const STABLE_THRESHOLD: Duration = Duration::from_secs(60);
+const RESTART_CAP: Duration = Duration::from_mins(1);
+const STABLE_THRESHOLD: Duration = Duration::from_mins(1);
 
 /// Handle to a supervised loop. Dropping it detaches the supervisor (the loop
 /// keeps running); [`SupervisorHandle::abort`] stops it at the next boundary.
@@ -61,7 +61,7 @@ where
             if started.elapsed() >= STABLE_THRESHOLD {
                 backoff.reset();
             }
-            tokio::time::sleep(backoff.next_delay()).await;
+            time::sleep(backoff.next_delay()).await;
         }
     });
     SupervisorHandle { handle }

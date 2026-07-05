@@ -49,7 +49,8 @@ struct GroupQuery {
 #[derive(Deserialize)]
 struct MonthQuery {
     year: i32,
-    month: u32,
+    // u8 so serde rejects out-of-range values instead of a truncating cast.
+    month: u8,
 }
 
 async fn create(
@@ -84,11 +85,11 @@ async fn month_delta(
 ) -> Result<Json<FlexMonthDeltaDto>, AppError> {
     let delta = state
         .flex
-        .month_delta(auth.user_id, q.year, q.month)
+        .month_delta(auth.user_id, q.year, u32::from(q.month))
         .await?;
     Ok(Json(FlexMonthDeltaDto {
         year: q.year,
-        month: q.month as u8,
+        month: q.month,
         delta,
     }))
 }

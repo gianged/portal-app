@@ -14,8 +14,6 @@ pub enum AuditAction {
     StatusChange,
     Assign,
     Transfer,
-    Login,
-    Logout,
 }
 
 impl AuditAction {
@@ -28,14 +26,11 @@ impl AuditAction {
             Self::StatusChange => "Status Change",
             Self::Assign => "Assign",
             Self::Transfer => "Transfer",
-            Self::Login => "Login",
-            Self::Logout => "Logout",
         }
     }
 }
 
-/// Read-only audit-log row for an admin viewer; the `payload_before`/`after`
-/// JSON blobs are omitted from this list shape.
+/// Read-only audit-log row for an admin viewer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditLogDto {
     pub id: AuditLogId,

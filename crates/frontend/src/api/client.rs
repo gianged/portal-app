@@ -1,9 +1,19 @@
+use std::sync::OnceLock;
+
 use reqwasm::http::{Request, Response};
 use serde::{Serialize, de::DeserializeOwned};
 use shared::dto::common::{ApiError, ErrorCode};
 use web_sys::FormData;
 
 use crate::api::error::FrontendError;
+
+static UNAUTHORIZED_HOOK: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+
+/// Install the hook run on every 401 response. Set once by `App`: it clears the
+/// auth state so the route guard redirects expired sessions to `/login`.
+pub fn on_unauthorized(hook: impl Fn() + Send + Sync + 'static) {
+    let _ = UNAUTHORIZED_HOOK.set(Box::new(hook));
+}
 
 #[must_use]
 pub fn api_url(path: &str) -> String {
@@ -147,6 +157,11 @@ async fn handle_empty(resp: Response) -> Result<(), FrontendError> {
 /// body falls back to `Unknown` with the raw text as the message.
 async fn http_error(resp: Response) -> FrontendError {
     let status = resp.status();
+    if status == 401
+        && let Some(hook) = UNAUTHORIZED_HOOK.get()
+    {
+        hook();
+    }
     let request_id = resp.headers().get("x-request-id");
     let body = resp.text().await.unwrap_or_default();
     let (code, message) = match serde_json::from_str::<ApiError>(&body) {

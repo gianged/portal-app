@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 actor_user_id,\n                 action AS \"action: SqlAuditAction\",\n                 entity_schema,\n                 entity_table,\n                 entity_id,\n                 payload_before::text AS \"payload_before?: String\",\n                 payload_after::text  AS \"payload_after?: String\",\n                 occurred_at\n               FROM audit.audit_log\n               WHERE $1::timestamptz IS NULL OR occurred_at < $1\n               ORDER BY occurred_at DESC\n               LIMIT $2",
+  "query": "SELECT\n                 id,\n                 actor_user_id,\n                 action AS \"action: SqlAuditAction\",\n                 entity_schema,\n                 entity_table,\n                 entity_id,\n                 occurred_at\n               FROM audit.audit_log\n               WHERE $1::timestamptz IS NULL OR occurred_at < $1\n               ORDER BY occurred_at DESC\n               LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -38,9 +38,7 @@
                 "delete",
                 "status_change",
                 "assign",
-                "transfer",
-                "login",
-                "logout"
+                "transfer"
               ]
             }
           }
@@ -87,18 +85,6 @@
       },
       {
         "ordinal": 6,
-        "name": "payload_before?: String",
-        "type_info": "Text",
-        "origin": "Expression"
-      },
-      {
-        "ordinal": 7,
-        "name": "payload_after?: String",
-        "type_info": "Text",
-        "origin": "Expression"
-      },
-      {
-        "ordinal": 8,
         "name": "occurred_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -122,10 +108,8 @@
       false,
       false,
       false,
-      null,
-      null,
       false
     ]
   },
-  "hash": "d0fd98904df01ca3fcf2dbb2562641838b662d545ceacd404448ca84605d78c0"
+  "hash": "0f8f5fca7b68149628b6b80b781bb8052924df2ccadca7bc36e14d0cc4ea9aa9"
 }

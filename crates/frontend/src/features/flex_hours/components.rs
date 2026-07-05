@@ -129,7 +129,7 @@ pub fn FlexHours() -> impl IntoView {
     let add_block = move |_| {
         let max = policy
             .get_untracked()
-            .and_then(|p| p.ok())
+            .and_then(Result::ok)
             .map_or(2, |p| usize::from(p.flex_max_segments));
         rows.update(|v| {
             if v.len() < max {

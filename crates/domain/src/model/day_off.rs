@@ -19,29 +19,6 @@ pub enum DayOffKind {
 }
 
 impl DayOffKind {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::AnnualLeave => "annual_leave",
-            Self::SickLeave => "sick_leave",
-            Self::UnpaidLeave => "unpaid_leave",
-            Self::Remote => "remote",
-            Self::Other => "other",
-        }
-    }
-
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "annual_leave" => Some(Self::AnnualLeave),
-            "sick_leave" => Some(Self::SickLeave),
-            "unpaid_leave" => Some(Self::UnpaidLeave),
-            "remote" => Some(Self::Remote),
-            "other" => Some(Self::Other),
-            _ => None,
-        }
-    }
-
     /// Annual leave needs leader then HR; everything else is leader-only.
     #[must_use]
     pub const fn requires_hr_approval(self) -> bool {

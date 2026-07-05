@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 requester_user_id,\n                 assignee_user_id,\n                 title,\n                 description,\n                 status   AS \"status: SqlTicketStatus\",\n                 priority AS \"priority: SqlTicketPriority\",\n                 category AS \"category: SqlTicketCategory\",\n                 triaged_at,\n                 resolved_at,\n                 closed_at,\n                 created_at,\n                 updated_at\n               FROM ticket.tickets\n               WHERE status IN ('open', 'triaged', 'assigned', 'in_progress', 'reopened')\n                 AND ($2::text IS NULL OR title ILIKE $2)\n               ORDER BY priority NULLS LAST, created_at\n               LIMIT $1",
+  "query": "SELECT\n                 id,\n                 requester_user_id,\n                 assignee_user_id,\n                 title,\n                 description,\n                 status   AS \"status: SqlTicketStatus\",\n                 priority AS \"priority: SqlTicketPriority\",\n                 category AS \"category: SqlTicketCategory\",\n                 triaged_at,\n                 resolved_at,\n                 closed_at,\n                 created_at,\n                 updated_at\n               FROM ticket.tickets\n               WHERE status IN ('open', 'triaged', 'assigned', 'in_progress', 'reopened')\n                 AND ($2::text IS NULL OR title ILIKE $2)\n               ORDER BY priority DESC NULLS LAST, created_at\n               LIMIT $1",
   "describe": {
     "columns": [
       {
@@ -208,5 +208,5 @@
       false
     ]
   },
-  "hash": "eeaf58a444029928bb4d094ed20ebf9995a0c6cd99bcfbe99ae6bad53d9b1400"
+  "hash": "fe73d168066a1564aaf982d299ced8702e4d182c7696e31de3fd139ffd14a938"
 }

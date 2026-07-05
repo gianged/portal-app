@@ -117,15 +117,4 @@ impl Notification {
     pub const fn kind(&self) -> NotificationKind {
         self.payload.kind()
     }
-
-    #[must_use]
-    pub const fn is_unread(&self) -> bool {
-        self.read_at.is_none()
-    }
-
-    pub fn mark_read(&mut self, now: OffsetDateTime) {
-        if self.read_at.is_none() {
-            self.read_at = Some(now);
-        }
-    }
 }

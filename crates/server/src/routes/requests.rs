@@ -20,15 +20,12 @@ use domain::{
     model::{Comment, CommentEntity, Request},
     ports::file_storage::FileStorage,
 };
-use shared::{
-    dto::{
-        comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest},
-        request::{
-            AssignRequestRequest, CreateRequestRequest, RequestAttachmentDto, RequestDetailDto,
-            RequestDto, RequestStatus, SetRequestProgressRequest, UpdateRequestRequest,
-        },
+use shared::dto::{
+    comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest},
+    request::{
+        AssignRequestRequest, CreateRequestRequest, RequestAttachmentDto, RequestDetailDto,
+        RequestDto, RequestStatus, SetRequestProgressRequest, UpdateRequestRequest,
     },
-    validation::file,
 };
 
 use crate::{
@@ -363,24 +360,7 @@ async fn add_attachment(
     Path(id): Path<Uuid>,
     mut multipart: Multipart,
 ) -> Result<Json<RequestAttachmentDto>, AppError> {
-    let field = multipart
-        .next_field()
-        .await
-        .map_err(|e| AppError::Validation(format!("invalid multipart body: {e}")))?
-        .ok_or_else(|| AppError::Validation("no file field in upload".into()))?;
-    let filename = field
-        .file_name()
-        .map(file::sanitize_filename)
-        .ok_or_else(|| AppError::Validation("upload field has no filename".into()))?
-        .map_err(|e| AppError::Validation(e.to_string()))?;
-    let content_type = field
-        .content_type()
-        .map_or_else(|| "application/octet-stream".to_owned(), ToOwned::to_owned);
-    let bytes = field
-        .bytes()
-        .await
-        .map_err(|e| AppError::Validation(format!("reading upload failed: {e}")))?
-        .to_vec();
+    let (filename, content_type, bytes) = routes::read_upload_field(&mut multipart).await?;
 
     let attachment = state
         .request

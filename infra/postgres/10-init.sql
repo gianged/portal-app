@@ -125,9 +125,7 @@ CREATE TYPE audit.audit_action AS ENUM (
     'delete',
     'status_change',
     'assign',
-    'transfer',
-    'login',
-    'logout'
+    'transfer'
 );
 
 -- notification
@@ -245,6 +243,18 @@ BEGIN
 END;
 $$;
 
+-- Invariant 5: audit rows are append-only. Wired to audit.audit_log in
+-- section 8; a compromised connection or code bug cannot rewrite history.
+CREATE OR REPLACE FUNCTION audit.fn_forbid_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'audit.audit_log is append-only (% blocked)', TG_OP
+        USING ERRCODE = 'insufficient_privilege';
+END;
+$$;
+
 -- Cross-table invariant: a project's owner_group cannot also be one of its
 -- collaborator groups (invariant 7 in domain-logic.txt). A plain CHECK
 -- constraint can't reference another table, so we use a trigger.
@@ -307,9 +317,9 @@ CREATE TABLE auth.users (
 );
 
 -- audit.audit_log ------------------------------------------------------------
--- Append-only, immutable by convention (invariant 5 in domain-logic.txt).
--- No FK on actor_user_id or entity_id: audit must survive deletes /
--- deactivations. No updated_at: rows are never edited.
+-- Append-only, immutability enforced by trg_audit_log_immutable (invariant 5
+-- in domain-logic.txt). No FK on actor_user_id or entity_id: audit must
+-- survive deletes / deactivations. No updated_at: rows are never edited.
 CREATE TABLE audit.audit_log (
     id              UUID        NOT NULL DEFAULT gen_random_uuid(),
     actor_user_id   UUID,
@@ -317,8 +327,6 @@ CREATE TABLE audit.audit_log (
     entity_schema   TEXT        NOT NULL,
     entity_table    TEXT        NOT NULL,
     entity_id       UUID        NOT NULL,
-    payload_before  JSONB,
-    payload_after   JSONB,
     occurred_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT pk_audit_log PRIMARY KEY (id)
@@ -1343,6 +1351,11 @@ CREATE TRIGGER trg_project_collaborators_no_self_collab
     BEFORE INSERT OR UPDATE OF project_id, group_id
     ON project.project_collaborators
     FOR EACH ROW EXECUTE FUNCTION project.fn_no_self_collab();
+
+-- invariant 5: audit log rows can never be updated or deleted
+CREATE TRIGGER trg_audit_log_immutable
+    BEFORE UPDATE OR DELETE ON audit.audit_log
+    FOR EACH ROW EXECUTE FUNCTION audit.fn_forbid_mutation();
 
 -- attendance: updated_at maintenance. Entry / segment / transaction child rows
 -- and the holidays calendar are write-once, so they have no updated_at trigger.

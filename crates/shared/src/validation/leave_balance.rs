@@ -31,12 +31,14 @@ pub fn validate_grant(req: &SetLeaveGrantRequest) -> Result<(), SharedError> {
     Ok(())
 }
 
-/// Validates a manual balance adjustment: half-day step, bounded reason.
+/// Validates a manual balance adjustment: bounded magnitude, half-day step,
+/// bounded reason.
 ///
 /// # Errors
-/// Returns [`SharedError::Validation`] when `delta` is not a multiple of
-/// `LEAVE_UNIT` or the reason is too long.
+/// Returns [`SharedError::Validation`] when `delta` is out of range or not a
+/// multiple of `LEAVE_UNIT`, or the reason is too long.
 pub fn validate_adjust(req: &AdjustBalanceRequest) -> Result<(), SharedError> {
+    common::in_range("Adjustment", req.delta, -DAYS_MAX, DAYS_MAX)?;
     common::half_step("Adjustment", req.delta)?;
     common::max_len("Reason", &req.reason, DESCRIPTION_MAX)?;
     Ok(())

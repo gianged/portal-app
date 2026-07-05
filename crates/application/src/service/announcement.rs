@@ -15,6 +15,9 @@ use crate::{
     permissions::Permissions,
 };
 
+/// Cap on the announcement rail; the partition only grows over company lifetime.
+const LIST_MAX: u32 = 200;
+
 pub struct AnnouncementService {
     chats: Arc<dyn ChatRepository>,
     perms: Arc<Permissions>,
@@ -186,6 +189,6 @@ impl AnnouncementService {
             .await?
             .ok_or(Error::NotFound("channel"))?;
         self.perms.require_can_view_channel(actor, &channel).await?;
-        Ok(self.chats.list_announcements(channel_id).await?)
+        Ok(self.chats.list_announcements(channel_id, LIST_MAX).await?)
     }
 }

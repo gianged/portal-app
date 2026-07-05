@@ -4,7 +4,11 @@
 //! fetch and project the referenced users. List endpoints dedupe via a map
 //! backed by batched repository fetches.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 use application::{GroupService, UserService};
 use domain::{
@@ -17,6 +21,52 @@ use shared::dto::{
 };
 
 use crate::{dto, error::AppError};
+
+/// Entry cap; expired entries are pruned when an insert would pass it.
+const SUMMARY_CACHE_MAX: usize = 4096;
+
+/// Short-TTL cache of resolved user summaries for high-fan-out paths: the chat
+/// WebSocket projects the same sender/mention summaries once per subscribed
+/// connection per message, which is N x 2 queries without it. Staleness is
+/// bounded by the TTL and only affects display fields on live frames.
+pub struct SummaryCache {
+    ttl: Duration,
+    entries: Mutex<HashMap<UserId, (Instant, UserSummaryDto)>>,
+}
+
+impl SummaryCache {
+    #[must_use]
+    pub fn new(ttl: Duration) -> Self {
+        Self {
+            ttl,
+            entries: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// [`user_summary`] with a TTL-bounded cache in front.
+    pub async fn user_summary(
+        &self,
+        users: &UserService,
+        groups: &GroupService,
+        id: UserId,
+    ) -> Result<UserSummaryDto, AppError> {
+        let now = Instant::now();
+        if let Ok(entries) = self.entries.lock()
+            && let Some((at, summary)) = entries.get(&id)
+            && now.duration_since(*at) < self.ttl
+        {
+            return Ok(summary.clone());
+        }
+        let summary = user_summary(users, groups, id).await?;
+        if let Ok(mut entries) = self.entries.lock() {
+            if entries.len() >= SUMMARY_CACHE_MAX {
+                entries.retain(|_, (at, _)| now.duration_since(*at) < self.ttl);
+            }
+            entries.insert(id, (now, summary.clone()));
+        }
+        Ok(summary)
+    }
+}
 
 /// Synthetic display role for a user from its active memberships + the IT group.
 fn compute_role(user: &User, memberships: &[Membership], it_group: Option<GroupId>) -> UserRole {

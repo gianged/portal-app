@@ -22,7 +22,9 @@ pub async fn run(
     loop {
         ticker.tick().await;
         let now = OffsetDateTime::now_utc();
-        if now.day() < day_of_month {
+        // Clamp so months shorter than the configured day still trigger on their last day.
+        let due = day_of_month.min(now.month().length(now.year()));
+        if now.day() < due {
             continue;
         }
         let (year, month) = previous_month(now);
@@ -53,7 +55,7 @@ pub async fn run(
                 tracing::debug!(year, month, "staff report archive already complete");
             }
             Err(e) => {
-                tracing::error!(error = %e, year, month, "staff report archival sweep failed")
+                tracing::error!(error = %e, year, month, "staff report archival sweep failed");
             }
         }
     }

@@ -61,19 +61,17 @@ pub fn channel_summary_dto(
 
 /// Recovers a message's creation time from its time-ordered (v7) id, mirroring
 /// how the application layer derives it (the `Message` row stores no timestamp).
-///
-/// # Panics
-///
-/// Panics if `id` is not a UUIDv7 (no embedded timestamp); message ids always are.
+/// Ids come back from the store, so a non-v7 row degrades to the epoch instead
+/// of panicking the request path.
 #[must_use]
 pub fn message_created_at(id: ids::MessageId) -> OffsetDateTime {
-    let ts =
-        id.0.get_timestamp()
-            .expect("message ids are UUIDv7 and always carry a timestamp");
-    let (secs, nanos) = ts.to_unix();
-    let total = i128::from(secs) * 1_000_000_000 + i128::from(nanos);
-    OffsetDateTime::from_unix_timestamp_nanos(total)
-        .expect("a UUIDv7 timestamp is within OffsetDateTime's range")
+    id.0.get_timestamp()
+        .and_then(|ts| {
+            let (secs, nanos) = ts.to_unix();
+            let total = i128::from(secs) * 1_000_000_000 + i128::from(nanos);
+            OffsetDateTime::from_unix_timestamp_nanos(total).ok()
+        })
+        .unwrap_or(OffsetDateTime::UNIX_EPOCH)
 }
 
 /// `download_url` is the per-viewer presigned link the caller minted.

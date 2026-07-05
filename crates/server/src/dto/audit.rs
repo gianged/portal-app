@@ -17,8 +17,6 @@ pub fn audit_action_dto(action: model::AuditAction) -> WireAuditAction {
         model::AuditAction::StatusChange => WireAuditAction::StatusChange,
         model::AuditAction::Assign => WireAuditAction::Assign,
         model::AuditAction::Transfer => WireAuditAction::Transfer,
-        model::AuditAction::Login => WireAuditAction::Login,
-        model::AuditAction::Logout => WireAuditAction::Logout,
     }
 }
 

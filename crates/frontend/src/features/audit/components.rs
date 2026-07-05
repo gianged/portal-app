@@ -29,7 +29,7 @@ fn action_variant(action: AuditAction) -> BadgeVariant {
         AuditAction::StatusChange | AuditAction::Assign | AuditAction::Transfer => {
             BadgeVariant::Accent
         }
-        AuditAction::Update | AuditAction::Login | AuditAction::Logout => BadgeVariant::Neutral,
+        AuditAction::Update => BadgeVariant::Neutral,
     }
 }
 
@@ -53,7 +53,7 @@ pub fn AuditLogIndex() -> impl IntoView {
                         />
                     }.into_any(),
                     Some(Ok(list)) => {
-                        let rows = list.into_iter().map(audit_row).collect_view();
+                        let rows = list.iter().map(audit_row).collect_view();
                         view! { <div>{rows}</div> }.into_any()
                     }
                 }}
@@ -115,7 +115,7 @@ pub fn AuditTrailPanel(
                             Some(Err(e)) => load::load_error(&e),
                             Some(Ok(list)) if list.is_empty() => load::note("No recorded changes yet."),
                             Some(Ok(list)) => {
-                                let rows = list.into_iter().map(audit_row).collect_view();
+                                let rows = list.iter().map(audit_row).collect_view();
                                 view! { <div>{rows}</div> }.into_any()
                             }
                         }}
@@ -127,7 +127,7 @@ pub fn AuditTrailPanel(
     }
 }
 
-fn audit_row(log: AuditLogDto) -> AnyView {
+fn audit_row(log: &AuditLogDto) -> AnyView {
     // A `None` actor is a system action (or a since-deleted user).
     let actor = log
         .actor

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 user_id,\n                 grant_id,\n                 kind AS \"kind: SqlLeaveTxnKind\",\n                 delta::float8    AS \"delta!\",\n                 dayoff_id,\n                 work_pct::float8 AS \"work_pct?\",\n                 reason,\n                 created_by_user_id,\n                 created_at\n               FROM attendance.leave_transactions\n               WHERE user_id = $1 AND created_at::date BETWEEN $2 AND $3\n               ORDER BY created_at DESC",
+  "query": "SELECT\n                 id,\n                 user_id,\n                 grant_id,\n                 kind AS \"kind: SqlLeaveTxnKind\",\n                 delta::float8    AS \"delta!\",\n                 dayoff_id,\n                 work_pct::float8 AS \"work_pct?\",\n                 reason,\n                 created_by_user_id,\n                 created_at\n               FROM attendance.leave_transactions\n               WHERE user_id = $1\n                 AND created_at >= $2::date\n                 AND created_at < ($3::date + 1)\n               ORDER BY created_at DESC",
   "describe": {
     "columns": [
       {
@@ -137,5 +137,5 @@
       false
     ]
   },
-  "hash": "54f0d8c630e8b8b6196f8617be5670889cc98b81595324c735f70212161382ce"
+  "hash": "9ec1b20d9003c7423e6b0b8515ffc2324aa2d55b209e1d705d4d01ee80fe9fa3"
 }

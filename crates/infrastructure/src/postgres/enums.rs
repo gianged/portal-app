@@ -327,8 +327,6 @@ pub(crate) enum SqlAuditAction {
     StatusChange,
     Assign,
     Transfer,
-    Login,
-    Logout,
 }
 
 impl From<AuditAction> for SqlAuditAction {
@@ -340,8 +338,6 @@ impl From<AuditAction> for SqlAuditAction {
             AuditAction::StatusChange => Self::StatusChange,
             AuditAction::Assign => Self::Assign,
             AuditAction::Transfer => Self::Transfer,
-            AuditAction::Login => Self::Login,
-            AuditAction::Logout => Self::Logout,
         }
     }
 }
@@ -355,8 +351,6 @@ impl From<SqlAuditAction> for AuditAction {
             SqlAuditAction::StatusChange => Self::StatusChange,
             SqlAuditAction::Assign => Self::Assign,
             SqlAuditAction::Transfer => Self::Transfer,
-            SqlAuditAction::Login => Self::Login,
-            SqlAuditAction::Logout => Self::Logout,
         }
     }
 }

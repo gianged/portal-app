@@ -275,8 +275,9 @@ impl UserRepository for PgUserRepo {
                  created_at,
                  updated_at
                FROM auth.users
-               WHERE system_role IS NOT NULL AND status = 'active'
+               WHERE system_role IS NOT NULL AND status = $1
                ORDER BY created_at"#,
+            SqlUserStatus::from(UserStatus::Active) as SqlUserStatus,
         )
         .fetch_all(&self.pool)
         .await

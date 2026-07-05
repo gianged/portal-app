@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 email,\n                 password_hash,\n                 full_name,\n                 avatar_storage_key,\n                 phone,\n                 timezone,\n                 status            AS \"status: SqlUserStatus\",\n                 system_role       AS \"system_role: SqlSystemRole\",\n                 email_notifications,\n                 first_logged_in_at,\n                 deactivated_at,\n                 created_at,\n                 updated_at\n               FROM auth.users\n               WHERE system_role IS NOT NULL AND status = 'active'\n               ORDER BY created_at",
+  "query": "SELECT\n                 id,\n                 email,\n                 password_hash,\n                 full_name,\n                 avatar_storage_key,\n                 phone,\n                 timezone,\n                 status            AS \"status: SqlUserStatus\",\n                 system_role       AS \"system_role: SqlSystemRole\",\n                 email_notifications,\n                 first_logged_in_at,\n                 deactivated_at,\n                 created_at,\n                 updated_at\n               FROM auth.users\n               WHERE system_role IS NOT NULL AND status = $1\n               ORDER BY created_at",
   "describe": {
     "columns": [
       {
@@ -180,7 +180,20 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        {
+          "Custom": {
+            "name": "auth.user_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "active",
+                "deactivated"
+              ]
+            }
+          }
+        }
+      ]
     },
     "nullable": [
       false,
@@ -199,5 +212,5 @@
       false
     ]
   },
-  "hash": "b3f6b83d9a23570d13a20fef574687f5248b5b33166fdad98f634df46dc0b16e"
+  "hash": "7cd8b0439bced7c84923dd84135c2d9b889a1f1214638acc9b6e2a3ac5f89704"
 }

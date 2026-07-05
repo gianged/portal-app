@@ -156,7 +156,7 @@ pub fn InboxIndex() -> impl IntoView {
                             <EmptyState icon=IconName::Inbox title="Inbox zero" description="You have no notifications." />
                         }.into_any(),
                         Some(Ok(list)) => {
-                            let rows = list.into_iter().map(|n| {
+                            let rows = list.iter().map(|n| {
                                 notification_row(n, navigate.clone(), reload, notifications)
                             }).collect_view();
                             view! { <div>{rows}</div> }.into_any()
@@ -169,7 +169,7 @@ pub fn InboxIndex() -> impl IntoView {
 }
 
 fn notification_row(
-    n: NotificationDto,
+    n: &NotificationDto,
     navigate: impl Fn(&str, NavigateOptions) + Clone + 'static,
     reload: RwSignal<u32>,
     notifications: NotificationsState,

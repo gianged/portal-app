@@ -1,11 +1,12 @@
 //! Message composer: sends over the WebSocket when connected, else falls back to a REST post; emits typing signals and attaches files by storage key on send.
 
+use gloo::timers::future::TimeoutFuture;
 use leptos::{html::Input as HtmlInputEl, prelude::*, task};
 use web_sys::{Blob, FormData};
 
 use shared::dto::chat::{ChatAttachmentDto, MessageDto, SendMessageRequest};
 use shared::dto::ids::ChannelId;
-use shared::dto::ws::ClientFrame;
+use shared::dto::ws::{ClientFrame, ServerFrame};
 
 use crate::api::ws::WsClient;
 use crate::features::chat::api;
@@ -18,6 +19,8 @@ use crate::primitives::stack::{Gap, Stack};
 use crate::state::toast::ToastState;
 use crate::theme::{self, color, radius, space, typography};
 
+const TYPING_THROTTLE_MS: u32 = 2_500;
+
 #[component]
 pub fn Composer(
     #[prop(into)] channel: Signal<Option<ChannelId>>,
@@ -28,12 +31,25 @@ pub fn Composer(
     let text = RwSignal::new(String::new());
     let pending = RwSignal::new(Vec::<ChatAttachmentDto>::new());
     let file_ref: NodeRef<HtmlInputEl> = NodeRef::new();
+    let last_sent = StoredValue::new(None::<String>);
 
     // Channel switch drops pending uploads; keys are channel-bound.
     Effect::new(move |_| {
         let _ = channel.get();
         pending.set(Vec::new());
     });
+
+    // The composer clears on send; a failed WS send would lose the text silently.
+    let restore_handler = ws.on_frame(move |frame| {
+        if let ServerFrame::Error { code, .. } = frame
+            && matches!(code.as_str(), "send_failed" | "rate_limited")
+            && let Some(prev) = last_sent.try_update_value(Option::take).flatten()
+            && text.get_untracked().is_empty()
+        {
+            text.set(prev);
+        }
+    });
+    on_cleanup(move || ws.off_frame(restore_handler));
 
     let do_send = move || {
         let Some(cid) = channel.get_untracked() else {
@@ -51,6 +67,7 @@ pub fn Composer(
         text.set(String::new());
         pending.set(Vec::new());
         if ws.connected.get_untracked() {
+            last_sent.set_value(Some(body.clone()));
             ws.send(ClientFrame::SendMessage {
                 channel_id: cid,
                 body,
@@ -96,11 +113,21 @@ pub fn Composer(
         });
     };
 
+    // Throttle gate: at most one Typing frame per TYPING_THROTTLE_MS.
+    let typing_throttled = StoredValue::new(false);
     let on_input = Callback::new(move |v: String| {
         let typing = !v.trim().is_empty();
         text.set(v);
-        if typing && let Some(cid) = channel.get_untracked() {
+        if typing
+            && let Some(cid) = channel.get_untracked()
+            && !typing_throttled.get_value()
+        {
+            typing_throttled.set_value(true);
             ws.send(ClientFrame::Typing { channel_id: cid });
+            task::spawn_local(async move {
+                TimeoutFuture::new(TYPING_THROTTLE_MS).await;
+                typing_throttled.set_value(false);
+            });
         }
     });
     let send_btn = Callback::new(move |_| do_send());

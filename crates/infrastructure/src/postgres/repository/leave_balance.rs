@@ -252,7 +252,9 @@ impl LeaveBalanceRepository for PgLeaveBalanceRepo {
                  created_by_user_id,
                  created_at
                FROM attendance.leave_transactions
-               WHERE user_id = $1 AND created_at::date BETWEEN $2 AND $3
+               WHERE user_id = $1
+                 AND created_at >= $2::date
+                 AND created_at < ($3::date + 1)
                ORDER BY created_at DESC"#,
             user.0,
             from,

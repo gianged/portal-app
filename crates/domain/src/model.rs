@@ -41,7 +41,7 @@ pub use project::{
 pub use report::{
     CompanyStaffStats, GroupProjectStats, GroupReportRow, GroupRequestStats, GroupStaffStats,
     GrowthPoint, GrowthSeries, MonthlyBucket, MonthlyReportData, Period, Report, ReportKind,
-    ReportScope, StaffMonthlyReport, StaffMonthlyStats, StaffSummary, TicketStats, TicketSummary,
+    ReportScope, StaffMonthlyReport, StaffMonthlyStats, StaffSummary, TicketStats,
     YearlyReportData, YearlyTotals,
 };
 pub use request::{Request, RequestAttachment, RequestPriority, RequestStatus};

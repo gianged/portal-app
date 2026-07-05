@@ -23,7 +23,10 @@ use axum::{
 };
 use domain::ids::UserId;
 
-use crate::{app::AppState, error::AppError, extractors::auth_user::AuthUser};
+use crate::{
+    app::AppState, error::AppError, extractors::auth_user::AuthUser,
+    middleware::ip_allowlist::ClientIp,
+};
 
 /// Per-window request ceilings consulted by the rate-limit middleware. Held in
 /// `AppState`, populated from `Config`.
@@ -38,19 +41,24 @@ pub struct RateLimits {
     pub chat: u64,
 }
 
-/// Per-IP limiter for the public auth routes. Reads the peer address from the
-/// `ConnectInfo` extension that `into_make_service_with_connect_info` attaches;
-/// absent it (e.g. under `oneshot` tests) all callers share a `login:unknown`
-/// bucket.
+/// Per-IP limiter for the public auth routes. Prefers the trusted-proxy-resolved
+/// [`ClientIp`] the allowlist gate inserted (behind a proxy the raw peer is the
+/// proxy, which would collapse every user into one bucket), falling back to the
+/// `ConnectInfo` peer; absent both (e.g. under `oneshot` tests) all callers share
+/// a `login:unknown` bucket.
 pub async fn per_ip(
     State(state): State<AppState>,
     req: Request,
     next: Next,
 ) -> Result<Response, AppError> {
-    let ip = req
-        .extensions()
-        .get::<ConnectInfo<SocketAddr>>()
-        .map_or_else(|| "unknown".to_owned(), |ci| ci.0.ip().to_string());
+    let ip = req.extensions().get::<ClientIp>().map_or_else(
+        || {
+            req.extensions()
+                .get::<ConnectInfo<SocketAddr>>()
+                .map_or_else(|| "unknown".to_owned(), |ci| ci.0.ip().to_string())
+        },
+        |c| c.0.to_string(),
+    );
     enforce(&state, &format!("login:{ip}"), state.rate_limits.auth).await?;
     Ok(next.run(req).await)
 }

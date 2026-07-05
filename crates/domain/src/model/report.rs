@@ -43,7 +43,6 @@ pub struct GroupRequestStats {
     pub group_id: GroupId,
     pub total: u32,
     pub completed: u32,
-    pub cancelled: u32,
     pub open: u32,
 }
 
@@ -58,13 +57,11 @@ pub struct TicketStats {
     pub avg_resolve_hours: Option<f64>,
 }
 
-/// Per-group staffing as-of the period end plus flow over the period.
+/// Per-group staffing as-of the period end.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupStaffStats {
     pub group_id: GroupId,
     pub headcount: u32,
-    pub new_joiners: u32,
-    pub deactivations: u32,
 }
 
 /// Company-wide staffing (user-lifecycle based, distinct from membership flow).
@@ -118,16 +115,6 @@ pub struct GroupReportRow {
     pub headcount: u32,
 }
 
-/// IT ticket roll-up for the report.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TicketSummary {
-    pub created_in_period: u32,
-    pub resolved_in_period: u32,
-    pub by_status: Vec<(TicketStatus, u32)>,
-    pub by_category: Vec<(TicketCategory, u32)>,
-    pub avg_resolve_hours: Option<f64>,
-}
-
 /// Company staffing roll-up for the report.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaffSummary {
@@ -173,7 +160,7 @@ pub struct YearlyTotals {
 pub struct MonthlyReportData {
     pub period: Period,
     pub groups: Vec<GroupReportRow>,
-    pub tickets: TicketSummary,
+    pub tickets: TicketStats,
     pub staff: StaffSummary,
 }
 

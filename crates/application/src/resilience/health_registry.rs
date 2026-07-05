@@ -4,7 +4,7 @@ use domain::{
     health::{BackendId, HealthStatus},
     ports::health::HealthCheck,
 };
-use tokio::time::MissedTickBehavior;
+use tokio::time::{self, MissedTickBehavior};
 
 use super::circuit::{CircuitBreaker, CircuitConfig};
 
@@ -52,7 +52,7 @@ impl HealthRegistry {
         checks: Vec<Arc<dyn HealthCheck>>,
         interval: Duration,
     ) {
-        let mut ticker = tokio::time::interval(interval);
+        let mut ticker = time::interval(interval);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
         loop {
             ticker.tick().await;

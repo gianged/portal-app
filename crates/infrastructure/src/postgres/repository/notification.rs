@@ -45,29 +45,6 @@ impl From<NotificationRow> for Notification {
 
 #[async_trait]
 impl NotificationRepository for PgNotificationRepo {
-    #[tracing::instrument(skip_all, fields(id = ?id))]
-    async fn find_by_id(
-        &self,
-        id: NotificationId,
-    ) -> Result<Option<Notification>, RepositoryError> {
-        sqlx::query_as!(
-            NotificationRow,
-            r#"SELECT
-                 id,
-                 recipient_user_id,
-                 payload AS "payload: Json<NotificationPayload>",
-                 read_at,
-                 created_at
-               FROM notification.notifications
-               WHERE id = $1"#,
-            id.0,
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(mappers::map_pg_error)
-        .map(|opt| opt.map(Into::into))
-    }
-
     #[tracing::instrument(skip_all, fields(user_id = ?user_id, unread_only = ?unread_only, limit = ?limit))]
     async fn list_for_user(
         &self,
@@ -139,24 +116,30 @@ impl NotificationRepository for PgNotificationRepo {
         Ok(())
     }
 
-    #[tracing::instrument(skip_all, fields(id = ?id))]
-    async fn mark_read(
+    #[tracing::instrument(skip_all, fields(user_id = ?user_id, ids = ids.len()))]
+    async fn mark_read_many(
         &self,
-        id: NotificationId,
+        user_id: UserId,
+        ids: &[NotificationId],
         at: OffsetDateTime,
-    ) -> Result<(), RepositoryError> {
-        // Idempotent: WHERE read_at IS NULL preserves the original timestamp on repeat calls.
-        sqlx::query!(
+    ) -> Result<u64, RepositoryError> {
+        let ids: Vec<Uuid> = ids.iter().map(|i| i.0).collect();
+        // Idempotent: WHERE read_at IS NULL preserves the original timestamp on
+        // repeat calls. Empty $2 means "all unread".
+        let result = sqlx::query!(
             r#"UPDATE notification.notifications
-               SET read_at = $2
-               WHERE id = $1 AND read_at IS NULL"#,
-            id.0,
+               SET read_at = $3
+               WHERE recipient_user_id = $1
+                 AND read_at IS NULL
+                 AND (cardinality($2::uuid[]) = 0 OR id = ANY($2))"#,
+            user_id.0,
+            &ids,
             at,
         )
         .execute(&self.pool)
         .await
         .map_err(mappers::map_pg_error)?;
-        Ok(())
+        Ok(result.rows_affected())
     }
 
     #[tracing::instrument(skip_all)]

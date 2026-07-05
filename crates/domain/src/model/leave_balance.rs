@@ -50,31 +50,6 @@ pub enum LeaveTxnKind {
     Expire,
 }
 
-impl LeaveTxnKind {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Grant => "grant",
-            Self::Consume => "consume",
-            Self::Refund => "refund",
-            Self::Adjust => "adjust",
-            Self::Expire => "expire",
-        }
-    }
-
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "grant" => Some(Self::Grant),
-            "consume" => Some(Self::Consume),
-            "refund" => Some(Self::Refund),
-            "adjust" => Some(Self::Adjust),
-            "expire" => Some(Self::Expire),
-            _ => None,
-        }
-    }
-}
-
 /// One immutable entry in the balance ledger. `dayoff_id` links a consume / refund
 /// to the leave request that drove it; `work_pct` is recorded on expiry when the
 /// policy says so.

@@ -7,10 +7,9 @@ use axum::{
     routing,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
 
 use domain::ids::NotificationId;
-use shared::dto::notification::{MarkReadRequest, NotificationDto};
+use shared::dto::notification::{MarkReadRequest, NotificationDto, UnreadCountDto};
 
 use crate::{
     app::AppState,
@@ -18,9 +17,6 @@ use crate::{
     error::AppError,
     extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
 };
-
-/// Cap on how many unread notifications a single "mark all" sweep touches.
-const MARK_ALL_LIMIT: u32 = 500;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -52,34 +48,25 @@ async fn list(
 async fn unread_count(
     State(state): State<AppState>,
     auth: AuthUser,
-) -> Result<Json<Value>, AppError> {
+) -> Result<Json<UnreadCountDto>, AppError> {
     let count = state.notification.count_unread(auth.user_id).await?;
-    Ok(Json(json!({ "count": count })))
+    Ok(Json(UnreadCountDto { count }))
 }
 
-/// Marks the listed notifications read. An empty list means "mark all unread"
-/// (bounded by `MARK_ALL_LIMIT`).
+/// Marks the listed notifications read. An empty list means "mark all unread".
 async fn mark_read(
     State(state): State<AppState>,
     auth: AuthUser,
     ValidatedJson(body): ValidatedJson<MarkReadRequest>,
 ) -> Result<StatusCode, AppError> {
-    let ids: Vec<NotificationId> = if body.notification_ids.is_empty() {
-        state
-            .notification
-            .list_for_user(auth.user_id, true, MARK_ALL_LIMIT)
-            .await?
-            .iter()
-            .map(|n| n.id)
-            .collect()
-    } else {
-        body.notification_ids
-            .iter()
-            .map(|id| NotificationId(id.0))
-            .collect()
-    };
-    for id in ids {
-        state.notification.mark_read(auth.user_id, id).await?;
-    }
+    let ids: Vec<NotificationId> = body
+        .notification_ids
+        .iter()
+        .map(|id| NotificationId(id.0))
+        .collect();
+    state
+        .notification
+        .mark_read_many(auth.user_id, &ids)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }

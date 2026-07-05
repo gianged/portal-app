@@ -1,4 +1,4 @@
-#![allow(dead_code)] // TODO: unused
+#![allow(dead_code)]
 
 use leptos::prelude::*;
 

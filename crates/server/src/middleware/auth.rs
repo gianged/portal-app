@@ -8,6 +8,7 @@ use axum::{
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use tracing::{Span, field};
+use uuid::Uuid;
 
 use crate::{
     app::AppState,
@@ -15,6 +16,15 @@ use crate::{
     error::{AppError, AuthError},
     extractors::auth_user::AuthUser,
 };
+
+/// Token identity of the verified session, inserted alongside [`AuthUser`] so
+/// long-lived connections (the chat WebSocket) can re-check revocation
+/// mid-flight instead of trusting the upgrade-time verdict forever.
+#[derive(Debug, Clone, Copy)]
+pub struct SessionAuth {
+    pub jti: Uuid,
+    pub version: u64,
+}
 
 pub async fn require_auth(
     State(state): State<AppState>,
@@ -49,6 +59,10 @@ pub async fn require_auth(
     Span::current().record("user_id", field::display(verified.user_id.0));
     req.extensions_mut().insert(AuthUser {
         user_id: verified.user_id,
+    });
+    req.extensions_mut().insert(SessionAuth {
+        jti: verified.jti,
+        version: verified.version,
     });
     Ok(next.run(req).await)
 }

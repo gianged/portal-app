@@ -443,6 +443,7 @@ impl ChatRepository for FakeChats {
     async fn list_announcements(
         &self,
         _channel_id: ChannelId,
+        _limit: u32,
     ) -> Result<Vec<Announcement>, RepositoryError> {
         Ok(Vec::new())
     }
@@ -504,12 +505,6 @@ struct FakeNotifications;
 
 #[async_trait]
 impl NotificationRepository for FakeNotifications {
-    async fn find_by_id(
-        &self,
-        _id: NotificationId,
-    ) -> Result<Option<Notification>, RepositoryError> {
-        Ok(None)
-    }
     async fn list_for_user(
         &self,
         _user_id: UserId,
@@ -524,12 +519,13 @@ impl NotificationRepository for FakeNotifications {
     async fn save(&self, _notification: &Notification) -> Result<(), RepositoryError> {
         Ok(())
     }
-    async fn mark_read(
+    async fn mark_read_many(
         &self,
-        _id: NotificationId,
+        _user_id: UserId,
+        _ids: &[NotificationId],
         _at: OffsetDateTime,
-    ) -> Result<(), RepositoryError> {
-        Ok(())
+    ) -> Result<u64, RepositoryError> {
+        Ok(0)
     }
     async fn delete_read_before(&self, _cutoff: OffsetDateTime) -> Result<u64, RepositoryError> {
         Ok(0)
@@ -1273,6 +1269,9 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         token: Arc::new(TokenService::new("test-secret", 3600, false)),
         revocation: revocation.clone(),
         realtime,
+        summary_cache: Arc::new(server::resolve::SummaryCache::new(
+            std::time::Duration::from_secs(30),
+        )),
         audit_service,
         presence,
         rate_limiter,

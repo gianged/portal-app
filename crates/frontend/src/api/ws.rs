@@ -1,22 +1,28 @@
 //! The single chat WebSocket client, built once at the app root and shared via
 //! context. A background task owns the (non-`Send`) socket on the JS event loop
-//! via `spawn_local`, reconnecting with backoff; a heartbeat task keeps presence
-//! alive with periodic `Ping`s. Outbound frames flow through an unbounded channel
-//! so the `WsClient` handle stays cheap and `Copy`.
+//! via `spawn_local`, reconnecting with backoff, replaying channel subscriptions
+//! after each reconnect, and sending periodic `Ping`s to keep presence alive.
+//! Outbound frames flow through an unbounded channel so the `WsClient` handle
+//! stays cheap and `Copy`; incoming frames fan out to registered handlers.
+
+use std::rc::Rc;
 
 use futures::{
-    SinkExt, StreamExt,
+    FutureExt, SinkExt, StreamExt,
     channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
 };
 use gloo::timers::future::TimeoutFuture;
 use leptos::{prelude::*, task};
 use reqwasm::websocket::{Message, futures::WebSocket};
 
+use shared::dto::ids::ChannelId;
 use shared::dto::ws::{ClientFrame, ServerFrame};
 
 const HEARTBEAT_MS: u32 = 25_000;
 const BACKOFF_MIN_MS: u32 = 500;
 const BACKOFF_MAX_MS: u32 = 10_000;
+
+type FrameHandler = Rc<dyn Fn(&ServerFrame)>;
 
 #[derive(Clone, Copy)]
 pub struct WsClient {
@@ -24,9 +30,14 @@ pub struct WsClient {
     /// Holds the receiver until [`WsClient::start`] hands it to the read task.
     rx: StoredValue<Option<UnboundedReceiver<ClientFrame>>>,
     started: RwSignal<bool>,
-    /// The most recent frame pushed by the server; each arrives in its own task
-    /// poll, so subscribers observe frames one at a time rather than coalesced.
-    pub last_frame: RwSignal<Option<ServerFrame>>,
+    /// Bumped by [`WsClient::stop`]; a run task exits once its generation is stale.
+    generation: StoredValue<u64>,
+    /// Live channel subscriptions, replayed after every (re)connect because the
+    /// server tracks them per connection.
+    subscriptions: StoredValue<Vec<ChannelId>>,
+    /// Frame subscribers, invoked in registration order for every server frame.
+    handlers: StoredValue<Vec<(u64, FrameHandler)>, LocalStorage>,
+    next_handler_id: StoredValue<u64>,
     pub connected: RwSignal<bool>,
 }
 
@@ -47,13 +58,16 @@ impl WsClient {
             tx: StoredValue::new(tx),
             rx: StoredValue::new(Some(rx)),
             started: RwSignal::new(false),
-            last_frame: RwSignal::new(None),
+            generation: StoredValue::new(0),
+            subscriptions: StoredValue::new(Vec::new()),
+            handlers: StoredValue::new_local(Vec::new()),
+            next_handler_id: StoredValue::new(0),
             connected: RwSignal::new(false),
         }
     }
 
-    /// Open the socket and spawn the read/reconnect + heartbeat tasks. Idempotent:
-    /// safe to call from an effect that fires whenever auth resolves.
+    /// Open the socket and spawn the read/reconnect task. Idempotent: safe to
+    /// call from an effect that fires whenever auth resolves.
     pub fn start(&self) {
         if self.started.get_untracked() {
             return;
@@ -62,26 +76,73 @@ impl WsClient {
             return;
         };
         self.started.set(true);
-        task::spawn_local(run(rx, self.last_frame, self.connected));
+        task::spawn_local(run(*self, rx, self.generation.get_value()));
+    }
 
-        let heartbeat_tx = self.tx.get_value();
-        task::spawn_local(async move {
-            loop {
-                TimeoutFuture::new(HEARTBEAT_MS).await;
-                if heartbeat_tx.unbounded_send(ClientFrame::Ping).is_err() {
-                    break;
-                }
-            }
-        });
+    /// Close the socket and halt the reconnect loop; a later [`start`](Self::start)
+    /// (next login) begins fresh. Frame handlers stay registered.
+    pub fn stop(&self) {
+        if !self.started.get_untracked() {
+            return;
+        }
+        // Bumping the generation retires the run task; dropping the old sender
+        // wakes it immediately so the socket closes.
+        self.generation.update_value(|g| *g += 1);
+        let (tx, rx) = mpsc::unbounded::<ClientFrame>();
+        self.tx.set_value(tx);
+        self.rx.set_value(Some(rx));
+        self.subscriptions.update_value(Vec::clear);
+        self.connected.set(false);
+        self.started.set(false);
     }
 
     /// Queue a frame for delivery. Frames sent while reconnecting are buffered and
     /// flushed once the socket is back. Errors (channel closed) are swallowed since
     /// chat actions have a REST fallback.
     pub fn send(&self, frame: ClientFrame) {
+        match &frame {
+            ClientFrame::Subscribe { channel_id } => {
+                let cid = *channel_id;
+                self.subscriptions.update_value(|subs| {
+                    if !subs.contains(&cid) {
+                        subs.push(cid);
+                    }
+                });
+            }
+            ClientFrame::Unsubscribe { channel_id } => {
+                let cid = *channel_id;
+                self.subscriptions
+                    .update_value(|subs| subs.retain(|c| *c != cid));
+            }
+            _ => {}
+        }
         self.tx.with_value(|tx| {
             let _ = tx.unbounded_send(frame);
         });
+    }
+
+    /// Register `handler` for every incoming server frame; returns an id for
+    /// [`off_frame`](Self::off_frame). Handlers survive [`stop`](Self::stop).
+    #[must_use]
+    pub fn on_frame(&self, handler: impl Fn(&ServerFrame) + 'static) -> u64 {
+        let id = self.next_handler_id.get_value();
+        self.next_handler_id.set_value(id + 1);
+        self.handlers
+            .update_value(|hs| hs.push((id, Rc::new(handler))));
+        id
+    }
+
+    /// Remove a handler registered with [`on_frame`](Self::on_frame).
+    pub fn off_frame(&self, id: u64) {
+        self.handlers
+            .update_value(|hs| hs.retain(|(hid, _)| *hid != id));
+    }
+
+    // Snapshot the registry so a handler may (un)register during dispatch.
+    fn dispatch(&self, frame: &ServerFrame) {
+        for (_, handler) in self.handlers.get_value() {
+            handler(frame);
+        }
     }
 }
 
@@ -100,29 +161,39 @@ fn ws_url() -> String {
     format!("{scheme}://{host}/api/chat/ws")
 }
 
-/// Owns the socket for the app's lifetime: connect, pump frames both ways, and
-/// reconnect with exponential backoff on disconnect.
-async fn run(
-    mut rx: UnboundedReceiver<ClientFrame>,
-    last_frame: RwSignal<Option<ServerFrame>>,
-    connected: RwSignal<bool>,
-) {
+/// Owns the socket for one [`WsClient::start`] generation: connect, replay
+/// subscriptions, pump frames both ways with a heartbeat, and reconnect with
+/// exponential backoff on disconnect. Exits when its generation goes stale
+/// ([`WsClient::stop`]) or every sender is dropped.
+async fn run(client: WsClient, mut rx: UnboundedReceiver<ClientFrame>, my_gen: u64) {
     let mut backoff = BACKOFF_MIN_MS;
     loop {
+        if client.generation.get_value() != my_gen {
+            return;
+        }
         match WebSocket::open(&ws_url()) {
             Ok(ws) => {
                 backoff = BACKOFF_MIN_MS;
-                connected.set(true);
+                client.connected.set(true);
                 let (mut write, read) = ws.split();
                 // `select!` needs fused futures; the split read half isn't a
                 // `FusedStream`, so fuse it (the receiver already is).
                 let mut read = read.fuse();
+                // Server-side subscriptions die with the old connection; replay.
+                for channel_id in client.subscriptions.get_value() {
+                    if let Ok(json) = serde_json::to_string(&ClientFrame::Subscribe { channel_id })
+                        && write.send(Message::Text(json)).await.is_err()
+                    {
+                        break;
+                    }
+                }
+                let mut heartbeat = TimeoutFuture::new(HEARTBEAT_MS).fuse();
                 loop {
                     futures::select! {
                         incoming = read.next() => match incoming {
                             Some(Ok(Message::Text(text))) => {
                                 if let Ok(frame) = serde_json::from_str::<ServerFrame>(&text) {
-                                    last_frame.set(Some(frame));
+                                    client.dispatch(&frame);
                                 }
                             }
                             Some(Ok(Message::Bytes(_))) => {}
@@ -135,14 +206,24 @@ async fn run(
                                         break;
                                     }
                             }
-                            // Sender dropped: the WsClient is gone; stop entirely.
+                            // Every sender dropped: stopped or the client is gone.
                             None => return,
+                        },
+                        () = heartbeat => {
+                            if let Ok(json) = serde_json::to_string(&ClientFrame::Ping)
+                                && write.send(Message::Text(json)).await.is_err() {
+                                    break;
+                                }
+                            heartbeat = TimeoutFuture::new(HEARTBEAT_MS).fuse();
                         },
                     }
                 }
-                connected.set(false);
+                // A newer generation owns `connected` once this one is retired.
+                if client.generation.get_value() == my_gen {
+                    client.connected.set(false);
+                }
             }
-            Err(_) => connected.set(false),
+            Err(_) => client.connected.set(false),
         }
         TimeoutFuture::new(backoff).await;
         backoff = (backoff * 2).min(BACKOFF_MAX_MS);

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 actor_user_id,\n                 action AS \"action: SqlAuditAction\",\n                 entity_schema,\n                 entity_table,\n                 entity_id,\n                 payload_before::text AS \"payload_before?: String\",\n                 payload_after::text  AS \"payload_after?: String\",\n                 occurred_at\n               FROM audit.audit_log\n               WHERE entity_schema = $1 AND entity_table = $2 AND entity_id = $3\n               ORDER BY occurred_at DESC\n               LIMIT $4",
+  "query": "SELECT\n                 id,\n                 actor_user_id,\n                 action AS \"action: SqlAuditAction\",\n                 entity_schema,\n                 entity_table,\n                 entity_id,\n                 occurred_at\n               FROM audit.audit_log\n               WHERE entity_schema = $1 AND entity_table = $2 AND entity_id = $3\n               ORDER BY occurred_at DESC\n               LIMIT $4",
   "describe": {
     "columns": [
       {
@@ -38,9 +38,7 @@
                 "delete",
                 "status_change",
                 "assign",
-                "transfer",
-                "login",
-                "logout"
+                "transfer"
               ]
             }
           }
@@ -87,18 +85,6 @@
       },
       {
         "ordinal": 6,
-        "name": "payload_before?: String",
-        "type_info": "Text",
-        "origin": "Expression"
-      },
-      {
-        "ordinal": 7,
-        "name": "payload_after?: String",
-        "type_info": "Text",
-        "origin": "Expression"
-      },
-      {
-        "ordinal": 8,
         "name": "occurred_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -124,10 +110,8 @@
       false,
       false,
       false,
-      null,
-      null,
       false
     ]
   },
-  "hash": "6275b92c5200c70e05226faccb4d9deb12148b8b19ff888fd4fe8bbac2783c7b"
+  "hash": "1c5b9b27c8349922a9d433b3e02ae0dfdca03370bb6ebec0480c43d00f30f610"
 }

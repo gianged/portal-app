@@ -22,7 +22,7 @@
 use std::{collections::HashSet, pin::Pin, time::Duration};
 
 use axum::{
-    Router,
+    Extension, Router,
     extract::{
         State,
         ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade},
@@ -34,6 +34,7 @@ use futures::{
     SinkExt, Stream, StreamExt,
     stream::{self, SelectAll, SplitSink},
 };
+use tokio::time;
 
 use application::{DomainEvent, commands::chat::PostMessageCommand};
 use domain::{
@@ -55,9 +56,8 @@ use crate::{
     dto,
     error::AppError,
     extractors::auth_user::AuthUser,
-    middleware::rate_limit,
+    middleware::{auth::SessionAuth, rate_limit},
     realtime::{WS_TOPIC, WsSignal},
-    resolve,
 };
 
 /// Presence key TTL; must exceed [`HEARTBEAT`] so a live connection never lets
@@ -73,11 +73,36 @@ pub fn router() -> Router<AppState> {
     Router::new().route("/chat/ws", routing::get(ws))
 }
 
-async fn ws(State(state): State<AppState>, auth: AuthUser, upgrade: WebSocketUpgrade) -> Response {
-    upgrade.on_upgrade(move |socket| connection(socket, state, auth.user_id))
+async fn ws(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    session: Option<Extension<SessionAuth>>,
+    upgrade: WebSocketUpgrade,
+) -> Response {
+    let session = session.map(|Extension(s)| s);
+    upgrade.on_upgrade(move |socket| connection(socket, state, auth.user_id, session))
 }
 
-async fn connection(socket: WebSocket, state: AppState, uid: UserId) {
+/// True when the session token behind this connection has been revoked (logout
+/// denylist or a token-version bump). Backend blips read as "still valid":
+/// revocation lives in the same Redis a logout writes to, so there is nothing
+/// newer to learn while it is down, and the next tick re-checks.
+async fn session_revoked(state: &AppState, uid: UserId, session: SessionAuth) -> bool {
+    match state.revocation.is_revoked(session.jti).await {
+        Ok(true) => return true,
+        Ok(false) => {}
+        Err(e) => tracing::warn!(error = %e, "ws: revocation check failed, keeping socket"),
+    }
+    match state.revocation.version(uid).await {
+        Ok(version) => version != session.version,
+        Err(e) => {
+            tracing::warn!(error = %e, "ws: version check failed, keeping socket");
+            false
+        }
+    }
+}
+
+async fn connection(socket: WebSocket, state: AppState, uid: UserId, session: Option<SessionAuth>) {
     let (mut sink, mut stream) = socket.split();
 
     // Presence/typing/read-marker signals are ephemeral best-effort: a redis or cache
@@ -102,7 +127,7 @@ async fn connection(socket: WebSocket, state: AppState, uid: UserId) {
         }
     };
 
-    let mut heartbeat = tokio::time::interval(HEARTBEAT);
+    let mut heartbeat = time::interval(HEARTBEAT);
 
     loop {
         tokio::select! {
@@ -124,6 +149,13 @@ async fn connection(socket: WebSocket, state: AppState, uid: UserId) {
             }
             _ = heartbeat.tick() => {
                 let _ = state.presence.set_online(uid, PRESENCE_TTL_SECS).await;
+                // Logout / token-version bumps must reach live sockets, not
+                // just the next HTTP request.
+                if let Some(session) = session
+                    && session_revoked(&state, uid, session).await
+                {
+                    break;
+                }
             }
         }
     }
@@ -451,10 +483,19 @@ async fn build_message_dto(
     viewer: UserId,
     message: &ChatMessage,
 ) -> Result<MessageDto, AppError> {
-    let sender = resolve::user_summary(&state.user, &state.group, message.sender_user_id).await?;
+    // Cached: every subscribed connection projects the same sender/mentions.
+    let sender = state
+        .summary_cache
+        .user_summary(&state.user, &state.group, message.sender_user_id)
+        .await?;
     let mut mentions = Vec::with_capacity(message.mentions.len());
     for mention in &message.mentions {
-        mentions.push(resolve::user_summary(&state.user, &state.group, *mention).await?);
+        mentions.push(
+            state
+                .summary_cache
+                .user_summary(&state.user, &state.group, *mention)
+                .await?,
+        );
     }
     // Live frames carry presigned attachment DTOs (per recipient); deleted messages render none.
     let attachments = if message.is_deleted() || message.attachment_keys.is_empty() {

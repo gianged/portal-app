@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE notification.notifications\n               SET read_at = $3\n               WHERE recipient_user_id = $1\n                 AND read_at IS NULL\n                 AND (cardinality($2::uuid[]) = 0 OR id = ANY($2))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "31ce768a1a131b793b4433923a91bea0d77d099254cdf9596ee22987f8f725f7"
+}

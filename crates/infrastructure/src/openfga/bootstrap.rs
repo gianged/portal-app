@@ -1,3 +1,4 @@
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -38,16 +39,28 @@ pub async fn resolve_config(
     })
 }
 
-/// Returns the id of the store named `name`, creating it if absent.
+/// Returns the id of the store named `name`, creating it if absent. Walks every
+/// page: missing the store on a later page would create a duplicate and point
+/// the app at an empty one.
 async fn ensure_store(
     http: &Client,
     endpoint: &str,
     name: &str,
     bearer: Option<&str>,
 ) -> Result<String, AuthzError> {
-    let list: StoresResponse = get_json(http, format!("{endpoint}/stores"), bearer).await?;
-    if let Some(store) = list.stores.into_iter().find(|s| s.name == name) {
-        return Ok(store.id);
+    let mut url = format!("{endpoint}/stores?page_size=100");
+    loop {
+        let list: StoresResponse = get_json(http, url, bearer).await?;
+        if let Some(store) = list.stores.into_iter().find(|s| s.name == name) {
+            return Ok(store.id);
+        }
+        match list.continuation_token.filter(|t| !t.is_empty()) {
+            Some(token) => {
+                let token = utf8_percent_encode(&token, NON_ALPHANUMERIC);
+                url = format!("{endpoint}/stores?page_size=100&continuation_token={token}");
+            }
+            None => break,
+        }
     }
     let created: StoreResponse = post_json(
         http,
@@ -141,6 +154,8 @@ where
 struct StoresResponse {
     #[serde(default)]
     stores: Vec<StoreResponse>,
+    #[serde(default)]
+    continuation_token: Option<String>,
 }
 
 #[derive(Deserialize)]

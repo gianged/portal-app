@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO audit.audit_log\n                 (id, actor_user_id, action, entity_schema, entity_table, entity_id,\n                  payload_before, payload_after, occurred_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7::text::jsonb, $8::text::jsonb, $9)",
+  "query": "INSERT INTO audit.audit_log\n                 (id, actor_user_id, action, entity_schema, entity_table, entity_id, occurred_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7)",
   "describe": {
     "columns": [],
     "parameters": {
@@ -17,9 +17,7 @@
                 "delete",
                 "status_change",
                 "assign",
-                "transfer",
-                "login",
-                "logout"
+                "transfer"
               ]
             }
           }
@@ -27,12 +25,10 @@
         "Text",
         "Text",
         "Uuid",
-        "Text",
-        "Text",
         "Timestamptz"
       ]
     },
     "nullable": []
   },
-  "hash": "ef93286eb877295b0754b9606d2d8b259d54a931bd6879b97670052862c38b26"
+  "hash": "818b77d12b95441c0e36c7ed967d81fc492dd661abc29347762099f06356b293"
 }

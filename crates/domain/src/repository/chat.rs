@@ -95,6 +95,7 @@ pub trait ChatRepository: Send + Sync {
     async fn list_announcements(
         &self,
         channel_id: ChannelId,
+        limit: u32,
     ) -> Result<Vec<Announcement>, RepositoryError>;
 
     async fn save_announcement(&self, announcement: &Announcement) -> Result<(), RepositoryError>;

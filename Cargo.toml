@@ -41,6 +41,7 @@ jsonwebtoken = { version = "10", default-features = false, features = ["hmac", "
 tower = "0.5"
 tower-http = { version = "0.7", features = ["trace", "cors", "limit", "set-header", "catch-panic"] }
 ipnet = "2"
+percent-encoding = "2"
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
 redis = { version = "1.3", features = ["tokio-comp", "connection-manager"] }
 scylla = { version = "1.7", features = ["time-03", "rustls-023"] }

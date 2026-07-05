@@ -93,8 +93,9 @@ impl OpenFgaAuthzClient {
         }
     }
 
-    /// Single-tuple write that treats `OpenFGA`'s "already exists" 400 as success,
-    /// making a re-grant idempotent. Batch `write_tuples` stays strict.
+    /// Single-tuple write that treats `OpenFGA`'s "already exists" / "does not
+    /// exist" 400s as success, making re-grants and re-revokes idempotent.
+    /// Batch `write_tuples` stays strict.
     async fn write_single(&self, req: &WriteRequest<'_>) -> Result<(), AuthzError> {
         let url = self.store_url("write");
         let mut http = self.http.post(&url).json(req);
@@ -110,7 +111,9 @@ impl OpenFgaAuthzClient {
             return Ok(());
         }
         let detail = resp.text().await.unwrap_or_default();
-        if status == StatusCode::BAD_REQUEST && detail.contains("already exists") {
+        if status == StatusCode::BAD_REQUEST
+            && (detail.contains("already exists") || detail.contains("does not exist"))
+        {
             return Ok(());
         }
         Err(AuthzError::Backend(format!(
@@ -174,8 +177,7 @@ impl AuthzClient for OpenFgaAuthzClient {
             }),
             authorization_model_id: &self.authorization_model_id,
         };
-        let _: Value = self.post_json(self.store_url("write"), &req).await?;
-        Ok(())
+        self.write_single(&req).await
     }
 
     #[tracing::instrument(skip_all)]

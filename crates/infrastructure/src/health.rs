@@ -10,6 +10,7 @@ use reqwest::StatusCode;
 // `::scylla` names the driver crate, not this crate's own `scylla` module.
 use ::scylla::client::session::Session;
 use sqlx::PgPool;
+use tokio::time;
 
 use domain::{error::HealthError, health::BackendId, ports::health::HealthCheck};
 
@@ -21,7 +22,7 @@ async fn with_timeout<F, T>(fut: F) -> Result<T, HealthError>
 where
     F: Future<Output = Result<T, HealthError>>,
 {
-    tokio::time::timeout(PING_TIMEOUT, fut)
+    time::timeout(PING_TIMEOUT, fut)
         .await
         .unwrap_or(Err(HealthError::Timeout))
 }

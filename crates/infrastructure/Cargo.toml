@@ -30,6 +30,7 @@ redis = { workspace = true }
 scylla = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
+percent-encoding = { workspace = true }
 reqwest = { workspace = true }
 futures = { workspace = true }
 apalis = { workspace = true }

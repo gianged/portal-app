@@ -94,8 +94,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     );
     let tickets: Arc<dyn TicketRepository> = Arc::new(PgTicketRepo::new(pool.clone()));
     let projects: Arc<dyn ProjectRepository> = Arc::new(PgProjectRepo::new(pool.clone()));
-    // The orphan-sweep job only lists and deletes, never presigns, so the empty key is unused.
-    let signer = Arc::new(SignedUrl::new(b""));
+    let signer = Arc::new(SignedUrl::new(cfg.storage_signing_secret.as_bytes()));
     let file_storage: Arc<dyn FileStorage> = Arc::new(LocalStorage::new(
         cfg.storage_root.clone(),
         &cfg.storage_public_base,

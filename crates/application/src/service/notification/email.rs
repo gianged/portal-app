@@ -82,7 +82,14 @@ impl EmailNotifier {
                 "A ticket you are involved with changed status.",
                 format!("/tickets/{}", ticket_id.0),
             ),
-            _ => return None,
+            // Exhaustive like `wants_email`: adding a kind must decide both.
+            NotificationPayload::Announcement { .. }
+            | NotificationPayload::RequestStatusChange { .. }
+            | NotificationPayload::ProjectInvite { .. }
+            | NotificationPayload::ProjectInviteResponse { .. }
+            | NotificationPayload::RequestComment { .. }
+            | NotificationPayload::TicketComment { .. }
+            | NotificationPayload::System { .. } => return None,
         };
         let body = format!("{line}\n\n{}{path}\n", self.base_url);
         Some((subject.to_owned(), body))
@@ -98,15 +105,14 @@ impl EmailNotifier {
         let Some((subject, body)) = self.render(payload) else {
             return;
         };
-        for recipient in recipients {
-            let user = match self.users.find_by_id(*recipient).await {
-                Ok(Some(user)) => user,
-                Ok(None) => continue,
-                Err(e) => {
-                    tracing::warn!(error = %e, "email: recipient lookup failed");
-                    continue;
-                }
-            };
+        let users = match self.users.find_by_ids(recipients).await {
+            Ok(users) => users,
+            Err(e) => {
+                tracing::warn!(error = %e, "email: recipient lookup failed");
+                return;
+            }
+        };
+        for user in users {
             if user.status != UserStatus::Active || !user.email_notifications {
                 continue;
             }

@@ -5,13 +5,13 @@ use domain::{
     ids::{ReportId, UserId},
     model::{
         GroupReportRow, GrowthPoint, GrowthSeries, MonthlyReportData, Period, Report, ReportKind,
-        ReportScope, StaffMonthlyReport, StaffSummary, TicketSummary, User, YearlyReportData,
-        YearlyTotals,
+        ReportScope, StaffMonthlyReport, StaffSummary, User, YearlyReportData, YearlyTotals,
     },
     ports::{file_storage::FileStorage, report_renderer::ReportRenderer},
     repository::{ReportArchiveRepository, ReportStatsRepository, UserRepository},
 };
 use time::{Date, Month, OffsetDateTime};
+use tokio::task;
 use uuid::Uuid;
 
 use crate::{
@@ -279,7 +279,7 @@ impl ReportService {
         }
         let data = self.assemble_monthly(period).await?;
         let renderer = self.renderer.clone();
-        let bytes = tokio::task::spawn_blocking(move || renderer.render_monthly(&data))
+        let bytes = task::spawn_blocking(move || renderer.render_monthly(&data))
             .await
             .map_err(|e| Error::Render(RenderError::Backend(e.to_string())))??;
         let (y, m) = (period.start.year(), u8::from(period.start.month()));
@@ -314,10 +314,9 @@ impl ReportService {
         let data = self.assemble_staff_monthly(subject.id, period).await?;
         let renderer = self.renderer.clone();
         let name = subject.full_name.clone();
-        let bytes =
-            tokio::task::spawn_blocking(move || renderer.render_staff_monthly(&name, &data))
-                .await
-                .map_err(|e| Error::Render(RenderError::Backend(e.to_string())))??;
+        let bytes = task::spawn_blocking(move || renderer.render_staff_monthly(&name, &data))
+            .await
+            .map_err(|e| Error::Render(RenderError::Backend(e.to_string())))??;
         let (y, m) = (period.start.year(), u8::from(period.start.month()));
         let storage_key = format!("reports/monthly/{y:04}-{m:02}/staff/{}.pdf", subject.id.0);
         self.persist(
@@ -351,7 +350,7 @@ impl ReportService {
         }
         let data = self.assemble_yearly(year).await?;
         let renderer = self.renderer.clone();
-        let bytes = tokio::task::spawn_blocking(move || renderer.render_yearly(&data))
+        let bytes = task::spawn_blocking(move || renderer.render_yearly(&data))
             .await
             .map_err(|e| Error::Render(RenderError::Backend(e.to_string())))??;
         let storage_key = format!("reports/yearly/{year:04}/company.pdf");
@@ -380,9 +379,8 @@ impl ReportService {
         storage_key: String,
         bytes: Vec<u8>,
     ) -> Result<Report> {
-        self.storage
-            .put(&storage_key, CONTENT_TYPE, bytes.clone())
-            .await?;
+        let size_bytes = bytes.len() as u64;
+        self.storage.put(&storage_key, CONTENT_TYPE, bytes).await?;
         let (scope, subject, generated_by) = match attribution {
             Attribution::Company { generated_by } => (ReportScope::Company, None, generated_by),
             Attribution::Staff(subject) => (ReportScope::Staff, Some(subject), None),
@@ -397,7 +395,7 @@ impl ReportService {
             period_end: period.end,
             storage_key,
             content_type: CONTENT_TYPE.to_owned(),
-            size_bytes: bytes.len() as u64,
+            size_bytes,
             generated_by,
             generated_at: OffsetDateTime::now_utc(),
         };
@@ -493,13 +491,6 @@ impl ReportService {
             per_group.push((p.group_id, p.group_name.clone(), headcount));
         }
 
-        let ticket_summary = TicketSummary {
-            created_in_period: tickets.created_in_period,
-            resolved_in_period: tickets.resolved_in_period,
-            by_status: tickets.by_status,
-            by_category: tickets.by_category,
-            avg_resolve_hours: tickets.avg_resolve_hours,
-        };
         let staff_summary = StaffSummary {
             company_headcount: company.active_users,
             new_joiners: company.new_active_users,
@@ -510,7 +501,7 @@ impl ReportService {
         Ok(MonthlyReportData {
             period,
             groups,
-            tickets: ticket_summary,
+            tickets,
             staff: staff_summary,
         })
     }

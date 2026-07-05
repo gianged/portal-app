@@ -10,21 +10,19 @@ use axum::{
     http::StatusCode,
     routing,
 };
+use futures::future;
 use serde::Deserialize;
 use uuid::Uuid;
 
 use application::commands::chat::AddChatAttachmentCommand;
 use domain::{
     ids::{ChannelId, MessageId, UserId},
-    model::{Channel, ChannelMembership, Message},
+    model::{Channel, DirectChannel, Message},
     ports::file_storage::FileStorage,
 };
-use shared::{
-    dto::chat::{
-        ChannelDto, ChannelSummaryDto, ChatAttachmentDto, EditMessageRequest, MessageDto,
-        SendMessageRequest,
-    },
-    validation::file,
+use shared::dto::chat::{
+    ChannelDto, ChannelSummaryDto, ChatAttachmentDto, EditMessageRequest, MessageDto,
+    SendMessageRequest,
 };
 
 use crate::{
@@ -32,7 +30,7 @@ use crate::{
     dto,
     error::AppError,
     extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
-    resolve,
+    resolve, routes,
 };
 
 /// Chat-attachment upload cap; overrides the global 1 MiB body limit for this route.
@@ -87,9 +85,30 @@ async fn list_channels(
     auth: AuthUser,
 ) -> Result<Json<Vec<ChannelSummaryDto>>, AppError> {
     let overviews = state.chat.channel_overviews(auth.user_id).await?;
+    // Per-channel lookups run concurrently; DM counterparts resolve in one batch.
+    let channels = future::try_join_all(
+        overviews
+            .iter()
+            .map(|o| state.chat.find_channel(o.membership.channel_id)),
+    )
+    .await?;
+    let counterparts = channels.iter().flatten().filter_map(|c| match c {
+        Channel::Direct(c) => Some(dm_counterpart(c, auth.user_id)),
+        Channel::Group(_) | Channel::General(_) => None,
+    });
+    let users = resolve::user_map(&state.user, &state.group, counterparts).await?;
+
     let mut out = Vec::with_capacity(overviews.len());
-    for overview in &overviews {
-        let title = channel_title(&state, auth.user_id, &overview.membership).await?;
+    for (overview, channel) in overviews.iter().zip(&channels) {
+        let title = match channel {
+            // Dangling membership (channel row gone): render a placeholder.
+            None => "Channel".to_owned(),
+            Some(Channel::Group(c)) => c.name.clone(),
+            Some(Channel::General(_)) => "General".to_owned(),
+            Some(Channel::Direct(c)) => {
+                resolve::summary_from(&users, dm_counterpart(c, auth.user_id)).full_name
+            }
+        };
         out.push(dto::channel_summary_dto(
             &overview.membership,
             title,
@@ -98,6 +117,15 @@ async fn list_channels(
         ));
     }
     Ok(Json(out))
+}
+
+/// The other participant of a direct channel from the viewer's perspective.
+fn dm_counterpart(c: &DirectChannel, viewer: UserId) -> UserId {
+    if c.user_low_id == viewer {
+        c.user_high_id
+    } else {
+        c.user_low_id
+    }
 }
 
 async fn list_messages(
@@ -177,24 +205,7 @@ async fn upload_attachment(
     Path(id): Path<Uuid>,
     mut multipart: Multipart,
 ) -> Result<Json<ChatAttachmentDto>, AppError> {
-    let field = multipart
-        .next_field()
-        .await
-        .map_err(|e| AppError::Validation(format!("invalid multipart body: {e}")))?
-        .ok_or_else(|| AppError::Validation("no file field in upload".into()))?;
-    let filename = field
-        .file_name()
-        .map(file::sanitize_filename)
-        .ok_or_else(|| AppError::Validation("upload field has no filename".into()))?
-        .map_err(|e| AppError::Validation(e.to_string()))?;
-    let content_type = field
-        .content_type()
-        .map_or_else(|| "application/octet-stream".to_owned(), ToOwned::to_owned);
-    let bytes = field
-        .bytes()
-        .await
-        .map_err(|e| AppError::Validation(format!("reading upload failed: {e}")))?
-        .to_vec();
+    let (filename, content_type, bytes) = routes::read_upload_field(&mut multipart).await?;
 
     let attachment = state
         .chat
@@ -261,31 +272,6 @@ fn attachments_for(
         .iter()
         .filter_map(|k| map.get(k).cloned())
         .collect()
-}
-
-/// Sidebar title: group name, "General", or the other DM participant's name.
-async fn channel_title(
-    state: &AppState,
-    viewer: UserId,
-    membership: &ChannelMembership,
-) -> Result<String, AppError> {
-    let Some(channel) = state.chat.find_channel(membership.channel_id).await? else {
-        return Ok("Channel".to_owned());
-    };
-    Ok(match channel {
-        Channel::Group(c) => c.name,
-        Channel::General(_) => "General".to_owned(),
-        Channel::Direct(c) => {
-            let other = if c.user_low_id == viewer {
-                c.user_high_id
-            } else {
-                c.user_low_id
-            };
-            resolve::user_summary(&state.user, &state.group, other)
-                .await?
-                .full_name
-        }
-    })
 }
 
 /// Resolves one message's sender + mention summaries and its attachments

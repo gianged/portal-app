@@ -14,16 +14,6 @@ pub enum BalanceExpiryPolicy {
     RecordWorkPct,
 }
 
-impl BalanceExpiryPolicy {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Warn => "warn",
-            Self::RecordWorkPct => "record_work_pct",
-        }
-    }
-}
-
 /// Raised when an [`AttendancePolicy`] fails its cross-field invariants.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("invalid attendance policy: {0}")]

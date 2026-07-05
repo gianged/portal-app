@@ -2225,6 +2225,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "percent-encoding",
  "printpdf",
  "redis 1.3.0",
  "reqwest",

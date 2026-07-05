@@ -63,7 +63,7 @@ pub fn GroupsIndex() -> impl IntoView {
                         "display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: {g};",
                         g = space::D4,
                     ));
-                    view! { <div class=grid>{list.into_iter().map(group_card).collect_view()}</div> }.into_any()
+                    view! { <div class=grid>{list.iter().map(group_card).collect_view()}</div> }.into_any()
                 }
             }}
             <CreateGroupDialog open=create_open on_created=created />
@@ -71,7 +71,7 @@ pub fn GroupsIndex() -> impl IntoView {
     }
 }
 
-fn group_card(g: GroupDto) -> impl IntoView {
+fn group_card(g: &GroupDto) -> AnyView {
     let href = format!("/groups/{}", g.id.0);
     let name = g.name.clone();
     let desc = g.description.clone();
@@ -109,6 +109,7 @@ fn group_card(g: GroupDto) -> impl IntoView {
             </Card>
         </A>
     }
+    .into_any()
 }
 
 #[component]

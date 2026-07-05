@@ -4,6 +4,9 @@ use leptos_router::{
     path,
 };
 
+use shared::dto::ws::ServerFrame;
+
+use crate::api::client;
 use crate::api::ws::WsClient;
 use crate::features::announcements::routes::AnnouncementsPage;
 use crate::features::audit::routes::AuditPage;
@@ -39,7 +42,11 @@ pub fn App() -> impl IntoView {
     provide_context(auth);
     let notifications = NotificationsState::new();
     provide_context(notifications);
-    provide_context(ToastState::new());
+    let toast = ToastState::new();
+    provide_context(toast);
+
+    // Expired session: any 401 clears auth so `RequireAuth` redirects to /login.
+    client::on_unauthorized(move || auth.clear());
 
     let theme = ThemeState::new();
     provide_context(theme);
@@ -51,9 +58,17 @@ pub fn App() -> impl IntoView {
     // authenticated, so a logged-out client never reconnect-loops a 401 upgrade.
     let ws = WsClient::new();
     provide_context(ws);
+    // Socket-level failures (rate limit, rejected send) arrive as frames.
+    let _ = ws.on_frame(move |frame| {
+        if let ServerFrame::Error { message, .. } = frame {
+            toast.error(message.clone());
+        }
+    });
     Effect::new(move |_| {
-        if auth.is_authenticated() {
+        if auth.loaded.get() && auth.is_authenticated() {
             ws.start();
+        } else {
+            ws.stop();
         }
     });
 

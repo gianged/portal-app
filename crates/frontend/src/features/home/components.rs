@@ -3,6 +3,7 @@
 use leptos::{prelude::*, task};
 use leptos_router::{NavigateOptions, components::A, hooks};
 
+use crate::api::ws::WsClient;
 use crate::features::auth::api as auth_api;
 use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::primitives::button::{Button, ButtonVariant};
@@ -13,6 +14,7 @@ use crate::primitives::stack::Gap;
 use crate::state::auth::AuthState;
 use crate::state::notifications::NotificationsState;
 use crate::state::theme::ThemeState;
+use crate::state::toast::ToastState;
 use crate::theme::{self, color, radius, space, typography};
 use crate::util::format;
 
@@ -497,6 +499,8 @@ fn NotificationsBell() -> impl IntoView {
 #[component]
 fn UserMenu() -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");
+    let ws = use_context::<WsClient>().expect("WsClient context");
+    let toast = use_context::<ToastState>().expect("ToastState context");
     let navigate = hooks::use_navigate();
 
     let trigger_cls = theme::class(format!(
@@ -552,7 +556,10 @@ fn UserMenu() -> impl IntoView {
     let on_logout = Callback::new(move |_| {
         let navigate = navigate.clone();
         task::spawn_local(async move {
-            let _ = auth_api::logout().await;
+            if let Err(e) = auth_api::logout().await {
+                toast.error_from(&e);
+            }
+            ws.stop();
             auth.clear();
             navigate("/login", NavigateOptions::default());
         });

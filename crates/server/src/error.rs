@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
+use domain::error::StorageError;
 use shared::dto::common::{ApiError, ErrorCode};
 
 /// HTTP-facing error. Its `IntoResponse` impl is the single place where an
@@ -95,11 +96,19 @@ impl AppError {
                 application::Error::Transition(err) => {
                     (StatusCode::CONFLICT, ErrorCode::Conflict, err.to_string())
                 }
+                // A crafted or malformed storage key is the caller's fault, not
+                // a backend fault, and must not page anyone as a 500.
+                application::Error::Storage(StorageError::InvalidKey(_)) => (
+                    StatusCode::BAD_REQUEST,
+                    ErrorCode::Validation,
+                    "invalid storage key".to_owned(),
+                ),
                 application::Error::Repository(_)
                 | application::Error::Storage(_)
                 | application::Error::Event(_)
                 | application::Error::Job(_)
-                | application::Error::Render(_) => (
+                | application::Error::Render(_)
+                | application::Error::Authz(_) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     ErrorCode::Internal,
                     "internal server error".to_owned(),
@@ -217,6 +226,16 @@ mod tests {
                 application::Error::Job(JobError::Backend("queue".to_owned())).into(),
                 StatusCode::INTERNAL_SERVER_ERROR,
                 ErrorCode::Internal,
+            ),
+            (
+                application::Error::Authz("openfga down".to_owned()).into(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorCode::Internal,
+            ),
+            (
+                application::Error::Storage(StorageError::InvalidKey("../x".to_owned())).into(),
+                StatusCode::BAD_REQUEST,
+                ErrorCode::Validation,
             ),
         ];
 

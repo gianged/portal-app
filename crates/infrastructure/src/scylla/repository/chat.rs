@@ -134,10 +134,12 @@ impl ScyllaChatRepo {
                 "SELECT channel_id FROM portal_chat.singleton_channel WHERE scope = 'general'",
             )
             .await?,
+            // last_read_at is omitted: binding NULL would write a tombstone and
+            // wipe an existing member's read marker on re-subscribe.
             insert_channel_by_user: prepare(
                 &session,
                 "INSERT INTO portal_chat.channels_by_user \
-                 (user_id, channel_id, kind, last_read_at) VALUES (?, ?, ?, ?)",
+                 (user_id, channel_id, kind) VALUES (?, ?, ?)",
             )
             .await?,
             delete_channel_by_user: prepare(
@@ -201,7 +203,7 @@ impl ScyllaChatRepo {
                 &session,
                 format!(
                     "SELECT {ANNOUNCEMENT_COLS} FROM portal_chat.announcements_by_channel \
-                     WHERE channel_id = ?"
+                     WHERE channel_id = ? LIMIT ?"
                 ),
             )
             .await?,
@@ -404,12 +406,7 @@ impl ChatRepository for ScyllaChatRepo {
         self.session
             .execute_unpaged(
                 &self.stmts.insert_channel_by_user,
-                (
-                    user_id.0,
-                    channel_id.0,
-                    channel_kind_str(kind),
-                    None::<OffsetDateTime>,
-                ),
+                (user_id.0, channel_id.0, channel_kind_str(kind)),
             )
             .await
             .map_err(backend)?;
@@ -593,10 +590,12 @@ impl ChatRepository for ScyllaChatRepo {
     async fn list_announcements(
         &self,
         channel_id: ChannelId,
+        limit: u32,
     ) -> Result<Vec<Announcement>, RepositoryError> {
+        let limit = i32::try_from(limit).unwrap_or(i32::MAX);
         let result = self
             .session
-            .execute_unpaged(&self.stmts.list_announcements, (channel_id.0,))
+            .execute_unpaged(&self.stmts.list_announcements, (channel_id.0, limit))
             .await
             .map_err(backend)?;
         let rows = result.into_rows_result().map_err(backend)?;

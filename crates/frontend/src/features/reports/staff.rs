@@ -116,13 +116,13 @@ pub fn StaffMonthlyTab() -> impl IntoView {
             {move || match report.get() {
                 None => load::note("Enter a valid user and pick a month."),
                 Some(Err(e)) => load::load_error(&e),
-                Some(Ok(data)) => staff_view(data),
+                Some(Ok(data)) => staff_view(&data),
             }}
         </Stack>
     }
 }
 
-fn staff_view(data: StaffMonthlyReportDto) -> AnyView {
+fn staff_view(data: &StaffMonthlyReportDto) -> AnyView {
     let hours = vec![
         ("Request work".to_owned(), data.hours_request_work),
         ("Learning".to_owned(), data.hours_learning),
@@ -131,6 +131,18 @@ fn staff_view(data: StaffMonthlyReportDto) -> AnyView {
     let leave = data.leave_days_by_kind.clone();
     let progress = data.avg_request_progress;
     let flex_delta = format!("{:+.1}h", data.flex_month_delta);
+    // The view's child closures must own their data, so read every field up front.
+    let days_reported = data.days_reported.to_string();
+    let hours_request = format!("{:.1}", data.hours_request_work);
+    let hours_learning = format!("{:.1}", data.hours_learning);
+    let hours_other = format!("{:.1}", data.hours_other);
+    let work_pct = format!("{}%", data.work_percentage);
+    let overtime = format!("{:.1}", data.overtime_hours);
+    let flex_days = data.flex_days.to_string();
+    let balance_remaining = format!("{:.1} d", data.balance_remaining);
+    let balance_expiring = format!("{:.1} d", data.balance_expiring_soon);
+    let requests_completed = data.requests_completed.to_string();
+    let requests_open = data.requests_open.to_string();
 
     view! {
         <Stack gap=Gap::Lg>
@@ -138,10 +150,10 @@ fn staff_view(data: StaffMonthlyReportDto) -> AnyView {
                 <Stack gap=Gap::Md>
                     {section_title("Hours by category")}
                     <Cluster gap=Gap::Xl>
-                        {metric("Days reported", data.days_reported.to_string())}
-                        {metric("Request work (h)", format!("{:.1}", data.hours_request_work))}
-                        {metric("Learning (h)", format!("{:.1}", data.hours_learning))}
-                        {metric("Other (h)", format!("{:.1}", data.hours_other))}
+                        {metric("Days reported", days_reported)}
+                        {metric("Request work (h)", hours_request)}
+                        {metric("Learning (h)", hours_learning)}
+                        {metric("Other (h)", hours_other)}
                     </Cluster>
                     <BarChart data=hours height=160 />
                 </Stack>
@@ -151,9 +163,9 @@ fn staff_view(data: StaffMonthlyReportDto) -> AnyView {
                 <Stack gap=Gap::Md>
                     {section_title("Attendance")}
                     <Cluster gap=Gap::Xl>
-                        {metric("Work %", format!("{}%", data.work_percentage))}
-                        {metric("Overtime (h)", format!("{:.1}", data.overtime_hours))}
-                        {metric("Flex days", data.flex_days.to_string())}
+                        {metric("Work %", work_pct)}
+                        {metric("Overtime (h)", overtime)}
+                        {metric("Flex days", flex_days)}
                         {metric("Flex delta", flex_delta)}
                     </Cluster>
                     {(!leave.is_empty())
@@ -174,8 +186,8 @@ fn staff_view(data: StaffMonthlyReportDto) -> AnyView {
                 <Stack gap=Gap::Md>
                     {section_title("Leave balance")}
                     <Cluster gap=Gap::Xl>
-                        {metric("Remaining", format!("{:.1} d", data.balance_remaining))}
-                        {metric("Expiring soon", format!("{:.1} d", data.balance_expiring_soon))}
+                        {metric("Remaining", balance_remaining)}
+                        {metric("Expiring soon", balance_expiring)}
                     </Cluster>
                 </Stack>
             </Card>
@@ -184,8 +196,8 @@ fn staff_view(data: StaffMonthlyReportDto) -> AnyView {
                 <Stack gap=Gap::Md>
                     {section_title("Requests")}
                     <Cluster gap=Gap::Xl>
-                        {metric("Completed", data.requests_completed.to_string())}
-                        {metric("Open", data.requests_open.to_string())}
+                        {metric("Completed", requests_completed)}
+                        {metric("Open", requests_open)}
                         {metric("Avg progress", format!("{progress}%"))}
                     </Cluster>
                     <ProgressBar value=Signal::derive(move || progress) />

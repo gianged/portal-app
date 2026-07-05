@@ -9,9 +9,6 @@ use crate::{
 
 #[async_trait]
 pub trait NotificationRepository: Send + Sync {
-    async fn find_by_id(&self, id: NotificationId)
-    -> Result<Option<Notification>, RepositoryError>;
-
     async fn list_for_user(
         &self,
         user_id: UserId,
@@ -23,11 +20,15 @@ pub trait NotificationRepository: Send + Sync {
 
     async fn save(&self, notification: &Notification) -> Result<(), RepositoryError>;
 
-    async fn mark_read(
+    /// Marks the given notifications read for `user_id` in one statement,
+    /// returning the number updated. Ownership is enforced in the query; ids
+    /// belonging to other users are ignored. An empty `ids` marks all unread.
+    async fn mark_read_many(
         &self,
-        id: NotificationId,
+        user_id: UserId,
+        ids: &[NotificationId],
         at: OffsetDateTime,
-    ) -> Result<(), RepositoryError>;
+    ) -> Result<u64, RepositoryError>;
 
     /// Deletes read notifications whose `read_at` is older than `cutoff`,
     /// returning the number removed. Backs the maintenance retention sweep.

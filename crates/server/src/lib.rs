@@ -22,6 +22,10 @@ pub mod routes;
 use std::future;
 use std::{net::SocketAddr, process, time::Duration};
 
+#[cfg(unix)]
+use tokio::signal::unix::{self, SignalKind};
+use tokio::{signal, time};
+
 use infrastructure::telemetry;
 
 /// Grace after the shutdown signal before the watchdog forces exit.
@@ -62,7 +66,7 @@ pub async fn run() -> anyhow::Result<()> {
 /// finished, so Ctrl-C reliably tears the process down.
 async fn force_exit_watchdog() {
     wait_for_shutdown().await;
-    tokio::time::sleep(FORCE_EXIT_GRACE).await;
+    time::sleep(FORCE_EXIT_GRACE).await;
     tracing::warn!("graceful shutdown timed out; forcing exit");
     process::exit(0);
 }
@@ -76,14 +80,14 @@ async fn shutdown_signal() {
 
 async fn wait_for_shutdown() {
     let ctrl_c = async {
-        if let Err(error) = tokio::signal::ctrl_c().await {
+        if let Err(error) = signal::ctrl_c().await {
             tracing::error!(%error, "failed to install Ctrl-C handler");
         }
     };
 
     #[cfg(unix)]
     let terminate = async {
-        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        match unix::signal(SignalKind::terminate()) {
             Ok(mut signal) => {
                 signal.recv().await;
             }

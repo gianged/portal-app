@@ -244,8 +244,7 @@ impl DailyReportService {
                 continue;
             };
             match self.request.set_progress(actor, request_id, progress).await {
-                Ok(_) => {}
-                Err(Error::Forbidden | Error::NotFound(_) | Error::Transition(_)) => {}
+                Ok(_) | Err(Error::Forbidden | Error::NotFound(_) | Error::Transition(_)) => {}
                 Err(e) => tracing::warn!(error = %e, "daily report progress hint failed"),
             }
         }

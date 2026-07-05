@@ -30,8 +30,6 @@ struct AuditRow {
     entity_schema: String,
     entity_table: String,
     entity_id: Uuid,
-    payload_before: Option<String>,
-    payload_after: Option<String>,
     occurred_at: OffsetDateTime,
 }
 
@@ -44,8 +42,6 @@ impl From<AuditRow> for AuditLog {
             entity_schema: r.entity_schema,
             entity_table: r.entity_table,
             entity_id: r.entity_id,
-            payload_before: r.payload_before,
-            payload_after: r.payload_after,
             occurred_at: r.occurred_at,
         }
     }
@@ -57,20 +53,16 @@ impl AuditRepository for PgAuditRepo {
     async fn append(&self, e: &AuditLog) -> Result<(), RepositoryError> {
         // Immutable append (invariant 5): plain INSERT, no UPSERT.
         let action = SqlAuditAction::from(e.action);
-        // Bind payload_* as TEXT and cast ::text::jsonb; a direct ::jsonb makes sqlx infer serde_json::Value.
         sqlx::query!(
             r#"INSERT INTO audit.audit_log
-                 (id, actor_user_id, action, entity_schema, entity_table, entity_id,
-                  payload_before, payload_after, occurred_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7::text::jsonb, $8::text::jsonb, $9)"#,
+                 (id, actor_user_id, action, entity_schema, entity_table, entity_id, occurred_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
             e.id.0,
             e.actor_user_id.map(|u| u.0),
             action as SqlAuditAction,
             e.entity_schema,
             e.entity_table,
             e.entity_id,
-            e.payload_before.as_deref(),
-            e.payload_after.as_deref(),
             e.occurred_at,
         )
         .execute(&self.pool)
@@ -87,7 +79,7 @@ impl AuditRepository for PgAuditRepo {
         entity_id: Uuid,
         limit: u32,
     ) -> Result<Vec<AuditLog>, RepositoryError> {
-        // Matches idx_audit_log_entity; payload_*::text yields Postgres's canonical JSONB form.
+        // Matches idx_audit_log_entity.
         let rows = sqlx::query_as!(
             AuditRow,
             r#"SELECT
@@ -97,8 +89,6 @@ impl AuditRepository for PgAuditRepo {
                  entity_schema,
                  entity_table,
                  entity_id,
-                 payload_before::text AS "payload_before?: String",
-                 payload_after::text  AS "payload_after?: String",
                  occurred_at
                FROM audit.audit_log
                WHERE entity_schema = $1 AND entity_table = $2 AND entity_id = $3
@@ -131,8 +121,6 @@ impl AuditRepository for PgAuditRepo {
                  entity_schema,
                  entity_table,
                  entity_id,
-                 payload_before::text AS "payload_before?: String",
-                 payload_after::text  AS "payload_after?: String",
                  occurred_at
                FROM audit.audit_log
                WHERE $1::timestamptz IS NULL OR occurred_at < $1

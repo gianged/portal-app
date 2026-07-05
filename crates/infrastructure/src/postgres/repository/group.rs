@@ -277,6 +277,9 @@ impl GroupRepository for PgGroupRepo {
         &self,
         user_ids: &[UserId],
     ) -> Result<Vec<Membership>, RepositoryError> {
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
+        }
         let ids: Vec<Uuid> = user_ids.iter().map(|u| u.0).collect();
         let rows = sqlx::query_as!(
             MembershipRow,

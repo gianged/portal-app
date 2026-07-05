@@ -367,17 +367,15 @@ impl NotificationFanout {
                 first_err = Some(e);
             }
         }
-        match first_err {
-            Some(e) => Err(e.into()),
-            None => {
-                // Email only after all saves succeed: a partial failure makes
-                // apalis retry the job, and emailing first would double-send.
-                if let Some(email) = &self.email {
-                    email.notify(&targets, payload).await;
-                }
-                Ok(())
-            }
+        if let Some(e) = first_err {
+            return Err(e.into());
         }
+        // Email only after all saves succeed: a partial failure makes
+        // apalis retry the job, and emailing first would double-send.
+        if let Some(email) = &self.email {
+            email.notify(&targets, payload).await;
+        }
+        Ok(())
     }
 
     /// Recipients of a channel-scoped notification (e.g. an announcement).

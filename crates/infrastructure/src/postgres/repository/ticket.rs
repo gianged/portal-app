@@ -119,7 +119,7 @@ impl TicketRepository for PgTicketRepo {
                FROM ticket.tickets
                WHERE status IN ('open', 'triaged', 'assigned', 'in_progress', 'reopened')
                  AND ($2::text IS NULL OR title ILIKE $2)
-               ORDER BY priority NULLS LAST, created_at
+               ORDER BY priority DESC NULLS LAST, created_at
                LIMIT $1"#,
             i64::from(limit),
             pattern,

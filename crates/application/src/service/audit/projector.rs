@@ -44,19 +44,19 @@ impl AuditProjector {
             }
             DomainEvent::UserDeactivated {
                 user_id, actor, at, ..
-            } => row(Some(*actor), StatusChange, "auth", "users", user_id.0, *at),
-            DomainEvent::UserReactivated {
+            }
+            | DomainEvent::UserReactivated {
                 user_id, actor, at, ..
             } => row(Some(*actor), StatusChange, "auth", "users", user_id.0, *at),
             DomainEvent::UserProfileUpdated {
+                user_id, actor, at, ..
+            }
+            | DomainEvent::UserPasswordReset {
                 user_id, actor, at, ..
             } => row(Some(*actor), Update, "auth", "users", user_id.0, *at),
             DomainEvent::UserPasswordChanged { user_id, at } => {
                 row(Some(*user_id), Update, "auth", "users", user_id.0, *at)
             }
-            DomainEvent::UserPasswordReset {
-                user_id, actor, at, ..
-            } => row(Some(*actor), Update, "auth", "users", user_id.0, *at),
 
             // --- groups: org.groups ---
             DomainEvent::GroupCreated {
@@ -354,7 +354,7 @@ fn comment_row(
     row(actor, action, schema, table, entity_id, occurred_at)
 }
 
-/// Builds an immutable audit row. `payload_*` stay `None` (see the type doc).
+/// Builds an immutable audit row.
 fn row(
     actor: Option<UserId>,
     action: AuditAction,
@@ -370,8 +370,6 @@ fn row(
         entity_schema: schema.to_owned(),
         entity_table: table.to_owned(),
         entity_id,
-        payload_before: None,
-        payload_after: None,
         occurred_at,
     }
 }

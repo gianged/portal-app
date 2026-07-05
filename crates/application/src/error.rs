@@ -32,13 +32,17 @@ pub enum Error {
     Job(#[from] JobError),
     #[error(transparent)]
     Render(#[from] RenderError),
+
+    /// Authz backend fault, kept distinct from datastore faults for triage.
+    #[error("authz backend error: {0}")]
+    Authz(String),
 }
 
 impl From<AuthzError> for Error {
     fn from(err: AuthzError) -> Self {
         match err {
             AuthzError::Denied => Self::Forbidden,
-            AuthzError::Backend(msg) => Self::Repository(RepositoryError::Backend(msg)),
+            AuthzError::Backend(msg) => Self::Authz(msg),
         }
     }
 }

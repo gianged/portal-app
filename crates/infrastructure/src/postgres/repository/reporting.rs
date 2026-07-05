@@ -69,7 +69,6 @@ struct RequestStatsRow {
     group_id: Uuid,
     total: i64,
     completed: i64,
-    cancelled: i64,
     open: i64,
 }
 
@@ -93,8 +92,6 @@ struct TicketStatsRow {
 struct StaffStatsRow {
     group_id: Uuid,
     headcount: i64,
-    new_joiners: i64,
-    deactivations: i64,
 }
 
 struct MonthlyBucketRow {
@@ -216,7 +213,6 @@ impl ReportStatsRepository for PgReportingRepo {
                  g.id AS "group_id!",
                  COUNT(r.id)                                    AS "total!",
                  COUNT(*) FILTER (WHERE r.status = 'completed') AS "completed!",
-                 COUNT(*) FILTER (WHERE r.status = 'cancelled') AS "cancelled!",
                  COUNT(*) FILTER (
                    WHERE r.status IN ('draft','submitted','assigned','in_progress','review')
                  )                                              AS "open!"
@@ -238,7 +234,6 @@ impl ReportStatsRepository for PgReportingRepo {
                 group_id: GroupId(r.group_id),
                 total: count(r.total),
                 completed: count(r.completed),
-                cancelled: count(r.cancelled),
                 open: count(r.open),
             })
             .collect())
@@ -310,15 +305,12 @@ impl ReportStatsRepository for PgReportingRepo {
                  COUNT(m.id) FILTER (
                    WHERE m.joined_at < $1
                      AND (m.deactivated_at IS NULL OR m.deactivated_at >= $1)
-                 )                                                                AS "headcount!",
-                 COUNT(m.id) FILTER (WHERE m.joined_at      >= $2 AND m.joined_at      < $1) AS "new_joiners!",
-                 COUNT(m.id) FILTER (WHERE m.deactivated_at >= $2 AND m.deactivated_at < $1) AS "deactivations!"
+                 )                                                                AS "headcount!"
                FROM org.groups g
                LEFT JOIN org.memberships m ON m.group_id = g.id
                GROUP BY g.id
                ORDER BY g.id"#,
             period.end,
-            period.start,
         )
         .fetch_all(&self.pool)
         .await
@@ -329,8 +321,6 @@ impl ReportStatsRepository for PgReportingRepo {
             .map(|r| GroupStaffStats {
                 group_id: GroupId(r.group_id),
                 headcount: count(r.headcount),
-                new_joiners: count(r.new_joiners),
-                deactivations: count(r.deactivations),
             })
             .collect())
     }
@@ -455,7 +445,7 @@ impl ReportStatsRepository for PgReportingRepo {
             .ok_or_else(|| RepositoryError::Backend("invalid report period".into()))?;
 
         // Approved daily-report hours by kind + distinct reported dates.
-        let reports = sqlx::query!(
+        let reports_q = sqlx::query!(
             r#"SELECT
                  COALESCE(SUM(e.hours) FILTER (WHERE e.kind = 'request_work'), 0)::float8 AS "request_work!",
                  COALESCE(SUM(e.hours) FILTER (WHERE e.kind = 'learning'), 0)::float8      AS "learning!",
@@ -471,12 +461,10 @@ impl ReportStatsRepository for PgReportingRepo {
             first,
             last,
         )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(mappers::map_pg_error)?;
+        .fetch_one(&self.pool);
 
         // Approved leave days by kind; cross-month requests count fully in each overlapping month.
-        let leave_rows = sqlx::query!(
+        let leave_q = sqlx::query!(
             r#"SELECT
                  kind AS "kind: SqlDayOffKind",
                  COALESCE(SUM(days), 0)::float8 AS "days!"
@@ -490,16 +478,10 @@ impl ReportStatsRepository for PgReportingRepo {
             first,
             last,
         )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(mappers::map_pg_error)?;
-        let leave_days_by_kind: Vec<(DayOffKind, f64)> = leave_rows
-            .into_iter()
-            .map(|r| (DayOffKind::from(r.kind), r.days))
-            .collect();
+        .fetch_all(&self.pool);
 
         // Approved overtime hours worked in the month.
-        let overtime = sqlx::query!(
+        let overtime_q = sqlx::query!(
             r#"SELECT COALESCE(SUM(hours), 0)::float8 AS "hours!"
                FROM attendance.overtime
                WHERE requester_user_id = $1
@@ -510,12 +492,10 @@ impl ReportStatsRepository for PgReportingRepo {
             first,
             last,
         )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(mappers::map_pg_error)?;
+        .fetch_one(&self.pool);
 
         // Approved flex day count in the month.
-        let flex = sqlx::query!(
+        let flex_q = sqlx::query!(
             r#"SELECT COUNT(*) AS "count!"
                FROM attendance.flex_hours
                WHERE user_id = $1
@@ -526,12 +506,10 @@ impl ReportStatsRepository for PgReportingRepo {
             first,
             last,
         )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(mappers::map_pg_error)?;
+        .fetch_one(&self.pool);
 
         // Remaining balance on grants expiring within the report month.
-        let balance = sqlx::query!(
+        let balance_q = sqlx::query!(
             r#"SELECT COALESCE(SUM(days_remaining), 0)::float8 AS "soon!"
                FROM attendance.leave_grants
                WHERE user_id = $1
@@ -542,13 +520,11 @@ impl ReportStatsRepository for PgReportingRepo {
             first,
             last,
         )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(mappers::map_pg_error)?;
+        .fetch_one(&self.pool);
 
         // Requests assigned to the user: completed in the period vs still open,
         // plus the average progress over active (non-terminal) requests.
-        let requests = sqlx::query!(
+        let requests_q = sqlx::query!(
             r#"SELECT
                  COUNT(*) FILTER (
                    WHERE status = 'completed' AND completed_at >= $2 AND completed_at < $3
@@ -565,9 +541,17 @@ impl ReportStatsRepository for PgReportingRepo {
             period.start,
             period.end,
         )
-        .fetch_one(&self.pool)
-        .await
+        .fetch_one(&self.pool);
+
+        // Independent aggregates; one wall-clock round instead of six.
+        let (reports, leave_rows, overtime, flex, balance, requests) = tokio::try_join!(
+            reports_q, leave_q, overtime_q, flex_q, balance_q, requests_q
+        )
         .map_err(mappers::map_pg_error)?;
+        let leave_days_by_kind: Vec<(DayOffKind, f64)> = leave_rows
+            .into_iter()
+            .map(|r| (DayOffKind::from(r.kind), r.days))
+            .collect();
 
         Ok(StaffMonthlyStats {
             days_reported: count(reports.days_reported),

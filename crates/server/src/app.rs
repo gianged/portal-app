@@ -1,4 +1,4 @@
-use std::{any::Any, sync::Arc};
+use std::{any::Any, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use axum::{
@@ -77,7 +77,14 @@ use crate::{
         request_id, trace,
     },
     realtime::Realtime,
-    routes,
+    resolve,
+    // `routes::auth` stays path-qualified at call sites: `auth` here names the
+    // middleware module.
+    routes::{
+        self, announcements, audit, chat, chat_ws, daily_reports, day_off, files, flex_hours,
+        groups, holidays, leave_balance, notifications, overtime, policy, projects, reports,
+        requests, tickets, users,
+    },
 };
 
 /// Dependency-injection seam shared by every handler; cheap to clone since every
@@ -122,6 +129,8 @@ pub struct AppState {
     // Server-side token revocation (logout denylist + per-user version), checked by auth middleware.
     pub revocation: Arc<dyn TokenRevocation>,
     pub realtime: Realtime,
+    // Short-TTL user-summary cache for the WS fan-out path.
+    pub summary_cache: Arc<resolve::SummaryCache>,
     pub audit_service: Arc<AuditService>,
     pub presence: Arc<dyn Presence>,
     pub rate_limiter: Arc<dyn RateLimit>,
@@ -487,6 +496,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
         token,
         revocation,
         realtime,
+        summary_cache: Arc::new(resolve::SummaryCache::new(Duration::from_secs(30))),
         audit_service,
         presence,
         rate_limiter,
@@ -520,24 +530,24 @@ pub fn router(state: AppState) -> Router {
     // Auth is the outer layer so it inserts `AuthUser` before the per-user limiter
     // reads it.
     let protected = routes::auth::me_router()
-        .merge(routes::users::router())
-        .merge(routes::groups::router())
-        .merge(routes::projects::router())
-        .merge(routes::requests::router())
-        .merge(routes::tickets::router())
-        .merge(routes::chat::router())
-        .merge(routes::chat_ws::router())
-        .merge(routes::announcements::router())
-        .merge(routes::notifications::router())
-        .merge(routes::audit::router())
-        .merge(routes::reports::router())
-        .merge(routes::policy::router())
-        .merge(routes::daily_reports::router())
-        .merge(routes::holidays::router())
-        .merge(routes::leave_balance::router())
-        .merge(routes::day_off::router())
-        .merge(routes::overtime::router())
-        .merge(routes::flex_hours::router())
+        .merge(users::router())
+        .merge(groups::router())
+        .merge(projects::router())
+        .merge(requests::router())
+        .merge(tickets::router())
+        .merge(chat::router())
+        .merge(chat_ws::router())
+        .merge(announcements::router())
+        .merge(notifications::router())
+        .merge(audit::router())
+        .merge(reports::router())
+        .merge(policy::router())
+        .merge(daily_reports::router())
+        .merge(holidays::router())
+        .merge(leave_balance::router())
+        .merge(day_off::router())
+        .merge(overtime::router())
+        .merge(flex_hours::router())
         .route_layer(from_fn_with_state(state.clone(), rate_limit::per_user))
         .route_layer(from_fn_with_state(state.clone(), auth::require_auth));
 
@@ -547,8 +557,7 @@ pub fn router(state: AppState) -> Router {
 
     // Files need session + signed `?exp&sig` (bound to the user); skip the per-user limiter -
     // the signature already scopes each fetch, so image-heavy pages don't burn the API budget.
-    let files =
-        routes::files::router().route_layer(from_fn_with_state(state.clone(), auth::require_auth));
+    let files = files::router().route_layer(from_fn_with_state(state.clone(), auth::require_auth));
     let api = public.merge(protected).merge(files);
 
     Router::new()

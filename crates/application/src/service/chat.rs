@@ -471,13 +471,14 @@ impl ChatService {
 
 /// Recover the creation timestamp embedded in a `UUIDv7` ID. Used for the
 /// message-delete grace window since `Message` doesn't store `created_at`; the
-/// time is implicit in the id.
+/// time is implicit in the id. Ids are store-sourced, so a non-v7 row falls back
+/// to the epoch (grace window treated as long expired) instead of panicking.
 fn uuid_v7_created_at(id: Uuid) -> OffsetDateTime {
-    let ts = id
-        .get_timestamp()
-        .expect("UUIDv7 ID always carries an embedded timestamp");
-    let (secs, nanos) = ts.to_unix();
-    let total_nanos = i128::from(secs) * 1_000_000_000 + i128::from(nanos);
-    OffsetDateTime::from_unix_timestamp_nanos(total_nanos)
-        .expect("UUIDv7 timestamp falls within OffsetDateTime range")
+    id.get_timestamp()
+        .and_then(|ts| {
+            let (secs, nanos) = ts.to_unix();
+            let total_nanos = i128::from(secs) * 1_000_000_000 + i128::from(nanos);
+            OffsetDateTime::from_unix_timestamp_nanos(total_nanos).ok()
+        })
+        .unwrap_or(OffsetDateTime::UNIX_EPOCH)
 }

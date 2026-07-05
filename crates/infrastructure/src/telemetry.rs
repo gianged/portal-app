@@ -81,6 +81,7 @@ pub struct TelemetryGuard {
 impl Drop for TelemetryGuard {
     fn drop(&mut self) {
         if let Some(provider) = &self.provider {
+            // Best-effort span drain; tracing may already be torn down here.
             let _ = provider.shutdown();
         }
     }

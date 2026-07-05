@@ -4,13 +4,13 @@ use printpdf::{
     BuiltinFont, Color, Line, LinePoint, Mm, Op, PaintMode, PdfDocument, PdfFontHandle, PdfPage,
     PdfSaveOptions, Point, Polygon, PolygonRing, Pt, Rgb, TextItem, WindingOrder,
 };
-use time::OffsetDateTime;
+use time::{Month, OffsetDateTime};
 
 use domain::{
     error::RenderError,
     model::{
         DayOffKind, GroupReportRow, MonthlyReportData, StaffMonthlyReport, StaffSummary,
-        TicketCategory, TicketStatus, TicketSummary, YearlyReportData,
+        TicketCategory, TicketStats, TicketStatus, YearlyReportData,
     },
     ports::report_renderer::ReportRenderer,
 };
@@ -73,37 +73,52 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-fn month_name(m: u8) -> &'static str {
+const MONTHS: [Month; 12] = [
+    Month::January,
+    Month::February,
+    Month::March,
+    Month::April,
+    Month::May,
+    Month::June,
+    Month::July,
+    Month::August,
+    Month::September,
+    Month::October,
+    Month::November,
+    Month::December,
+];
+
+fn month_name(m: Month) -> &'static str {
     match m {
-        1 => "January",
-        2 => "February",
-        3 => "March",
-        4 => "April",
-        5 => "May",
-        6 => "June",
-        7 => "July",
-        8 => "August",
-        9 => "September",
-        10 => "October",
-        11 => "November",
-        _ => "December",
+        Month::January => "January",
+        Month::February => "February",
+        Month::March => "March",
+        Month::April => "April",
+        Month::May => "May",
+        Month::June => "June",
+        Month::July => "July",
+        Month::August => "August",
+        Month::September => "September",
+        Month::October => "October",
+        Month::November => "November",
+        Month::December => "December",
     }
 }
 
-fn month_abbr(m: u8) -> &'static str {
+fn month_abbr(m: Month) -> &'static str {
     match m {
-        1 => "Jan",
-        2 => "Feb",
-        3 => "Mar",
-        4 => "Apr",
-        5 => "May",
-        6 => "Jun",
-        7 => "Jul",
-        8 => "Aug",
-        9 => "Sep",
-        10 => "Oct",
-        11 => "Nov",
-        _ => "Dec",
+        Month::January => "Jan",
+        Month::February => "Feb",
+        Month::March => "Mar",
+        Month::April => "Apr",
+        Month::May => "May",
+        Month::June => "Jun",
+        Month::July => "Jul",
+        Month::August => "Aug",
+        Month::September => "Sep",
+        Month::October => "Oct",
+        Month::November => "Nov",
+        Month::December => "Dec",
     }
 }
 
@@ -413,7 +428,7 @@ fn group_table(c: &mut Canvas, groups: &[GroupReportRow]) {
     }
 }
 
-fn tickets_section(c: &mut Canvas, t: &TicketSummary) {
+fn tickets_section(c: &mut Canvas, t: &TicketStats) {
     c.subheading("IT Tickets");
     c.caption(&format!(
         "Created in period: {}    Resolved in period: {}{}",
@@ -481,7 +496,7 @@ impl ReportRenderer for PrintPdfReportRenderer {
             t.tickets_created, t.projects_completed, t.requests_completed
         ));
 
-        let labels: Vec<String> = (1..=12u8).map(|m| month_abbr(m).to_owned()).collect();
+        let labels: Vec<String> = MONTHS.iter().map(|m| month_abbr(*m).to_owned()).collect();
         let headcount: Vec<f64> = data
             .growth
             .headcount
@@ -587,8 +602,8 @@ impl ReportRenderer for PrintPdfReportRenderer {
     }
 }
 
-fn period_label(start: OffsetDateTime) -> (i32, u8) {
-    (start.year(), u8::from(start.month()))
+fn period_label(start: OffsetDateTime) -> (i32, Month) {
+    (start.year(), start.month())
 }
 
 fn ticket_status_label(s: TicketStatus) -> &'static str {

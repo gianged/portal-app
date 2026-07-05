@@ -33,6 +33,8 @@ pub struct Config {
     pub openfga_bearer_token: Option<String>,
     pub storage_root: PathBuf,
     pub storage_public_base: String,
+    /// HMAC key for signing storage download URLs.
+    pub storage_signing_secret: String,
     /// Read notifications older than this are pruned.
     pub notification_retention: Duration,
     /// How often the notification-prune job runs.
@@ -180,6 +182,7 @@ pub fn from_env() -> anyhow::Result<Config> {
         openfga_bearer_token,
         storage_root: optional("STORAGE_ROOT", "./storage/uploads").into(),
         storage_public_base: optional("STORAGE_PUBLIC_BASE", "http://localhost:8080/api/v1"),
+        storage_signing_secret: required_secret("STORAGE_SIGNING_SECRET")?,
         notification_retention: Duration::days(retention_days),
         cleanup_interval: StdDuration::from_secs(cleanup_interval_hours * 3600),
         upload_grace: Duration::hours(upload_grace_hours),
@@ -213,4 +216,16 @@ fn required(key: &str) -> anyhow::Result<String> {
 
 fn optional(key: &str, default: &str) -> String {
     env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+/// Like [`required`] but rejects brute-forceable values and `.env.example` placeholders.
+fn required_secret(key: &str) -> anyhow::Result<String> {
+    let value = required(key)?;
+    if value.len() < 32 || value.starts_with("change-me") {
+        anyhow::bail!(
+            "{key} must be a random secret of at least 32 bytes — generate one with \
+             `openssl rand -hex 32`"
+        );
+    }
+    Ok(value)
 }

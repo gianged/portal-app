@@ -38,6 +38,8 @@ pub enum AuthzError {
 pub enum StorageError {
     #[error("object not found")]
     NotFound,
+    #[error("invalid storage key: {0}")]
+    InvalidKey(String),
     #[error("backend error: {0}")]
     Backend(String),
 }

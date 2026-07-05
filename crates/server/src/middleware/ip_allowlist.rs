@@ -24,6 +24,12 @@ use ipnet::IpNet;
 
 use crate::{app::AppState, error::AppError};
 
+/// The trusted-proxy-resolved client IP, inserted into request extensions by
+/// [`enforce`] so downstream middleware (the login rate limiter) judges the
+/// same address the gate did.
+#[derive(Clone, Copy)]
+pub struct ClientIp(pub IpAddr);
+
 /// Allowed source networks + trusted proxies + enable flag. Held in `AppState`,
 /// populated from `Config`. `Arc<[IpNet]>` keeps `AppState` cheap to clone.
 #[derive(Clone)]
@@ -69,7 +75,7 @@ impl IpAllowlist {
 /// peer address is attached or a trusted proxy forwards an unusable chain.
 pub async fn enforce(
     State(state): State<AppState>,
-    req: Request,
+    mut req: Request,
     next: Next,
 ) -> Result<Response, AppError> {
     if !state.ip_allowlist.enabled {
@@ -86,7 +92,10 @@ pub async fn enforce(
     };
 
     match state.ip_allowlist.client_ip(peer, req.headers()) {
-        Some(ip) if state.ip_allowlist.allows(ip) => Ok(next.run(req).await),
+        Some(ip) if state.ip_allowlist.allows(ip) => {
+            req.extensions_mut().insert(ClientIp(ip));
+            Ok(next.run(req).await)
+        }
         Some(ip) => {
             tracing::warn!(peer = %peer, client_ip = %ip, "ip allowlist: rejected out-of-network client");
             Err(Error::Forbidden.into())

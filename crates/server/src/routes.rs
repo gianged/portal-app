@@ -20,9 +20,39 @@ pub mod requests;
 pub mod tickets;
 pub mod users;
 
+use axum::extract::Multipart;
 use time::{Date, Month};
 
+use shared::validation::file;
+
 use crate::error::AppError;
+
+/// Reads the first multipart field of an upload as
+/// `(sanitized filename, content type, bytes)`. Shared by every upload route so
+/// their validation cannot drift.
+pub(crate) async fn read_upload_field(
+    multipart: &mut Multipart,
+) -> Result<(String, String, Vec<u8>), AppError> {
+    let field = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::Validation(format!("invalid multipart body: {e}")))?
+        .ok_or_else(|| AppError::Validation("no file field in upload".into()))?;
+    let filename = field
+        .file_name()
+        .map(file::sanitize_filename)
+        .ok_or_else(|| AppError::Validation("upload field has no filename".into()))?
+        .map_err(|e| AppError::Validation(e.to_string()))?;
+    let content_type = field
+        .content_type()
+        .map_or_else(|| "application/octet-stream".to_owned(), ToOwned::to_owned);
+    let bytes = field
+        .bytes()
+        .await
+        .map_err(|e| AppError::Validation(format!("reading upload failed: {e}")))?
+        .to_vec();
+    Ok((filename, content_type, bytes))
+}
 
 /// Normalizes a `q` search parameter: trims, drops empties, and caps the
 /// length (anything longer than 100 chars isn't a search, it's a payload).

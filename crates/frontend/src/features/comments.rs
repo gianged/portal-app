@@ -48,16 +48,13 @@ async fn list(
     limit: u32,
 ) -> Result<Vec<CommentDto>, FrontendError> {
     let limit_s = limit.to_string();
-    let path = match before {
-        Some(b) => {
-            let before_s = b.0.to_string();
-            let q = client::query(&[("before", &before_s), ("limit", &limit_s)]);
-            format!("{}{q}", target.base_path())
-        }
-        None => {
-            let q = client::query(&[("limit", &limit_s)]);
-            format!("{}{q}", target.base_path())
-        }
+    let path = if let Some(b) = before {
+        let before_s = b.0.to_string();
+        let q = client::query(&[("before", &before_s), ("limit", &limit_s)]);
+        format!("{}{q}", target.base_path())
+    } else {
+        let q = client::query(&[("limit", &limit_s)]);
+        format!("{}{q}", target.base_path())
     };
     client::get_json(&path).await
 }
@@ -197,7 +194,7 @@ pub fn CommentThread(#[prop(into)] target: Signal<Option<CommentTarget>>) -> imp
                         load::note("No comments yet — start the discussion.")
                     } else {
                         let rows = list
-                            .into_iter()
+                            .iter()
                             .map(|c| comment_row(c, begin_edit, do_delete))
                             .collect_view();
                         view! { <Stack gap=Gap::Xs>{rows}</Stack> }.into_any()
@@ -223,10 +220,10 @@ pub fn CommentThread(#[prop(into)] target: Signal<Option<CommentTarget>>) -> imp
 }
 
 fn comment_row(
-    c: CommentDto,
+    c: &CommentDto,
     begin_edit: impl Fn(CommentId, String) + Copy + Send + Sync + 'static,
     do_delete: impl Fn(CommentId) + Copy + Send + Sync + 'static,
-) -> impl IntoView {
+) -> AnyView {
     let author = c.author.full_name.clone();
     let when = format::relative_time(c.created_at);
     let edited = c.edited_at.is_some();
@@ -298,6 +295,7 @@ fn comment_row(
             </div>
         </div>
     }
+    .into_any()
 }
 
 #[component]

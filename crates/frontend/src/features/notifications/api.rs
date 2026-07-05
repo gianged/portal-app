@@ -1,22 +1,14 @@
 //! In-app notification data: the unread badge count, the inbox list, and the mark-read flow.
 
-use serde::Deserialize;
-
 use shared::dto::ids::NotificationId;
-use shared::dto::notification::{MarkReadRequest, NotificationDto};
+use shared::dto::notification::{MarkReadRequest, NotificationDto, UnreadCountDto};
 
 use crate::api::client;
 use crate::api::error::FrontendError;
 
-/// Local shape for the bare `{ "count": <n> }` body from `GET /notifications/unread-count` (no shared DTO).
-#[derive(Deserialize)]
-struct UnreadCount {
-    count: u64,
-}
-
 /// Number of unread notifications for the current user (topbar badge).
 pub async fn unread_count() -> Result<u64, FrontendError> {
-    let resp: UnreadCount = client::get_json("/notifications/unread-count").await?;
+    let resp: UnreadCountDto = client::get_json("/notifications/unread-count").await?;
     Ok(resp.count)
 }
 

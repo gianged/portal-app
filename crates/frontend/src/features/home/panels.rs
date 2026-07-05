@@ -117,7 +117,7 @@ pub fn RequestsPanel(requests: Loadable<Vec<RequestDto>>) -> impl IntoView {
                 Some(Ok(items)) if items.is_empty() => {
                     note("Nothing assigned to you right now.", true)
                 }
-                Some(Ok(items)) => requests_table(items),
+                Some(Ok(items)) => requests_table(&items),
             }}
         </TableWrap>
     }
@@ -135,7 +135,7 @@ pub fn TicketsPanel(tickets: Loadable<Vec<TicketDto>>) -> impl IntoView {
                     Some(Ok(items)) if items.is_empty() => {
                         note("You haven't raised any tickets.", false)
                     }
-                    Some(Ok(items)) => tickets_list(items),
+                    Some(Ok(items)) => tickets_list(&items),
                 }}
             </Stack>
         </Card>
@@ -152,16 +152,16 @@ pub fn ChannelsPanel(channels: Loadable<Vec<ChannelSummaryDto>>) -> impl IntoVie
                     None => note("Loading channels…", false),
                     Some(Err(e)) => load::load_error(&e),
                     Some(Ok(items)) if items.is_empty() => note("No channels yet.", false),
-                    Some(Ok(items)) => channels_list(items),
+                    Some(Ok(items)) => channels_list(&items),
                 }}
             </Stack>
         </Card>
     }
 }
 
-fn requests_table(items: Vec<RequestDto>) -> AnyView {
+fn requests_table(items: &[RequestDto]) -> AnyView {
     let total = items.len();
-    let rows = items.into_iter().take(6).map(request_row).collect_view();
+    let rows = items.iter().take(6).map(request_row).collect_view();
     let footer = (total > 6).then(|| {
         let cls = theme::class(format!(
             "padding: {p}; font-family: {ff}; font-size: {fs}; color: {c};",
@@ -191,7 +191,7 @@ fn requests_table(items: Vec<RequestDto>) -> AnyView {
     .into_any()
 }
 
-fn request_row(r: RequestDto) -> impl IntoView {
+fn request_row(r: &RequestDto) -> AnyView {
     let id = r.id.0.to_string();
     let short = id.get(..8).unwrap_or(id.as_str()).to_owned();
     let title = r.title.clone();
@@ -212,14 +212,15 @@ fn request_row(r: RequestDto) -> impl IntoView {
             <td><span class="cell-muted">{updated}</span></td>
         </tr>
     }
+    .into_any()
 }
 
-fn tickets_list(items: Vec<TicketDto>) -> AnyView {
-    let rows = items.into_iter().take(6).map(ticket_row).collect_view();
+fn tickets_list(items: &[TicketDto]) -> AnyView {
+    let rows = items.iter().take(6).map(ticket_row).collect_view();
     view! { <Stack gap=Gap::Sm>{rows}</Stack> }.into_any()
 }
 
-fn ticket_row(t: TicketDto) -> impl IntoView {
+fn ticket_row(t: &TicketDto) -> AnyView {
     let row = theme::class(format!(
         "display: flex; align-items: center; gap: {g};",
         g = space::D3
@@ -247,14 +248,15 @@ fn ticket_row(t: TicketDto) -> impl IntoView {
             <span class=age>{created}</span>
         </div>
     }
+    .into_any()
 }
 
-fn channels_list(items: Vec<ChannelSummaryDto>) -> AnyView {
-    let rows = items.into_iter().take(6).map(channel_row).collect_view();
+fn channels_list(items: &[ChannelSummaryDto]) -> AnyView {
+    let rows = items.iter().take(6).map(channel_row).collect_view();
     view! { <Stack gap=Gap::Sm>{rows}</Stack> }.into_any()
 }
 
-fn channel_row(c: ChannelSummaryDto) -> impl IntoView {
+fn channel_row(c: &ChannelSummaryDto) -> AnyView {
     let row = theme::class(format!(
         "display: flex; align-items: center; gap: {g};",
         g = space::D3
@@ -295,6 +297,7 @@ fn channel_row(c: ChannelSummaryDto) -> impl IntoView {
             <span class=age>{when}</span>
         </div>
     }
+    .into_any()
 }
 
 fn assignee_cell(name: &str) -> AnyView {

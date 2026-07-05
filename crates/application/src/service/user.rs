@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use argon2::{
     Argon2,
@@ -15,6 +15,7 @@ use domain::{
     repository::{ChatRepository, GroupRepository, RequestRepository, UserRepository},
 };
 use time::OffsetDateTime;
+use tokio::task;
 use uuid::Uuid;
 
 use crate::{
@@ -126,7 +127,6 @@ impl UserService {
                 user_id: user.id,
                 actor,
                 at: now,
-                after: user.clone(),
             })
             .await?;
         Ok(user)
@@ -155,7 +155,6 @@ impl UserService {
             .emit(DomainEvent::UserActivated {
                 user_id: user.id,
                 at: now,
-                after: user.clone(),
             })
             .await?;
         Ok(user)
@@ -176,10 +175,12 @@ impl UserService {
     #[tracing::instrument(skip_all)]
     pub async fn login(&self, email: &str, password: &str) -> Result<Option<User>> {
         let Some(user) = self.users.find_by_email(email).await? else {
+            decoy_verify(password).await;
             return Ok(None);
         };
         // Deactivated accounts cannot authenticate, even with a valid password.
         if user.status == UserStatus::Deactivated {
+            decoy_verify(password).await;
             return Ok(None);
         }
         if !verify_password(user.password_hash.clone(), password).await? {
@@ -209,7 +210,6 @@ impl UserService {
             .find_by_id(target)
             .await?
             .ok_or(Error::NotFound("user"))?;
-        let before = user.clone();
 
         let memberships = self.groups.list_active_memberships_for_user(target).await?;
         if memberships.iter().any(|m| m.role == GroupRole::Leader) {
@@ -246,8 +246,6 @@ impl UserService {
                 user_id: user.id,
                 actor,
                 at: now,
-                before,
-                after: user,
             })
             .await?;
         Ok(())
@@ -281,7 +279,6 @@ impl UserService {
                 user_id: user.id,
                 actor,
                 at: now,
-                after: user.clone(),
             })
             .await?;
         Ok(user)
@@ -314,7 +311,6 @@ impl UserService {
             .find_by_id(target)
             .await?
             .ok_or(Error::NotFound("user"))?;
-        let before = user.clone();
 
         if let Some(full_name) = cmd.full_name {
             user.full_name = full_name;
@@ -325,8 +321,13 @@ impl UserService {
         if let Some(timezone) = cmd.timezone {
             user.timezone = timezone;
         }
-        if cmd.avatar_storage_key.is_some() {
-            user.avatar_storage_key = cmd.avatar_storage_key;
+        if let Some(key) = cmd.avatar_storage_key {
+            // A profile key is client-supplied; a prefix pin keeps it from
+            // pointing at another user's uploads or arbitrary stored objects.
+            if !key.starts_with(&format!("avatars/{}/", target.0)) {
+                return Err(Error::Validation("invalid avatar storage key".into()));
+            }
+            user.avatar_storage_key = Some(key);
         }
         if let Some(email_notifications) = cmd.email_notifications {
             user.email_notifications = email_notifications;
@@ -339,8 +340,6 @@ impl UserService {
                 user_id: user.id,
                 actor,
                 at: now,
-                before,
-                after: user.clone(),
             })
             .await?;
         Ok(user)
@@ -461,7 +460,7 @@ async fn hash_password(password: impl Into<String>) -> Result<String> {
     // Argon2 is CPU-heavy (tens of ms); run it on the blocking pool so it never
     // stalls a tokio worker thread.
     let password = password.into();
-    tokio::task::spawn_blocking(move || {
+    task::spawn_blocking(move || {
         let salt = SaltString::generate(&mut OsRng);
         let hash = Argon2::default()
             .hash_password(password.as_bytes(), &salt)
@@ -481,12 +480,33 @@ async fn hash_password(password: impl Into<String>) -> Result<String> {
     })?
 }
 
+/// Burns an argon2 verification against a fixed decoy hash so the unknown-email
+/// and deactivated-account paths cost the same as a real check (no timing oracle
+/// for account enumeration). The outcome is discarded by design.
+async fn decoy_verify(password: impl Into<String>) {
+    static DECOY_HASH: LazyLock<String> = LazyLock::new(|| {
+        let salt = SaltString::generate(&mut OsRng);
+        Argon2::default()
+            .hash_password(b"decoy password", &salt)
+            .expect("hashing a fixed decoy password never fails")
+            .to_string()
+    });
+    let password = password.into();
+    let _ = task::spawn_blocking(move || {
+        let Ok(parsed) = PasswordHash::new(&DECOY_HASH) else {
+            return;
+        };
+        let _ = Argon2::default().verify_password(password.as_bytes(), &parsed);
+    })
+    .await;
+}
+
 /// Verifies a candidate password against a stored PHC hash, off the async
 /// runtime (argon2 verification costs the same as hashing).
 async fn verify_password(hash: impl Into<String>, password: impl Into<String>) -> Result<bool> {
     let hash = hash.into();
     let password = password.into();
-    tokio::task::spawn_blocking(move || {
+    task::spawn_blocking(move || {
         let parsed = PasswordHash::new(&hash).map_err(|e| {
             Error::Repository(RepositoryError::Backend(format!(
                 "invalid stored password hash: {e}"

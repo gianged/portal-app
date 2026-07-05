@@ -34,16 +34,13 @@ pub async fn messages(
     limit: u32,
 ) -> Result<Vec<MessageDto>, FrontendError> {
     let limit_s = limit.to_string();
-    let path = match before {
-        Some(b) => {
-            let before_s = b.0.to_string();
-            let q = client::query(&[("before", &before_s), ("limit", &limit_s)]);
-            format!("/chat/channels/{}/messages{q}", channel.0)
-        }
-        None => {
-            let q = client::query(&[("limit", &limit_s)]);
-            format!("/chat/channels/{}/messages{q}", channel.0)
-        }
+    let path = if let Some(b) = before {
+        let before_s = b.0.to_string();
+        let q = client::query(&[("before", &before_s), ("limit", &limit_s)]);
+        format!("/chat/channels/{}/messages{q}", channel.0)
+    } else {
+        let q = client::query(&[("limit", &limit_s)]);
+        format!("/chat/channels/{}/messages{q}", channel.0)
     };
     client::get_json(&path).await
 }

@@ -128,14 +128,14 @@ fn tickets_table(items: Vec<TicketDto>) -> AnyView {
                 </tr>
             </thead>
             <tbody>
-                {items.into_iter().map(ticket_row).collect_view()}
+                {items.iter().map(ticket_row).collect_view()}
             </tbody>
         </Table>
     }
     .into_any()
 }
 
-fn ticket_row(t: TicketDto) -> impl IntoView {
+fn ticket_row(t: &TicketDto) -> AnyView {
     let href = format!("/tickets/{}", t.id.0);
     let id_label = short_id(&t.id.0);
     let title = t.title.clone();
@@ -171,6 +171,7 @@ fn ticket_row(t: TicketDto) -> impl IntoView {
             <td><span class="cell-muted">{updated}</span></td>
         </tr>
     }
+    .into_any()
 }
 
 #[component]

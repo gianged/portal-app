@@ -83,7 +83,7 @@ pub fn ChannelList(selected: RwSignal<Option<ChannelId>>) -> impl IntoView {
                 Some(Err(e)) => load::load_error(&e),
                 Some(Ok(list)) if list.is_empty() => load::note("No channels yet."),
                 Some(Ok(list)) => {
-                    let rows = list.into_iter().map(|c| channel_row(c, selected)).collect_view();
+                    let rows = list.iter().map(|c| channel_row(c, selected)).collect_view();
                     view! { <div class=list_cls.clone()>{rows}</div> }.into_any()
                 }
             }}
@@ -92,7 +92,7 @@ pub fn ChannelList(selected: RwSignal<Option<ChannelId>>) -> impl IntoView {
     }
 }
 
-fn channel_row(c: ChannelSummaryDto, selected: RwSignal<Option<ChannelId>>) -> impl IntoView {
+fn channel_row(c: &ChannelSummaryDto, selected: RwSignal<Option<ChannelId>>) -> AnyView {
     let cid = c.id;
     let title = c.title.clone();
     let unread = c.unread;
@@ -142,6 +142,7 @@ fn channel_row(c: ChannelSummaryDto, selected: RwSignal<Option<ChannelId>>) -> i
             {if unread { view! { <span class=dot></span> }.into_any() } else { ().into_any() }}
         </div>
     }
+    .into_any()
 }
 
 #[component]

@@ -135,7 +135,7 @@ pub fn ProjectsIndex() -> impl IntoView {
                             "display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: {g};",
                             g = space::D4,
                         ));
-                        view! { <div class=grid>{list.into_iter().map(project_card).collect_view()}</div> }.into_any()
+                        view! { <div class=grid>{list.iter().map(project_card).collect_view()}</div> }.into_any()
                     }
                 }
             }}
@@ -144,7 +144,7 @@ pub fn ProjectsIndex() -> impl IntoView {
     }
 }
 
-fn project_card(p: ProjectDto) -> impl IntoView {
+fn project_card(p: &ProjectDto) -> AnyView {
     let href = format!("/projects/{}", p.id.0);
     let name = p.name.clone();
     let desc = p.description.clone();
@@ -181,6 +181,7 @@ fn project_card(p: ProjectDto) -> impl IntoView {
             </Card>
         </A>
     }
+    .into_any()
 }
 
 #[component]

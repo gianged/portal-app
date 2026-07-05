@@ -1,5 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
+use tokio::time;
+
 use domain::{
     health::HealthStatus,
     model::Message,
@@ -70,7 +72,7 @@ impl Drainer {
         loop {
             let batch = match self.breaker.status() {
                 HealthStatus::Down => {
-                    tokio::time::sleep(self.cfg.idle_interval).await;
+                    time::sleep(self.cfg.idle_interval).await;
                     continue;
                 }
                 HealthStatus::Degraded => self.cfg.probe_batch,
@@ -81,12 +83,12 @@ impl Drainer {
                 Ok(entries) => entries,
                 Err(e) => {
                     tracing::warn!(error = %e, "chat drainer: spool drain failed");
-                    tokio::time::sleep(self.cfg.idle_interval).await;
+                    time::sleep(self.cfg.idle_interval).await;
                     continue;
                 }
             };
             if entries.is_empty() {
-                tokio::time::sleep(self.cfg.idle_interval).await;
+                time::sleep(self.cfg.idle_interval).await;
                 continue;
             }
 
@@ -129,10 +131,10 @@ impl Drainer {
 
             if failed || replayed < batch {
                 pace.reset();
-                tokio::time::sleep(self.cfg.idle_interval).await;
+                time::sleep(self.cfg.idle_interval).await;
             } else {
                 // Full batch drained: more likely remains, pace the next cycle.
-                tokio::time::sleep(pace.next_delay()).await;
+                time::sleep(pace.next_delay()).await;
             }
         }
     }

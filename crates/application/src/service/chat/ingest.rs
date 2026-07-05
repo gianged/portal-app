@@ -6,7 +6,7 @@ use domain::{
 };
 use tokio::{
     sync::{mpsc, oneshot},
-    time::MissedTickBehavior,
+    time::{self, MissedTickBehavior},
 };
 
 use super::ChatService;
@@ -109,7 +109,7 @@ impl ChatIngest {
         mut shutdown: oneshot::Receiver<()>,
     ) {
         let mut buf: Vec<Message> = Vec::with_capacity(self.cfg.batch_size);
-        let mut ticker = tokio::time::interval(self.cfg.flush_interval);
+        let mut ticker = time::interval(self.cfg.flush_interval);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
         loop {
             tokio::select! {

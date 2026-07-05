@@ -6,15 +6,22 @@ mod cleanup;
 mod config;
 mod emails;
 mod flex_reconciliation;
+mod job_error;
 mod leave_expiry;
 mod notifications;
 mod report_schedule;
 mod ticket_autoclose;
 mod uploads;
 
+#[cfg(not(unix))]
+use std::future;
 use std::{process, time::Duration};
 
 use apalis::prelude::*;
+#[cfg(unix)]
+use tokio::signal::unix::{self, SignalKind};
+use tokio::{signal, time};
+
 use application::resilience;
 use infrastructure::telemetry;
 
@@ -153,39 +160,51 @@ async fn run() -> anyhow::Result<()> {
     tracing::info!(
         "workers ready: notification + audit + email consumers + maintenance loops (cleanup, uploads, ticket auto-close, monthly report, leave-expiry, flex-reconciliation)"
     );
-    // Guarantees Ctrl-C exits even if the Monitor's graceful shutdown stalls.
+    // Guarantees a shutdown signal exits even if the Monitor's graceful shutdown stalls.
     tokio::spawn(force_exit_watchdog());
     Monitor::new()
         .register(notify_worker)
         .register(audit_worker)
         .register(email_worker)
-        .run_with_signal(tokio::signal::ctrl_c())
+        .run_with_signal(async {
+            wait_for_shutdown().await;
+            Ok(())
+        })
         .await?;
 
     tracing::info!("workers shut down");
     Ok(())
 }
 
-/// Force-exits [`FORCE_EXIT_GRACE`] after the signal so Ctrl-C reliably stops the process.
+/// Force-exits [`FORCE_EXIT_GRACE`] after the signal so a shutdown reliably stops the process.
 async fn force_exit_watchdog() {
+    wait_for_shutdown().await;
+    time::sleep(FORCE_EXIT_GRACE).await;
+    process::exit(0);
+}
+
+/// Resolves on the first shutdown signal: Ctrl-C on every platform, plus
+/// `SIGTERM` on Unix (the orchestrator's stop signal).
+async fn wait_for_shutdown() {
     let ctrl_c = async {
-        let _ = tokio::signal::ctrl_c().await;
+        if let Err(error) = signal::ctrl_c().await {
+            tracing::error!(%error, "failed to install Ctrl-C handler");
+        }
     };
     #[cfg(unix)]
     let terminate = async {
-        if let Ok(mut sig) =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        {
-            sig.recv().await;
+        match unix::signal(SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => tracing::error!(%error, "failed to install SIGTERM handler"),
         }
     };
     #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
+    let terminate = future::pending::<()>();
 
     tokio::select! {
         () = ctrl_c => {}
         () = terminate => {}
     }
-    tokio::time::sleep(FORCE_EXIT_GRACE).await;
-    process::exit(0);
 }

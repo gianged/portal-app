@@ -2,8 +2,7 @@
 
 use domain::model::{
     GroupKind, GroupReportRow, GrowthPoint, GrowthSeries, MonthlyReportData, Report, ReportKind,
-    StaffMonthlyReport, StaffSummary, TicketCategory, TicketStatus, TicketSummary,
-    YearlyReportData,
+    StaffMonthlyReport, StaffSummary, TicketCategory, TicketStats, TicketStatus, YearlyReportData,
 };
 use shared::dto::report::{
     GroupHeadcountDto, GroupReportRowDto, GrowthPointDto, GrowthSeriesDto, LabeledCountDto,
@@ -60,7 +59,7 @@ fn group_row_dto(row: &GroupReportRow) -> GroupReportRowDto {
     }
 }
 
-fn ticket_summary_dto(t: &TicketSummary) -> TicketSummaryDto {
+fn ticket_summary_dto(t: &TicketStats) -> TicketSummaryDto {
     TicketSummaryDto {
         created_in_period: t.created_in_period,
         resolved_in_period: t.resolved_in_period,

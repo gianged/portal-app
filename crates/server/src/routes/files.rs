@@ -59,7 +59,9 @@ async fn download(
 
     let bytes = state.storage.get(&key).await.map_err(|e| match e {
         StorageError::NotFound => AppError::Domain(application::Error::NotFound("file")),
-        other @ StorageError::Backend(_) => AppError::Domain(application::Error::Storage(other)),
+        other @ (StorageError::InvalidKey(_) | StorageError::Backend(_)) => {
+            AppError::Domain(application::Error::Storage(other))
+        }
     })?;
 
     let (mime, inline) = guess_mime(&key);

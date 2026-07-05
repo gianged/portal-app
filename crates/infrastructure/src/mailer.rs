@@ -12,7 +12,7 @@ use domain::{
     ports::mailer::{EmailMessage, Mailer},
 };
 
-/// SMTP transport security: StartTls (default) or None for plain internal relays on :25.
+/// SMTP transport security: `StartTls` (default) or `None` for plain internal relays on :25.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SmtpTls {
     StartTls,
@@ -41,8 +41,18 @@ impl SmtpMailer {
             SmtpTls::None => AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host),
         }
         .port(port);
-        if let (Some(user), Some(pass)) = (username, password) {
-            builder = builder.credentials(Credentials::new(user.to_owned(), pass.to_owned()));
+        match (username, password) {
+            (Some(user), Some(pass)) => {
+                builder = builder.credentials(Credentials::new(user.to_owned(), pass.to_owned()));
+            }
+            (None, None) => {}
+            // Half a credential pair is a config typo; failing here beats an
+            // opaque relay rejection later.
+            _ => {
+                return Err(MailError::Invalid(
+                    "SMTP username and password must be set together".into(),
+                ));
+            }
         }
         let from = from
             .parse::<Mailbox>()

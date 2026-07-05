@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, sync::LazyLock};
 
 use async_trait::async_trait;
 use redis::{Client, Script, aio::ConnectionManager};
@@ -17,9 +17,13 @@ pub struct RateLimiter {
 }
 
 /// `INCR` then `EXPIRE` on the first hit, atomically, so a failed `EXPIRE` can't strand a permanent key.
-const INCR_WITH_TTL: &str = "local v = redis.call('INCR', KEYS[1])\n\
-                             if v == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end\n\
-                             return v";
+static INCR_WITH_TTL: LazyLock<Script> = LazyLock::new(|| {
+    Script::new(
+        "local v = redis.call('INCR', KEYS[1])\n\
+         if v == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end\n\
+         return v",
+    )
+});
 
 impl RateLimiter {
     pub async fn new(url: &str) -> Result<Self, RepositoryError> {
@@ -33,7 +37,8 @@ impl RateLimiter {
 
     #[must_use]
     pub const fn with_window(mut self, window_secs: i64) -> Self {
-        self.window_secs = window_secs;
+        // A zero or negative window would divide by zero on the request path.
+        self.window_secs = if window_secs < 1 { 1 } else { window_secs };
         self
     }
 }
@@ -48,7 +53,7 @@ impl RateLimit for RateLimiter {
         let ttl = self.window_secs.saturating_mul(2);
 
         let mut conn = self.conn.clone();
-        let count: u64 = Script::new(INCR_WITH_TTL)
+        let count: u64 = INCR_WITH_TTL
             .key(&key)
             .arg(ttl)
             .invoke_async(&mut conn)
