@@ -65,6 +65,15 @@ impl Channel {
             Self::Direct(c) => c.id,
         }
     }
+
+    #[must_use]
+    pub const fn created_at(&self) -> OffsetDateTime {
+        match self {
+            Self::Group(c) => c.created_at,
+            Self::General(c) => c.created_at,
+            Self::Direct(c) => c.created_at,
+        }
+    }
 }
 
 /// Postgres metadata for a chat upload (the Scylla row keeps only `attachment_keys`);

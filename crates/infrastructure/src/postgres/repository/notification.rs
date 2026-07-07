@@ -116,6 +116,44 @@ impl NotificationRepository for PgNotificationRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(recipients = recipients.len()))]
+    async fn save_broadcast(
+        &self,
+        ids: &[NotificationId],
+        recipients: &[UserId],
+        payload: &NotificationPayload,
+        created_at: OffsetDateTime,
+    ) -> Result<(), RepositoryError> {
+        if ids.len() != recipients.len() {
+            return Err(RepositoryError::Backend(
+                "save_broadcast: ids/recipients length mismatch".into(),
+            ));
+        }
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let kind = SqlNotificationKind::from(payload.kind());
+        let json = Json(payload);
+        let ids: Vec<Uuid> = ids.iter().map(|i| i.0).collect();
+        let recipients: Vec<Uuid> = recipients.iter().map(|r| r.0).collect();
+        sqlx::query!(
+            r#"INSERT INTO notification.notifications
+                 (id, recipient_user_id, kind, payload, read_at, created_at)
+               SELECT u.id, u.recipient, $3, $4, NULL, $5
+               FROM UNNEST($1::uuid[], $2::uuid[]) AS u(id, recipient)
+               ON CONFLICT (id) DO NOTHING"#,
+            &ids,
+            &recipients,
+            kind as SqlNotificationKind,
+            json as Json<&NotificationPayload>,
+            created_at,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(mappers::map_pg_error)?;
+        Ok(())
+    }
+
     #[tracing::instrument(skip_all, fields(user_id = ?user_id, ids = ids.len()))]
     async fn mark_read_many(
         &self,

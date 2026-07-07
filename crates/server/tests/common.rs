@@ -45,9 +45,9 @@ use domain::{
         ChatAttachment, Comment, CommentEntity, CompanyStaffStats, DailyReport, DayOff, FlexHours,
         Group, GroupProjectStats, GroupRequestStats, GroupStaffStats, Holiday, LeaveGrant,
         LeaveTransaction, Membership, Message, MonthlyBucket, MonthlyReportData, Notification,
-        Overtime, Period, Project, ProjectCollaborator, ProjectInvite, Report, ReportKind, Request,
-        RequestAttachment, RequestStatus, StaffMonthlyReport, StaffMonthlyStats, Ticket,
-        TicketStats, User, UserStatus, YearlyReportData,
+        NotificationPayload, Overtime, Period, Project, ProjectCollaborator, ProjectInvite, Report,
+        ReportKind, Request, RequestAttachment, RequestStatus, StaffMonthlyReport,
+        StaffMonthlyStats, Ticket, TicketStats, User, UserStatus, YearlyReportData,
     },
     ports::{
         authz_client::{AuthzClient, RelationTuple},
@@ -517,6 +517,15 @@ impl NotificationRepository for FakeNotifications {
         Ok(0)
     }
     async fn save(&self, _notification: &Notification) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+    async fn save_broadcast(
+        &self,
+        _ids: &[NotificationId],
+        _recipients: &[UserId],
+        _payload: &NotificationPayload,
+        _created_at: OffsetDateTime,
+    ) -> Result<(), RepositoryError> {
         Ok(())
     }
     async fn mark_read_many(
@@ -1300,6 +1309,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
 pub fn default_test_app() -> TestApp {
     test_app(RateLimits {
         auth: 1000,
+        auth_ip: 1000,
         api: 1000,
         chat: 1000,
     })

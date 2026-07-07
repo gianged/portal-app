@@ -3,6 +3,7 @@ use std::{any::Any, sync::Arc, time::Duration};
 use anyhow::Context;
 use axum::{
     Json, Router,
+    error_handling::HandleErrorLayer,
     extract::{DefaultBodyLimit, State},
     http::{HeaderValue, Method, StatusCode, header},
     middleware::{from_fn, from_fn_with_state},
@@ -10,10 +11,15 @@ use axum::{
     routing,
 };
 use tokio::{fs, sync::oneshot, task::JoinHandle};
+use tower::{
+    BoxError, ServiceBuilder, limit::GlobalConcurrencyLimitLayer, load_shed::LoadShedLayer,
+};
 use tower_http::{
     catch_panic::CatchPanicLayer,
+    compression::CompressionLayer,
     cors::{AllowOrigin, CorsLayer},
     set_header::SetResponseHeaderLayer,
+    timeout::TimeoutLayer,
 };
 
 use application::{
@@ -502,6 +508,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
         rate_limiter,
         rate_limits: RateLimits {
             auth: cfg.auth_rate_limit,
+            auth_ip: cfg.auth_ip_rate_limit,
             api: cfg.api_rate_limit,
             chat: cfg.chat_rate_limit,
         },
@@ -558,7 +565,25 @@ pub fn router(state: AppState) -> Router {
     // Files need session + signed `?exp&sig` (bound to the user); skip the per-user limiter -
     // the signature already scopes each fetch, so image-heavy pages don't burn the API budget.
     let files = files::router().route_layer(from_fn_with_state(state.clone(), auth::require_auth));
-    let api = public.merge(protected).merge(files);
+    // Timeout + load-shed guard the API tree only: /healthz (liveness) must keep
+    // answering under overload, and /readyz reads breaker state, not backends.
+    let api = public
+        .merge(protected)
+        .merge(files)
+        // Backstop deadline: each backend call is individually bounded; this caps
+        // the whole request. 30s leaves room for 25 MiB uploads on slow links.
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(30),
+        ))
+        // One stack so the fallible load-shed error is handled before axum sees
+        // it: at capacity new requests get an immediate 503 instead of queueing.
+        .layer(
+            ServiceBuilder::new()
+                .layer(HandleErrorLayer::new(on_overload))
+                .layer(LoadShedLayer::new())
+                .layer(GlobalConcurrencyLimitLayer::new(MAX_IN_FLIGHT)),
+        );
 
     Router::new()
         .route("/healthz", routing::get(healthz))
@@ -572,6 +597,7 @@ pub fn router(state: AppState) -> Router {
         // panic becomes a logged 500 instead of a dropped connection, and the
         // outer layers still see a normal response.
         .layer(CatchPanicLayer::custom(on_panic))
+        .layer(CompressionLayer::new())
         // Global 1 MiB JSON cap; upload routes override with their own DefaultBodyLimit.
         .layer(DefaultBodyLimit::max(1024 * 1024))
         // Baseline security headers (no HSTS - internal plain HTTP); `if_not_present` lets a route override.
@@ -622,6 +648,21 @@ pub fn cors_layer(origins: &[String]) -> CorsLayer {
             Method::OPTIONS,
         ])
         .allow_headers([header::CONTENT_TYPE])
+}
+
+/// Ceiling on concurrently-served requests; excess is shed with 503. WS
+/// connections release their slot at upgrade, so this bounds request work, not
+/// connected users.
+const MAX_IN_FLIGHT: usize = 512;
+
+/// Responder for the load-shed layer: the only error it can surface is
+/// `Overloaded`, mapped to a structured 503.
+async fn on_overload(_: BoxError) -> Response {
+    let body = ApiError {
+        code: ErrorCode::Internal,
+        message: "server overloaded, retry shortly".to_owned(),
+    };
+    (StatusCode::SERVICE_UNAVAILABLE, Json(body)).into_response()
 }
 
 /// Process liveness: returns `200 ok` as long as the process is up. Deliberately

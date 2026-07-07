@@ -51,7 +51,8 @@ struct Statements {
     // Partition: user_id - list a user's joined channels with read marker.
     list_channels_for_user: PreparedStatement,
     update_last_read: PreparedStatement,
-    // Partition: channel_id, clustering: message_id DESC - reverse-chrono.
+    // Partition: (channel_id, bucket yyyymm), clustering: message_id DESC -
+    // reverse-chrono; history reads walk buckets backwards from the cursor.
     list_messages_latest: PreparedStatement,
     list_messages_before: PreparedStatement,
     find_message: PreparedStatement,
@@ -163,7 +164,7 @@ impl ScyllaChatRepo {
                 &session,
                 format!(
                     "SELECT {MESSAGE_COLS} FROM portal_chat.messages_by_channel \
-                     WHERE channel_id = ? LIMIT ?"
+                     WHERE channel_id = ? AND bucket = ? LIMIT ?"
                 ),
             )
             .await?,
@@ -171,7 +172,7 @@ impl ScyllaChatRepo {
                 &session,
                 format!(
                     "SELECT {MESSAGE_COLS} FROM portal_chat.messages_by_channel \
-                     WHERE channel_id = ? AND message_id < ? LIMIT ?"
+                     WHERE channel_id = ? AND bucket = ? AND message_id < ? LIMIT ?"
                 ),
             )
             .await?,
@@ -179,16 +180,16 @@ impl ScyllaChatRepo {
                 &session,
                 format!(
                     "SELECT {MESSAGE_COLS} FROM portal_chat.messages_by_channel \
-                     WHERE channel_id = ? AND message_id = ?"
+                     WHERE channel_id = ? AND bucket = ? AND message_id = ?"
                 ),
             )
             .await?,
             save_message: prepare(
                 &session,
                 "INSERT INTO portal_chat.messages_by_channel \
-                 (channel_id, message_id, sender_user_id, body, mentions, attachment_keys, \
-                  is_announcement, edited_at, deleted_at) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 (channel_id, bucket, message_id, sender_user_id, body, mentions, \
+                  attachment_keys, is_announcement, edited_at, deleted_at) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .await?,
             find_announcement: prepare(
@@ -223,7 +224,7 @@ impl ScyllaChatRepo {
             delete_announcement_message: prepare(
                 &session,
                 "DELETE FROM portal_chat.messages_by_channel \
-                 WHERE channel_id = ? AND message_id = ?",
+                 WHERE channel_id = ? AND bucket = ? AND message_id = ?",
             )
             .await?,
         };
@@ -245,7 +246,30 @@ fn backend<E: Display>(e: E) -> RepositoryError {
     RepositoryError::Backend(e.to_string())
 }
 
-// Single-partition UNLOGGED batch insert for one channel's chunk; a free fn so the future has a concrete type the stream combinators accept.
+/// Partition bucket (yyyymm, UTC) of a message id's embedded UUIDv7 timestamp.
+/// Non-v7 ids (never produced by the app) collapse into the epoch bucket.
+fn bucket_of(message_id: Uuid) -> i32 {
+    let secs = message_id
+        .get_timestamp()
+        .map_or(0, |ts| i64::try_from(ts.to_unix().0).unwrap_or(0));
+    bucket_at(OffsetDateTime::from_unix_timestamp(secs).unwrap_or(OffsetDateTime::UNIX_EPOCH))
+}
+
+/// The yyyymm bucket containing `at`.
+fn bucket_at(at: OffsetDateTime) -> i32 {
+    at.year() * 100 + i32::from(u8::from(at.month()))
+}
+
+/// The bucket immediately before `bucket` (month arithmetic).
+const fn previous_bucket(bucket: i32) -> i32 {
+    if bucket % 100 == 1 {
+        bucket - 100 + 11
+    } else {
+        bucket - 1
+    }
+}
+
+// Single-partition UNLOGGED batch insert for one (channel, bucket) chunk; a free fn so the future has a concrete type the stream combinators accept.
 async fn write_message_batch(
     session: &Session,
     stmt: &PreparedStatement,
@@ -259,6 +283,7 @@ async fn write_message_batch(
         let mentions: HashSet<Uuid> = message.mentions.iter().map(|u| u.0).collect();
         values.push((
             message.channel_id.0,
+            bucket_of(message.id.0),
             message.id.0,
             message.sender_user_id.0,
             message.body.clone(),
@@ -461,6 +486,9 @@ impl ChatRepository for ScyllaChatRepo {
         Ok(())
     }
 
+    /// Walks monthly buckets backwards from the cursor (or now) until the page
+    /// fills or the channel-creation bucket is reached. Sparse months cost one
+    /// empty point query each; bounded by the channel's age.
     #[tracing::instrument(skip_all, fields(channel_id = ?channel_id, limit = ?limit))]
     async fn list_messages(
         &self,
@@ -468,26 +496,50 @@ impl ChatRepository for ScyllaChatRepo {
         before: Option<MessageId>,
         limit: u32,
     ) -> Result<Vec<Message>, RepositoryError> {
-        let limit = i32::try_from(limit).unwrap_or(i32::MAX);
-        let result = match before {
-            None => self
-                .session
-                .execute_unpaged(&self.stmts.list_messages_latest, (channel_id.0, limit))
-                .await
-                .map_err(backend)?,
-            Some(cursor) => self
-                .session
-                .execute_unpaged(
-                    &self.stmts.list_messages_before,
-                    (channel_id.0, cursor.0, limit),
-                )
-                .await
-                .map_err(backend)?,
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        // No messages can predate the channel row: its bucket is the floor.
+        let Some(channel) = self.find_channel(channel_id).await? else {
+            return Ok(Vec::new());
         };
-        let rows = result.into_rows_result().map_err(backend)?;
-        let mut out = Vec::new();
-        for row in rows.rows::<MessageRow>().map_err(backend)? {
-            out.push(row_to_message(channel_id, row.map_err(backend)?));
+        let floor = bucket_at(channel.created_at());
+        let mut bucket = before.map_or_else(
+            || bucket_at(OffsetDateTime::now_utc()),
+            |cursor| bucket_of(cursor.0),
+        );
+        let mut cursor = before;
+        let mut out: Vec<Message> = Vec::new();
+        loop {
+            let remaining = i32::try_from(limit as usize - out.len()).unwrap_or(i32::MAX);
+            let result = match cursor {
+                None => self
+                    .session
+                    .execute_unpaged(
+                        &self.stmts.list_messages_latest,
+                        (channel_id.0, bucket, remaining),
+                    )
+                    .await
+                    .map_err(backend)?,
+                Some(c) => self
+                    .session
+                    .execute_unpaged(
+                        &self.stmts.list_messages_before,
+                        (channel_id.0, bucket, c.0, remaining),
+                    )
+                    .await
+                    .map_err(backend)?,
+            };
+            let rows = result.into_rows_result().map_err(backend)?;
+            for row in rows.rows::<MessageRow>().map_err(backend)? {
+                out.push(row_to_message(channel_id, row.map_err(backend)?));
+            }
+            if out.len() >= limit as usize || bucket <= floor {
+                break;
+            }
+            bucket = previous_bucket(bucket);
+            // Older buckets are wholly before the cursor; drop it.
+            cursor = None;
         }
         Ok(out)
     }
@@ -500,7 +552,10 @@ impl ChatRepository for ScyllaChatRepo {
     ) -> Result<Option<Message>, RepositoryError> {
         let result = self
             .session
-            .execute_unpaged(&self.stmts.find_message, (channel_id.0, message_id.0))
+            .execute_unpaged(
+                &self.stmts.find_message,
+                (channel_id.0, bucket_of(message_id.0), message_id.0),
+            )
             .await
             .map_err(backend)?;
         let rows = result.into_rows_result().map_err(backend)?;
@@ -518,6 +573,7 @@ impl ChatRepository for ScyllaChatRepo {
                 &self.stmts.save_message,
                 (
                     message.channel_id.0,
+                    bucket_of(message.id.0),
                     message.id.0,
                     message.sender_user_id.0,
                     &message.body,
@@ -543,10 +599,10 @@ impl ChatRepository for ScyllaChatRepo {
             return Ok(());
         }
 
-        let mut by_channel: HashMap<ChannelId, Vec<&Message>> = HashMap::new();
+        let mut by_channel: HashMap<(ChannelId, i32), Vec<&Message>> = HashMap::new();
         for message in messages {
             by_channel
-                .entry(message.channel_id)
+                .entry((message.channel_id, bucket_of(message.id.0)))
                 .or_default()
                 .push(message);
         }
@@ -636,7 +692,10 @@ impl ChatRepository for ScyllaChatRepo {
         batch.append_statement(self.stmts.delete_announcement_message.clone());
         let id = message_id.0;
         self.session
-            .batch(&batch, ((channel_id.0, id), (channel_id.0, id)))
+            .batch(
+                &batch,
+                ((channel_id.0, id), (channel_id.0, bucket_of(id), id)),
+            )
             .await
             .map_err(backend)?;
         Ok(())

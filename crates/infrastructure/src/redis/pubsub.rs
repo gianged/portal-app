@@ -13,6 +13,8 @@ use domain::{
     },
 };
 
+use crate::redis::connect_manager;
+
 /// Namespaced key for a domain-event topic, shared so publishers and subscribers stay aligned.
 fn event_topic_key(topic: &str) -> String {
     format!("portal:event:{topic}")
@@ -28,8 +30,7 @@ pub struct RedisEventPublisher {
 
 impl RedisEventPublisher {
     pub async fn new(url: &str) -> Result<Self, EventError> {
-        let client = Client::open(url).map_err(backend)?;
-        let conn = ConnectionManager::new(client).await.map_err(backend)?;
+        let conn = connect_manager(url).await.map_err(backend)?;
         Ok(Self { conn })
     }
 }

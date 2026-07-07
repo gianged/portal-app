@@ -167,7 +167,7 @@ pub fn from_env() -> anyhow::Result<Config> {
 
     Ok(Config {
         database_url: required("DATABASE_URL")?,
-        pg_max_connections: optional("PG_MAX_CONNECTIONS", "10")
+        pg_max_connections: optional("PG_MAX_CONNECTIONS", "16")
             .parse()
             .context("invalid PG_MAX_CONNECTIONS")?,
         redis_url: required("REDIS_URL")?,

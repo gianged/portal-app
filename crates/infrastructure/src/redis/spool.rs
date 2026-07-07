@@ -1,12 +1,14 @@
 use std::fmt::Display;
 
 use async_trait::async_trait;
-use redis::{Client, aio::ConnectionManager};
+use redis::aio::ConnectionManager;
 
 use domain::{
     error::SpoolError,
     ports::spool::{Spool, SpoolEntry, SpoolId},
 };
+
+use crate::redis::connect_manager;
 
 /// Namespaced key holding one spool's backlog list.
 fn spool_key(name: &str) -> String {
@@ -28,8 +30,7 @@ pub struct RedisSpool {
 
 impl RedisSpool {
     pub async fn new(url: &str, name: &str) -> Result<Self, SpoolError> {
-        let client = Client::open(url).map_err(backend)?;
-        let conn = ConnectionManager::new(client).await.map_err(backend)?;
+        let conn = connect_manager(url).await.map_err(backend)?;
         Ok(Self {
             conn,
             key: spool_key(name),

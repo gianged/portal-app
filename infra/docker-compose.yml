@@ -19,6 +19,20 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    # Sized for ~1000 users: server(32) + workers(16) + OpenFGA pools with headroom.
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=1536MB
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-portal}
       POSTGRES_USER: ${POSTGRES_USER:-portal}
@@ -38,7 +52,15 @@ services:
   scylla:
     image: scylladb/scylla:5.4
     restart: unless-stopped
+    # Dev-sized single node. Production: 2+ nodes, real --smp/--memory, drop
+    # --overprovisioned, NetworkTopologyStrategy RF>=2 in the keyspace.
     command: --smp 1 --memory 1G --overprovisioned 1 --reactor-backend=epoll
+    # No memory limit: Seastar's probe misreads the cgroup cap under Docker
+    # Desktop/WSL2 and refuses to boot; --memory 1G already bounds the heap.
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
     volumes:
       - scylla-data:/var/lib/scylla
     healthcheck:
@@ -54,7 +76,14 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required — set it in .env}"]
+    # noeviction: job queues + chat spool live here — reject writes at the cap
+    # instead of silently evicting them.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required — set it in .env}"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     volumes:
@@ -70,8 +99,14 @@ services:
     image: openfga/openfga:v1.5.4
     restart: unless-stopped
     command: run
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_MAX_OPEN_CONNS: "30"
       # sslmode is parameterized: dev keeps `disable` (in-network Docker DNS,
       # no certs); production should set OPENFGA_DATASTORE_SSLMODE=require.
       OPENFGA_DATASTORE_URI: postgres://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@postgres:5432/openfga?sslmode=${OPENFGA_DATASTORE_SSLMODE:-disable}
@@ -100,6 +135,11 @@ services:
       args:
         BINARY_NAME: server
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@postgres:5432/${POSTGRES_DB:-portal}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required — set it in .env}@redis:6379
@@ -145,6 +185,11 @@ services:
       args:
         BINARY_NAME: workers
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@postgres:5432/${POSTGRES_DB:-portal}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required — set it in .env}@redis:6379
@@ -177,6 +222,11 @@ services:
       dockerfile: Dockerfile.frontend
       target: runtime
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128m
     ports:
       - "${FRONTEND_HOST_PORT:-80}:80"
     depends_on:

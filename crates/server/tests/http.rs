@@ -204,6 +204,7 @@ async fn per_user_rate_limit_returns_429() {
     // api ceiling 0: the per-user limiter trips on the first authenticated call.
     let app = test_app(RateLimits {
         auth: 1000,
+        auth_ip: 1000,
         api: 0,
         chat: 1000,
     });

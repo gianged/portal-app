@@ -1,8 +1,11 @@
+mod connect;
 mod presence;
 mod pubsub;
 mod rate_limit;
 mod spool;
 mod token_revocation;
+
+pub(crate) use connect::connect_manager;
 
 pub use presence::PresenceStore;
 pub use pubsub::{RedisEventPublisher, RedisEventSubscriber};

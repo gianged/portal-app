@@ -1,15 +1,23 @@
-use std::fmt;
+use std::{fmt, time::Duration};
 
 use async_trait::async_trait;
+use moka::sync::Cache;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 use domain::{
     error::AuthzError,
     ids::UserId,
     ports::authz_client::{AuthzClient, RelationTuple},
 };
+
+/// Short-lived check cache: absorbs repeated permission gates within a burst.
+/// Local tuple writes invalidate immediately; writes from other processes
+/// converge within the TTL.
+const CHECK_CACHE_TTL: Duration = Duration::from_secs(5);
+const CHECK_CACHE_CAPACITY: u64 = 10_000;
 
 /// Configuration for the `OpenFGA` HTTP client.
 #[derive(Clone)]
@@ -42,12 +50,17 @@ pub struct OpenFgaAuthzClient {
     store_id: String,
     authorization_model_id: String,
     bearer_token: Option<String>,
+    check_cache: Cache<(Uuid, String, String), bool>,
 }
 
 impl OpenFgaAuthzClient {
     pub fn new(cfg: OpenFgaConfig) -> Result<Self, AuthzError> {
+        // Bounded timeouts: a hung OpenFGA fails the gate instead of hanging the request.
         let http = Client::builder()
             .tls_backend_rustls()
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(3))
+            .pool_max_idle_per_host(32)
             .build()
             .map_err(|e| AuthzError::Backend(e.to_string()))?;
         Ok(Self {
@@ -56,6 +69,10 @@ impl OpenFgaAuthzClient {
             store_id: cfg.store_id,
             authorization_model_id: cfg.authorization_model_id,
             bearer_token: cfg.bearer_token,
+            check_cache: Cache::builder()
+                .max_capacity(CHECK_CACHE_CAPACITY)
+                .time_to_live(CHECK_CACHE_TTL)
+                .build(),
         })
     }
 
@@ -126,6 +143,10 @@ impl OpenFgaAuthzClient {
 impl AuthzClient for OpenFgaAuthzClient {
     #[tracing::instrument(skip_all, fields(user = ?user))]
     async fn check(&self, user: UserId, relation: &str, object: &str) -> Result<bool, AuthzError> {
+        let key = (user.0, relation.to_string(), object.to_string());
+        if let Some(allowed) = self.check_cache.get(&key) {
+            return Ok(allowed);
+        }
         let req = CheckRequest {
             tuple_key: TupleKeyDto {
                 user: Self::user_key(user),
@@ -135,6 +156,7 @@ impl AuthzClient for OpenFgaAuthzClient {
             authorization_model_id: &self.authorization_model_id,
         };
         let resp: CheckResponse = self.post_json(self.store_url("check"), &req).await?;
+        self.check_cache.insert(key, resp.allowed);
         Ok(resp.allowed)
     }
 
@@ -156,7 +178,9 @@ impl AuthzClient for OpenFgaAuthzClient {
             deletes: None,
             authorization_model_id: &self.authorization_model_id,
         };
-        self.write_single(&req).await
+        self.write_single(&req).await?;
+        self.check_cache.invalidate_all();
+        Ok(())
     }
 
     #[tracing::instrument(skip_all)]
@@ -177,7 +201,9 @@ impl AuthzClient for OpenFgaAuthzClient {
             }),
             authorization_model_id: &self.authorization_model_id,
         };
-        self.write_single(&req).await
+        self.write_single(&req).await?;
+        self.check_cache.invalidate_all();
+        Ok(())
     }
 
     #[tracing::instrument(skip_all)]
@@ -205,6 +231,7 @@ impl AuthzClient for OpenFgaAuthzClient {
             authorization_model_id: &self.authorization_model_id,
         };
         let _: Value = self.post_json(self.store_url("write"), &req).await?;
+        self.check_cache.invalidate_all();
         Ok(())
     }
 

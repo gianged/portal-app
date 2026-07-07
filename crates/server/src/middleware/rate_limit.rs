@@ -1,8 +1,11 @@
-//! Fixed-window rate limiting, layered over three planes:
+//! Fixed-window rate limiting, layered over four planes:
 //!
-//! - [`per_ip`] guards the unauthenticated `/login` route by client IP, blunting
-//!   credential-stuffing. It degrades to a shared `login:unknown` bucket when no
-//!   [`ConnectInfo`] is attached (e.g. under `oneshot` tests).
+//! - [`per_ip`] guards the public auth routes by client IP with a deliberately
+//!   loose ceiling (one office NAT fronts many users). It degrades to a shared
+//!   `login:unknown` bucket when no [`ConnectInfo`] is attached (e.g. under
+//!   `oneshot` tests).
+//! - the login handler additionally enforces a tight per-(IP, email) bucket via
+//!   [`enforce`], the actual brute-force gate.
 //! - [`per_user`] guards the protected API by caller id, read from the
 //!   [`AuthUser`] the auth layer inserts, so it must sit *inside* the auth layer.
 //! - [`within_chat_rate`] guards the WebSocket `SendMessage` path by caller id.
@@ -32,8 +35,11 @@ use crate::{
 /// `AppState`, populated from `Config`.
 #[derive(Clone, Copy)]
 pub struct RateLimits {
-    /// Ceiling for unauthenticated `/login` attempts, per client IP.
+    /// Ceiling for `/login` attempts per (client IP, email) pair.
     pub auth: u64,
+    /// Ceiling for the public auth routes per client IP. Loose: behind one
+    /// office NAT this bucket is shared by every user.
+    pub auth_ip: u64,
     /// Ceiling for protected API calls, per authenticated user.
     pub api: u64,
     /// Ceiling for WebSocket `SendMessage` frames, per authenticated user.
@@ -51,16 +57,23 @@ pub async fn per_ip(
     req: Request,
     next: Next,
 ) -> Result<Response, AppError> {
-    let ip = req.extensions().get::<ClientIp>().map_or_else(
-        || {
-            req.extensions()
-                .get::<ConnectInfo<SocketAddr>>()
-                .map_or_else(|| "unknown".to_owned(), |ci| ci.0.ip().to_string())
-        },
-        |c| c.0.to_string(),
+    let ip = bucket_ip(
+        req.extensions().get::<ClientIp>().copied(),
+        req.extensions()
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|ci| ci.0),
     );
-    enforce(&state, &format!("login:{ip}"), state.rate_limits.auth).await?;
+    enforce(&state, &format!("login:{ip}"), state.rate_limits.auth_ip).await?;
     Ok(next.run(req).await)
+}
+
+/// Limiter identity for the auth planes: trusted-proxy client IP, then the raw
+/// peer, then a shared `unknown` bucket (e.g. under `oneshot` tests).
+pub fn bucket_ip(client_ip: Option<ClientIp>, peer: Option<SocketAddr>) -> String {
+    client_ip.map_or_else(
+        || peer.map_or_else(|| "unknown".to_owned(), |p| p.ip().to_string()),
+        |c| c.0.to_string(),
+    )
 }
 
 /// Per-user limiter for the protected API. Runs after the auth layer, so the
@@ -99,7 +112,7 @@ pub async fn within_chat_rate(state: &AppState, uid: UserId) -> bool {
 /// Increments `bucket` and rejects with 429 once the count passes `limit`. A
 /// backend failure surfaces as the wrapped repository error (500), never a silent
 /// bypass.
-async fn enforce(state: &AppState, bucket: &str, limit: u64) -> Result<(), AppError> {
+pub async fn enforce(state: &AppState, bucket: &str, limit: u64) -> Result<(), AppError> {
     let count = state
         .rate_limiter
         .incr(bucket)

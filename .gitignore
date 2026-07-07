@@ -17,6 +17,9 @@ pkg/
 storage/uploads/*
 !storage/uploads/.gitkeep
 
+# Runtime logs (server/workers file sink)
+logs/
+
 # Database backups (cargo make backup)
 /backups/
 

@@ -16,10 +16,12 @@
 --     driver/server reject the v7 ids the app generates.
 --   - All "*_at" columns are TIMESTAMP (Cassandra has no TIMESTAMPTZ;
 --     always serialize from UTC on the client side).
---   - At 100-1000 users we expect modest channel volumes; if a hot
---     channel ever pushes past ~100MB per partition, bucket the
---     partition key as ((channel_id, bucket_yyyymm)) without changing
---     the access patterns. Not done preemptively.
+--   - messages_by_channel partitions by (channel_id, bucket) where bucket is
+--     the yyyymm month of the message's UUIDv7 timestamp, so a hot channel
+--     (the company-wide general channel at ~1000 users) can never grow one
+--     unbounded partition. History reads walk buckets backwards from the
+--     cursor; the bucket is always derivable from a message_id, so point
+--     reads/deletes stay single-partition.
 -- =============================================================================
 
 
@@ -78,6 +80,7 @@ CREATE TABLE IF NOT EXISTS channels (
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS messages_by_channel (
     channel_id        UUID,
+    bucket            INT,      -- yyyymm (UTC) of the message_id's UUIDv7 timestamp
     message_id        UUID,
     sender_user_id    UUID,
     body              TEXT,
@@ -86,14 +89,14 @@ CREATE TABLE IF NOT EXISTS messages_by_channel (
     is_announcement   BOOLEAN,
     edited_at         TIMESTAMP,
     deleted_at        TIMESTAMP,
-    PRIMARY KEY ((channel_id), message_id)
+    PRIMARY KEY ((channel_id, bucket), message_id)
 ) WITH CLUSTERING ORDER BY (message_id DESC)
   AND compaction = {
       'class': 'TimeWindowCompactionStrategy',
       'compaction_window_unit': 'DAYS',
       'compaction_window_size': '7'
   }
-  AND comment = 'Per-channel message log. Newest-first via UUIDv7 DESC.';
+  AND comment = 'Per-channel-per-month message log. Newest-first via UUIDv7 DESC.';
 
 
 -- -----------------------------------------------------------------------------

@@ -1,5 +1,7 @@
+use std::any;
+
 use apalis::prelude::Storage;
-use apalis_redis::RedisStorage;
+use apalis_redis::{Config, RedisStorage};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -72,29 +74,39 @@ impl Envelope for EmailEnvelope {
 }
 
 /// Builds the Redis-backed job storage for `E`. Producer and consumer both call
-/// this so they agree on wire type and namespace.
-pub async fn storage<E: Envelope>(redis_url: &str) -> Result<RedisStorage<E>, JobError> {
+/// this so they agree on wire type and namespace. `buffer` bounds how many jobs
+/// one consumer fetches and runs concurrently (producers only push, so it is
+/// inert on their side).
+pub async fn storage<E: Envelope>(
+    redis_url: &str,
+    buffer: usize,
+) -> Result<RedisStorage<E>, JobError> {
     let conn = apalis_redis::connect(redis_url)
         .await
         .map_err(|e| JobError::Backend(e.to_string()))?;
-    Ok(RedisStorage::new(conn))
+    // Namespace must mirror `RedisStorage::new`, which derives it from the type name.
+    let config = Config::default()
+        .set_namespace(any::type_name::<E>())
+        .set_buffer_size(buffer);
+    Ok(RedisStorage::new_with_config(conn, config))
 }
 
-/// Builds the Redis-backed notification job storage.
+/// Builds the Redis-backed notification job storage. The widest buffer: fanout
+/// jobs are PG-bound and a company-wide announcement queues many of them.
 pub async fn notification_storage(
     redis_url: &str,
 ) -> Result<RedisStorage<NotificationEnvelope>, JobError> {
-    storage::<NotificationEnvelope>(redis_url).await
+    storage::<NotificationEnvelope>(redis_url, 32).await
 }
 
 /// Builds the Redis-backed audit job storage.
 pub async fn audit_storage(redis_url: &str) -> Result<RedisStorage<AuditEnvelope>, JobError> {
-    storage::<AuditEnvelope>(redis_url).await
+    storage::<AuditEnvelope>(redis_url, 32).await
 }
 
-/// Builds the Redis-backed email job storage.
+/// Builds the Redis-backed email job storage. Narrow: SMTP relays throttle.
 pub async fn email_storage(redis_url: &str) -> Result<RedisStorage<EmailEnvelope>, JobError> {
-    storage::<EmailEnvelope>(redis_url).await
+    storage::<EmailEnvelope>(redis_url, 16).await
 }
 
 /// [`JobQueue`] adapter over apalis + Redis, bound to one storage.

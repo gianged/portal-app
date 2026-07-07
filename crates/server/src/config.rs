@@ -50,10 +50,14 @@ pub struct Config {
     /// `Secure` attribute on the session cookie. Defaults to `true`; set
     /// `COOKIE_SECURE=false` for plain-HTTP local development.
     pub cookie_secure: bool,
-    /// Per-window request ceilings: `auth_rate_limit` gates `/login` per client IP,
-    /// `api_rate_limit` the API and `chat_rate_limit` the WS `SendMessage` path per
-    /// user (WS frames bypass the HTTP limiter); `rate_limit_window_secs` is the window.
+    /// Per-window request ceilings: `auth_rate_limit` gates `/login` per
+    /// (client IP, email) pair; `auth_ip_rate_limit` gates the public auth routes
+    /// per client IP and is deliberately loose because one office NAT can front
+    /// hundreds of users; `api_rate_limit` the API and `chat_rate_limit` the WS
+    /// `SendMessage` path per user (WS frames bypass the HTTP limiter);
+    /// `rate_limit_window_secs` is the window.
     pub auth_rate_limit: u64,
+    pub auth_ip_rate_limit: u64,
     pub api_rate_limit: u64,
     pub chat_rate_limit: u64,
     pub rate_limit_window_secs: i64,
@@ -123,7 +127,7 @@ pub fn from_env() -> anyhow::Result<Config> {
 
     Ok(Config {
         database_url: required("DATABASE_URL")?,
-        pg_max_connections: optional("PG_MAX_CONNECTIONS", "10")
+        pg_max_connections: optional("PG_MAX_CONNECTIONS", "32")
             .parse()
             .context("invalid PG_MAX_CONNECTIONS")?,
         redis_url: required("REDIS_URL")?,
@@ -148,6 +152,9 @@ pub fn from_env() -> anyhow::Result<Config> {
         auth_rate_limit: optional("AUTH_RATE_LIMIT", "10")
             .parse()
             .context("invalid AUTH_RATE_LIMIT")?,
+        auth_ip_rate_limit: optional("AUTH_IP_RATE_LIMIT", "600")
+            .parse()
+            .context("invalid AUTH_IP_RATE_LIMIT")?,
         api_rate_limit: optional("API_RATE_LIMIT", "120")
             .parse()
             .context("invalid API_RATE_LIMIT")?,

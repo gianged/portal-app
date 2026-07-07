@@ -1,10 +1,12 @@
 use std::{fmt::Display, sync::LazyLock};
 
 use async_trait::async_trait;
-use redis::{Client, Script, aio::ConnectionManager};
+use redis::{Script, aio::ConnectionManager};
 use time::OffsetDateTime;
 
 use domain::{error::RepositoryError, ports::rate_limit::RateLimit};
+
+use crate::redis::connect_manager;
 
 /// Fixed-window rate limiter backed by `INCR` + `EXPIRE`.
 ///
@@ -27,8 +29,7 @@ static INCR_WITH_TTL: LazyLock<Script> = LazyLock::new(|| {
 
 impl RateLimiter {
     pub async fn new(url: &str) -> Result<Self, RepositoryError> {
-        let client = Client::open(url).map_err(backend)?;
-        let conn = ConnectionManager::new(client).await.map_err(backend)?;
+        let conn = connect_manager(url).await.map_err(backend)?;
         Ok(Self {
             conn,
             window_secs: 60,

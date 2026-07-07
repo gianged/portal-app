@@ -1,0 +1,6 @@
+# Generated from the seeded DB (see README.md)
+users.json
+
+# go build output
+loadtest
+loadtest.exe

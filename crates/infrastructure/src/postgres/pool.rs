@@ -22,7 +22,8 @@ pub async fn build_pool(database_url: &str, max_connections: u32) -> Result<PgPo
         .max_connections(max_connections)
         // Warm floor so an idle-gap login reuses a live connection instead of a cold connect.
         .min_connections(max_connections.min(2))
-        .acquire_timeout(Duration::from_secs(30))
+        // Fail fast under pool exhaustion so bursts shed instead of queueing.
+        .acquire_timeout(Duration::from_secs(5))
         .idle_timeout(Duration::from_mins(10))
         .max_lifetime(Duration::from_mins(30))
         .after_connect(|conn, _meta| {

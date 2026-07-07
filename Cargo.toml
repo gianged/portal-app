@@ -38,13 +38,14 @@ axum = { version = "0.8", features = ["ws", "macros", "multipart"] }
 axum-extra = { version = "0.12", features = ["cookie"] }
 # rust_crypto is all-or-nothing; we only use HS256, so the rsa advisory RUSTSEC-2023-0071 is unexploitable.
 jsonwebtoken = { version = "10", default-features = false, features = ["hmac", "rust_crypto"] }
-tower = "0.5"
-tower-http = { version = "0.7", features = ["trace", "cors", "limit", "set-header", "catch-panic"] }
+tower = { version = "0.5", features = ["limit", "load-shed"] }
+tower-http = { version = "0.7", features = ["trace", "cors", "limit", "set-header", "catch-panic", "timeout", "compression-gzip"] }
 ipnet = "2"
 percent-encoding = "2"
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
 redis = { version = "1.3", features = ["tokio-comp", "connection-manager"] }
 scylla = { version = "1.7", features = ["time-03", "rustls-023"] }
+moka = { version = "0.12", features = ["sync"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 futures = "0.3"
 dotenvy = "0.15"

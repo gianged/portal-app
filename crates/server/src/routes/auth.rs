@@ -1,6 +1,13 @@
 //! Authentication endpoints: login + logout (public) and `/me` (protected).
 
-use axum::{Json, Router, extract::State, http::StatusCode, routing};
+use std::net::SocketAddr;
+
+use axum::{
+    Extension, Json, Router,
+    extract::{ConnectInfo, State},
+    http::StatusCode,
+    routing,
+};
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use time::OffsetDateTime;
 
@@ -12,6 +19,7 @@ use crate::{
     dto,
     error::{AppError, AuthError},
     extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    middleware::{ip_allowlist::ClientIp, rate_limit},
     resolve,
 };
 
@@ -31,9 +39,25 @@ pub fn me_router() -> Router<AppState> {
 
 async fn login(
     State(state): State<AppState>,
+    client_ip: Option<Extension<ClientIp>>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     jar: CookieJar,
     Json(body): Json<LoginRequest>,
 ) -> Result<(CookieJar, Json<LoginResponse>), AppError> {
+    // Brute-force gate per (IP, account): the per-IP middleware plane is
+    // NAT-wide and loose, so the tight ceiling lives here where the email is known.
+    let ip = rate_limit::bucket_ip(
+        client_ip.map(|Extension(c)| c),
+        peer.map(|Extension(ConnectInfo(p))| p),
+    );
+    let email = body.email.trim().to_lowercase();
+    rate_limit::enforce(
+        &state,
+        &format!("login:{ip}:{email}"),
+        state.rate_limits.auth,
+    )
+    .await?;
+
     let Some(user) = state.user.login(&body.email, &body.password).await? else {
         return Err(AuthError::InvalidCredentials.into());
     };

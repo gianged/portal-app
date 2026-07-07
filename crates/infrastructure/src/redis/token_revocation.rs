@@ -1,10 +1,12 @@
 use std::{fmt::Display, sync::LazyLock};
 
 use async_trait::async_trait;
-use redis::{AsyncCommands, Client, Script, aio::ConnectionManager};
+use redis::{AsyncCommands, Script, aio::ConnectionManager};
 use uuid::Uuid;
 
 use domain::{error::RepositoryError, ids::UserId, ports::token_revocation::TokenRevocation};
+
+use crate::redis::connect_manager;
 
 /// Redis-backed: per-token denylist entries that expire with the token, plus a
 /// per-user version counter whose TTL refreshes on every read/bump.
@@ -35,8 +37,7 @@ static GET_WITH_TTL: LazyLock<Script> = LazyLock::new(|| {
 
 impl RedisTokenRevocation {
     pub async fn new(url: &str, version_ttl_secs: u64) -> Result<Self, RepositoryError> {
-        let client = Client::open(url).map_err(backend)?;
-        let conn = ConnectionManager::new(client).await.map_err(backend)?;
+        let conn = connect_manager(url).await.map_err(backend)?;
         Ok(Self {
             conn,
             version_ttl_secs: i64::try_from(version_ttl_secs).unwrap_or(i64::MAX),

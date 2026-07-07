@@ -1,9 +1,11 @@
 use std::fmt::Display;
 
 use async_trait::async_trait;
-use redis::{AsyncCommands, Client, aio::ConnectionManager};
+use redis::{AsyncCommands, aio::ConnectionManager};
 
 use domain::{error::RepositoryError, ids::UserId, ports::presence::Presence};
+
+use crate::redis::connect_manager;
 
 /// `SETEX`-backed presence store; every key carries a TTL so a crashed process stops showing online.
 #[derive(Clone)]
@@ -13,8 +15,7 @@ pub struct PresenceStore {
 
 impl PresenceStore {
     pub async fn new(url: &str) -> Result<Self, RepositoryError> {
-        let client = Client::open(url).map_err(backend)?;
-        let conn = ConnectionManager::new(client).await.map_err(backend)?;
+        let conn = connect_manager(url).await.map_err(backend)?;
         Ok(Self { conn })
     }
 }

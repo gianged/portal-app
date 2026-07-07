@@ -5,7 +5,7 @@
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use redis::{Client, aio::ConnectionManager};
+use redis::aio::ConnectionManager;
 use reqwest::StatusCode;
 // `::scylla` names the driver crate, not this crate's own `scylla` module.
 use ::scylla::client::session::Session;
@@ -13,6 +13,8 @@ use sqlx::PgPool;
 use tokio::time;
 
 use domain::{error::HealthError, health::BackendId, ports::health::HealthCheck};
+
+use crate::redis::connect_manager;
 
 /// Upper bound on any single probe; a hung backend reports `Down` after this.
 const PING_TIMEOUT: Duration = Duration::from_secs(2);
@@ -104,8 +106,7 @@ impl RedisHealthCheck {
     /// Opens a dedicated connection for probing; kept separate from the app
     /// connections so a saturated app pool doesn't mask a healthy server.
     pub async fn new(url: &str) -> Result<Self, HealthError> {
-        let client = Client::open(url).map_err(backend)?;
-        let conn = ConnectionManager::new(client).await.map_err(backend)?;
+        let conn = connect_manager(url).await.map_err(backend)?;
         Ok(Self { conn })
     }
 }

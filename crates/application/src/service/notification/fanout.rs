@@ -3,8 +3,8 @@ use std::{collections::HashSet, sync::Arc};
 use domain::{
     ids::{ChannelId, GroupId, NotificationId, UserId},
     model::{
-        Channel, CommentEntity, GroupRole, Membership, Notification, NotificationPayload,
-        ProjectInviteStatus, TicketPriority, TicketStatus,
+        Channel, CommentEntity, GroupRole, Membership, NotificationPayload, ProjectInviteStatus,
+        TicketPriority, TicketStatus,
     },
     repository::{
         ChatRepository, GroupRepository, NotificationRepository, ProjectRepository,
@@ -335,7 +335,8 @@ impl NotificationFanout {
     }
 
     /// Persist one notification per recipient, skipping `exclude` (the actor; `None` for system events).
-    /// Every save is attempted; the first error is returned so one bad row doesn't drop the rest.
+    /// Recipients are written in batched statements so a company-wide fanout is a
+    /// handful of round trips, not one per user.
     async fn fan_out(
         &self,
         recipients: impl IntoIterator<Item = UserId>,
@@ -352,23 +353,14 @@ impl NotificationFanout {
         }
 
         let now = OffsetDateTime::now_utc();
-        let mut first_err = None;
-        for recipient in &targets {
-            let notification = Notification {
-                id: NotificationId(Uuid::now_v7()),
-                recipient_user_id: *recipient,
-                payload: payload.clone(),
-                read_at: None,
-                created_at: now,
-            };
-            if let Err(e) = self.notifications.save(&notification).await
-                && first_err.is_none()
-            {
-                first_err = Some(e);
-            }
-        }
-        if let Some(e) = first_err {
-            return Err(e.into());
+        for chunk in targets.chunks(ACTIVE_USER_PAGE as usize) {
+            let ids: Vec<NotificationId> = chunk
+                .iter()
+                .map(|_| NotificationId(Uuid::now_v7()))
+                .collect();
+            self.notifications
+                .save_broadcast(&ids, chunk, payload, now)
+                .await?;
         }
         // Email only after all saves succeed: a partial failure makes
         // apalis retry the job, and emailing first would double-send.
