@@ -35,7 +35,7 @@ use std::{
 use async_trait::async_trait;
 use futures::{StreamExt, stream};
 use time::OffsetDateTime;
-use tokio::task::JoinHandle;
+use tokio::{sync::oneshot, task::JoinHandle};
 use uuid::Uuid;
 
 use application::{
@@ -128,7 +128,7 @@ async fn chat_ingest_throughput_and_no_loss() {
         None,
         ChatIngestConfig::default(),
     );
-    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let drain = tokio::spawn(ingest.clone().run(rx, shutdown_rx));
 
     // Fire the load through enqueue (optimistic ack). On a full buffer the policy
@@ -286,7 +286,7 @@ async fn setup() -> Harness {
 /// this run's marked messages. Awaits subscriber readiness before returning, so
 /// no published event posted afterwards is missed.
 async fn spawn_collector(redis_url: String, marker: String) -> JoinHandle<HashSet<Uuid>> {
-    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
+    let (ready_tx, ready_rx) = oneshot::channel::<()>();
     let handle = tokio::spawn(async move {
         let client = redis::Client::open(redis_url).expect("redis client");
         let mut pubsub = client.get_async_pubsub().await.expect("pubsub conn");
@@ -455,12 +455,7 @@ impl FileStorage for NoopStorage {
     async fn delete(&self, _: &str) -> Result<(), StorageError> {
         Ok(())
     }
-    async fn presign_get(
-        &self,
-        _: &str,
-        _: std::time::Duration,
-        _: UserId,
-    ) -> Result<String, StorageError> {
+    async fn presign_get(&self, _: &str, _: Duration, _: UserId) -> Result<String, StorageError> {
         Ok(String::new())
     }
     async fn list(&self, _: &str) -> Result<Vec<StorageObject>, StorageError> {

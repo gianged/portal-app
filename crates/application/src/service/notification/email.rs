@@ -143,7 +143,7 @@ mod tests {
     use async_trait::async_trait;
     use domain::{
         error::{JobError, RepositoryError},
-        ids::TicketId,
+        ids::{ChannelId, MessageId, TicketId},
         model::User,
     };
     use time::OffsetDateTime;
@@ -253,8 +253,8 @@ mod tests {
         let queue = Arc::new(RecordingQueue::default());
         let (notifier, uid) = notifier(UserStatus::Active, queue.clone());
         let payload = NotificationPayload::Announcement {
-            announcement_id: domain::ids::MessageId(Uuid::nil()),
-            channel_id: domain::ids::ChannelId(Uuid::nil()),
+            announcement_id: MessageId(Uuid::nil()),
+            channel_id: ChannelId(Uuid::nil()),
         };
         notifier.notify(&[uid], &payload).await;
         assert!(queue.sent.lock().unwrap().is_empty());

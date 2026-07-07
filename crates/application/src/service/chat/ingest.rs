@@ -5,7 +5,10 @@ use domain::{
     repository::ChatRepository,
 };
 use tokio::{
-    sync::{mpsc, oneshot},
+    sync::{
+        mpsc::{self, error::TrySendError},
+        oneshot,
+    },
     time::{self, MissedTickBehavior},
 };
 
@@ -89,12 +92,8 @@ impl ChatIngest {
         // Backpressure: shed load rather than await capacity, so a full buffer never stalls the WS task.
         match self.tx.try_send(message.clone()) {
             Ok(()) => Ok(message),
-            Err(mpsc::error::TrySendError::Full(_)) => {
-                Err(Error::Conflict("chat_overloaded".into()))
-            }
-            Err(mpsc::error::TrySendError::Closed(_)) => {
-                Err(Error::Conflict("chat_unavailable".into()))
-            }
+            Err(TrySendError::Full(_)) => Err(Error::Conflict("chat_overloaded".into())),
+            Err(TrySendError::Closed(_)) => Err(Error::Conflict("chat_unavailable".into())),
         }
     }
 

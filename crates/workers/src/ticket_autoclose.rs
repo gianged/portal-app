@@ -1,13 +1,17 @@
 //! Periodic ticket auto-close sweep: closes resolved tickets whose reopen window
 //! has lapsed, emitting audit + notification events. Idempotent, safe to abort.
 
-use std::{sync::Arc, time::Duration as StdDuration};
+use std::sync::Arc;
 
 use time::{Duration, OffsetDateTime};
 
 use application::MaintenanceService;
 
-pub async fn run(maintenance: Arc<MaintenanceService>, window: Duration, interval: StdDuration) {
+pub async fn run(
+    maintenance: Arc<MaintenanceService>,
+    window: Duration,
+    interval: std::time::Duration,
+) {
     let mut ticker = tokio::time::interval(interval);
     loop {
         ticker.tick().await;

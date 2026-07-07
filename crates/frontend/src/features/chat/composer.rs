@@ -1,7 +1,7 @@
 //! Message composer: sends over the WebSocket when connected, else falls back to a REST post; emits typing signals and attaches files by storage key on send.
 
 use gloo::timers::future::TimeoutFuture;
-use leptos::{html::Input as HtmlInputEl, prelude::*, task};
+use leptos::{ev::SubmitEvent, html::Input as HtmlInputEl, prelude::*, task};
 use web_sys::{Blob, FormData};
 
 use shared::dto::chat::{ChatAttachmentDto, MessageDto, SendMessageRequest};
@@ -158,7 +158,7 @@ pub fn Composer(
                         {move || pending.get().into_iter().map(|a| pending_chip(&a, pending)).collect_view()}
                     </Cluster>
                 </Show>
-                <form on:submit=move |ev: leptos::ev::SubmitEvent| { ev.prevent_default(); do_send(); }>
+                <form on:submit=move |ev: SubmitEvent| { ev.prevent_default(); do_send(); }>
                     <InputGroup value=text on_input=on_input placeholder="Message…" trailing=trailing />
                 </form>
             </Stack>

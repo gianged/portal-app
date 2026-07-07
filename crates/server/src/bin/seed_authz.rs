@@ -13,6 +13,7 @@ use anyhow::{Context, Result};
 use application::permissions::Permissions;
 use domain::{
     ids::TicketId,
+    model::User,
     ports::authz_client::AuthzClient,
     repository::{GroupRepository, ProjectRepository, TicketRepository, UserRepository},
 };
@@ -179,7 +180,7 @@ async fn main() -> Result<()> {
 
 /// Pages through every active user (`list_active` is the only enumeration the
 /// repository exposes).
-async fn load_active_users(users: &dyn UserRepository) -> Result<Vec<domain::model::User>> {
+async fn load_active_users(users: &dyn UserRepository) -> Result<Vec<User>> {
     const PAGE: u32 = 500;
     let mut all = Vec::new();
     let mut offset = 0u32;

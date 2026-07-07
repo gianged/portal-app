@@ -71,7 +71,7 @@ use infrastructure::{local_storage::LocalStorage, signed_url::SignedUrl};
 
 use server::{
     app::AppState, auth::TokenService, middleware::ip_allowlist::IpAllowlist,
-    middleware::rate_limit::RateLimits, realtime::Realtime,
+    middleware::rate_limit::RateLimits, realtime::Realtime, resolve::SummaryCache,
 };
 
 // --- repositories --------------------------------------------------------------
@@ -1278,9 +1278,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         token: Arc::new(TokenService::new("test-secret", 3600, false)),
         revocation: revocation.clone(),
         realtime,
-        summary_cache: Arc::new(server::resolve::SummaryCache::new(
-            std::time::Duration::from_secs(30),
-        )),
+        summary_cache: Arc::new(SummaryCache::new(std::time::Duration::from_secs(30))),
         audit_service,
         presence,
         rate_limiter,

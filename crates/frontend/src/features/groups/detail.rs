@@ -1,6 +1,6 @@
 //! Group detail: the org-tree roster (leader, sub-leaders, members) plus member administration: add, change role, remove, transfer leadership.
 
-use leptos::{prelude::*, task};
+use leptos::{ev::MouseEvent, prelude::*, task};
 
 use shared::dto::group::{
     AddMemberRequest, ChangeMemberRoleRequest, GroupDetailDto, GroupKind, GroupRole, MembershipDto,
@@ -149,8 +149,8 @@ fn roster_card(
     detail: &GroupDetailDto,
     change_role: impl Fn(UserId, GroupRole) + Copy + Send + Sync + 'static,
     remove: impl Fn(UserId) + Copy + Send + Sync + 'static,
-    open_add: Callback<leptos::ev::MouseEvent>,
-    open_transfer: Callback<leptos::ev::MouseEvent>,
+    open_add: Callback<MouseEvent>,
+    open_transfer: Callback<MouseEvent>,
 ) -> AnyView {
     let mut rows: Vec<AnyView> = Vec::new();
     for m in &detail.members {

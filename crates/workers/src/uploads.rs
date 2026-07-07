@@ -1,13 +1,17 @@
 //! Periodic orphan-upload sweep: deletes stored files no attachment or avatar
 //! references that are older than the grace window. Grace protects in-flight uploads.
 
-use std::{sync::Arc, time::Duration as StdDuration};
+use std::sync::Arc;
 
 use time::{Duration, OffsetDateTime};
 
 use application::MaintenanceService;
 
-pub async fn run(maintenance: Arc<MaintenanceService>, grace: Duration, interval: StdDuration) {
+pub async fn run(
+    maintenance: Arc<MaintenanceService>,
+    grace: Duration,
+    interval: std::time::Duration,
+) {
     let mut ticker = tokio::time::interval(interval);
     loop {
         ticker.tick().await;

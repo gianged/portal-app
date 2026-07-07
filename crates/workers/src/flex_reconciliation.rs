@@ -1,14 +1,14 @@
 //! Month-end flex settlement sweep: near the end of each month, warns users whose
 //! approved flex hours do not net to the expected monthly total. Idempotent.
 
-use std::{sync::Arc, time::Duration as StdDuration};
+use std::sync::Arc;
 
 use time::{Date, OffsetDateTime};
 
 use application::FlexHoursService;
 
 /// Ticks on `interval`; near month-end, emits unreconciled flex warnings.
-pub async fn run(flex: Arc<FlexHoursService>, interval: StdDuration) {
+pub async fn run(flex: Arc<FlexHoursService>, interval: std::time::Duration) {
     let mut ticker = tokio::time::interval(interval);
     loop {
         ticker.tick().await;

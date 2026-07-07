@@ -1,13 +1,17 @@
 //! Periodic notification-retention sweep: prunes read notifications older than
 //! the configured retention window. Idempotent, so safe to abort at shutdown.
 
-use std::{sync::Arc, time::Duration as StdDuration};
+use std::sync::Arc;
 
 use time::{Duration, OffsetDateTime};
 
 use application::MaintenanceService;
 
-pub async fn run(maintenance: Arc<MaintenanceService>, retention: Duration, interval: StdDuration) {
+pub async fn run(
+    maintenance: Arc<MaintenanceService>,
+    retention: Duration,
+    interval: std::time::Duration,
+) {
     let mut ticker = tokio::time::interval(interval);
     loop {
         ticker.tick().await;

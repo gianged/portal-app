@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf, time::Duration as StdDuration};
+use std::{env, path::PathBuf};
 
 use anyhow::Context;
 use time::Duration;
@@ -38,15 +38,15 @@ pub struct Config {
     /// Read notifications older than this are pruned.
     pub notification_retention: Duration,
     /// How often the notification-prune job runs.
-    pub cleanup_interval: StdDuration,
+    pub cleanup_interval: std::time::Duration,
     /// Upload objects untouched for at least this long are sweep-eligible.
     pub upload_grace: Duration,
     /// How often the orphan-upload sweep runs.
-    pub upload_sweep_interval: StdDuration,
+    pub upload_sweep_interval: std::time::Duration,
     /// Resolved tickets older than this are auto-closed (the reopen window).
     pub ticket_autoclose_window: Duration,
     /// How often the ticket auto-close sweep runs.
-    pub ticket_autoclose_interval: StdDuration,
+    pub ticket_autoclose_interval: std::time::Duration,
     /// When false (the dev default) emails are logged, not sent, and no SMTP
     /// settings are needed.
     pub email_enabled: bool,
@@ -65,17 +65,17 @@ pub struct Config {
     /// Day of month on/after which the previous month's report is generated.
     pub report_schedule_day: u8,
     /// How often the report scheduler wakes to check whether it should run.
-    pub report_schedule_interval: StdDuration,
+    pub report_schedule_interval: std::time::Duration,
     /// How often the health prober pings each backend to drive its breaker.
-    pub health_probe_interval: StdDuration,
+    pub health_probe_interval: std::time::Duration,
     /// When false, the daily leave-expiry sweep does not run.
     pub leave_expiry_enabled: bool,
     /// How often the leave-expiry sweep runs.
-    pub leave_expiry_interval: StdDuration,
+    pub leave_expiry_interval: std::time::Duration,
     /// When false, the month-end flex reconciliation sweep does not run.
     pub flex_recon_enabled: bool,
     /// How often the flex reconciliation sweep wakes to check the date.
-    pub flex_recon_interval: StdDuration,
+    pub flex_recon_interval: std::time::Duration,
 }
 
 /// Parses worker configuration from the process environment.
@@ -184,11 +184,13 @@ pub fn from_env() -> anyhow::Result<Config> {
         storage_public_base: optional("STORAGE_PUBLIC_BASE", "http://localhost:8080/api/v1"),
         storage_signing_secret: required_secret("STORAGE_SIGNING_SECRET")?,
         notification_retention: Duration::days(retention_days),
-        cleanup_interval: StdDuration::from_secs(cleanup_interval_hours * 3600),
+        cleanup_interval: std::time::Duration::from_secs(cleanup_interval_hours * 3600),
         upload_grace: Duration::hours(upload_grace_hours),
-        upload_sweep_interval: StdDuration::from_secs(upload_sweep_interval_hours * 3600),
+        upload_sweep_interval: std::time::Duration::from_secs(upload_sweep_interval_hours * 3600),
         ticket_autoclose_window: Duration::days(ticket_autoclose_days),
-        ticket_autoclose_interval: StdDuration::from_secs(ticket_autoclose_interval_hours * 3600),
+        ticket_autoclose_interval: std::time::Duration::from_secs(
+            ticket_autoclose_interval_hours * 3600,
+        ),
         email_enabled,
         smtp_host,
         smtp_port: optional("SMTP_PORT", "587")
@@ -201,12 +203,14 @@ pub fn from_env() -> anyhow::Result<Config> {
         portal_base_url: optional("PORTAL_BASE_URL", "http://localhost:8081"),
         report_enabled,
         report_schedule_day,
-        report_schedule_interval: StdDuration::from_secs(report_schedule_interval_hours * 3600),
-        health_probe_interval: StdDuration::from_secs(health_probe_interval_secs),
+        report_schedule_interval: std::time::Duration::from_secs(
+            report_schedule_interval_hours * 3600,
+        ),
+        health_probe_interval: std::time::Duration::from_secs(health_probe_interval_secs),
         leave_expiry_enabled,
-        leave_expiry_interval: StdDuration::from_secs(leave_expiry_interval_hours * 3600),
+        leave_expiry_interval: std::time::Duration::from_secs(leave_expiry_interval_hours * 3600),
         flex_recon_enabled,
-        flex_recon_interval: StdDuration::from_secs(flex_recon_interval_hours * 3600),
+        flex_recon_interval: std::time::Duration::from_secs(flex_recon_interval_hours * 3600),
     })
 }
 

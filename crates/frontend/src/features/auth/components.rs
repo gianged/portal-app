@@ -1,4 +1,4 @@
-use leptos::{prelude::*, task};
+use leptos::{ev::SubmitEvent, prelude::*, task};
 use leptos_router::{NavigateOptions, hooks};
 use shared::dto::user::LoginRequest;
 use shared::validation::user;
@@ -26,7 +26,7 @@ pub fn LoginForm() -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");
     let navigate = hooks::use_navigate();
 
-    let on_submit = move |ev: leptos::ev::SubmitEvent| {
+    let on_submit = move |ev: SubmitEvent| {
         ev.prevent_default();
         if submitting.get() {
             return;

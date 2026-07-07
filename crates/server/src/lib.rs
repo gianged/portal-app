@@ -24,7 +24,7 @@ use std::{net::SocketAddr, process, time::Duration};
 
 #[cfg(unix)]
 use tokio::signal::unix::{self, SignalKind};
-use tokio::{signal, time};
+use tokio::{net::TcpListener, signal, time};
 
 use infrastructure::telemetry;
 
@@ -43,7 +43,7 @@ pub async fn run() -> anyhow::Result<()> {
     let cfg = config::from_env()?;
     let (router, ingest) = app::build(&cfg).await?;
 
-    let listener = tokio::net::TcpListener::bind(cfg.server_addr).await?;
+    let listener = TcpListener::bind(cfg.server_addr).await?;
     tracing::info!(addr = %cfg.server_addr, "server listening");
     // Guarantees Ctrl-C exits even if graceful shutdown stalls (e.g. a live WS).
     tokio::spawn(force_exit_watchdog());

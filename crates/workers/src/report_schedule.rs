@@ -2,7 +2,7 @@
 //! month's company report (idempotently), emails the PDF to Director/HR
 //! recipients, and archives a per-staff PDF for every active user.
 
-use std::{sync::Arc, time::Duration as StdDuration};
+use std::sync::Arc;
 
 use time::OffsetDateTime;
 
@@ -16,7 +16,7 @@ pub async fn run(
     reports: Arc<ReportService>,
     email_queue: Arc<dyn JobQueue>,
     day_of_month: u8,
-    interval: StdDuration,
+    interval: std::time::Duration,
 ) {
     let mut ticker = tokio::time::interval(interval);
     loop {

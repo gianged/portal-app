@@ -1,14 +1,14 @@
 //! Periodic leave-balance expiry sweep: warns on grants nearing expiry and lapses
 //! grants whose expiry has passed. Idempotent, safe to abort.
 
-use std::{sync::Arc, time::Duration as StdDuration};
+use std::sync::Arc;
 
 use time::OffsetDateTime;
 
 use application::LeaveBalanceService;
 
 /// Ticks on `interval`; runs the leave-balance expiry sweep on each wake.
-pub async fn run(leave: Arc<LeaveBalanceService>, interval: StdDuration) {
+pub async fn run(leave: Arc<LeaveBalanceService>, interval: std::time::Duration) {
     let mut ticker = tokio::time::interval(interval);
     loop {
         ticker.tick().await;
