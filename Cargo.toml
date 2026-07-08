@@ -55,7 +55,7 @@ apalis = "0.7"
 apalis-redis = "0.7"
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "hostname", "pool", "tokio1", "tokio1-rustls-tls"] }
 # PDF rendering; default-features=false drops the heavy html/azul layout stack.
-printpdf = { version = "0.9", default-features = false }
+printpdf = { version = "0", default-features = false }
 
 # frontend
 leptos = { version = "0.8", features = ["csr"] }
