@@ -15,6 +15,10 @@
 
 # ---- chef: shared base with cargo-chef for dependency caching --------------
 FROM rust:1.94-bookworm AS chef
+# protoc backs the crates/proto build script (tonic-prost-build).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
 RUN cargo install cargo-chef --locked --version "^0.1"
 WORKDIR /app
 
@@ -27,8 +31,11 @@ RUN cargo chef prepare --recipe-path /recipe.json
 FROM chef AS builder
 ARG BINARY_NAME=server
 COPY --from=planner /recipe.json /recipe.json
-RUN cargo chef cook --release --recipe-path /recipe.json
+# cook only the target binary's deps; the frontend crate is wasm-only.
+RUN cargo chef cook --release --bin "${BINARY_NAME}" --recipe-path /recipe.json
 COPY . .
+# sqlx macros check against the committed .sqlx cache; no DB in the build.
+ENV SQLX_OFFLINE=true
 RUN cargo build --release --bin "${BINARY_NAME}"
 
 # ---- runtime: slim debian + ca-certs + the single binary -----------------

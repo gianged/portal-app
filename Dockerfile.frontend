@@ -23,7 +23,8 @@ RUN cargo chef prepare --recipe-path /recipe.json
 # ---- builder: cook wasm deps, then trunk build --release ----------------
 FROM chef AS builder
 COPY --from=planner /recipe.json /recipe.json
-RUN cargo chef cook --release --target wasm32-unknown-unknown --recipe-path /recipe.json
+# cook only the frontend's deps; backend crates don't build for wasm.
+RUN cargo chef cook --release --target wasm32-unknown-unknown -p frontend --recipe-path /recipe.json
 COPY . .
 RUN cd crates/frontend && trunk build --release
 

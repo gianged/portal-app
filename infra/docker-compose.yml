@@ -204,6 +204,7 @@ services:
       OPENFGA_MODEL_PATH: /openfga/authorization-model.json
       OPENFGA_BEARER_TOKEN: ${OPENFGA_BEARER_TOKEN:?OPENFGA_BEARER_TOKEN is required — set it in .env}
       STORAGE_ROOT: /app/storage
+      STORAGE_SIGNING_SECRET: ${STORAGE_SIGNING_SECRET:?STORAGE_SIGNING_SECRET is required — set it in .env}
       WORKERS_GRPC_ADDR: 0.0.0.0:50052
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:?INTERNAL_GRPC_TOKEN is required — set it in .env}
       RUST_LOG: ${RUST_LOG:-info,portal=debug}
