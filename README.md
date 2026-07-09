@@ -31,6 +31,7 @@ Full-stack Rust — an Axum HTTP/WebSocket backend, a Leptos WebAssembly fronten
 - **Announcements** — company-wide, with a 15-minute edit grace period and broadcast notifications.
 - **Authorization** — ReBAC via OpenFGA; permissions are derived from the org graph, not stored as flat ACLs.
 - **File uploads** — stored on the host filesystem under `STORAGE_ROOT`, served via signed URLs.
+- **External read API** — `/api/ext/v1`, a read-only surface for scripts and reporting tools, authenticated with service-account keys (see [Operations](#external-read-api)).
 
 ## Tech stack
 
@@ -44,6 +45,7 @@ Full-stack Rust — an Axum HTTP/WebSocket backend, a Leptos WebAssembly fronten
 | Sessions, pub-sub, presence, rate limit | Redis |
 | Authorization | OpenFGA (ReBAC) |
 | Background jobs | Apalis |
+| Internal RPC | gRPC (tonic + prost) between server and workers |
 | File storage | Local filesystem |
 | Observability | tracing + tracing-subscriber |
 | TLS | rustls |
@@ -56,21 +58,25 @@ portal-app/
 │   ├── domain/          Pure types, traits (ports). No async, no IO.
 │   ├── application/     Business logic services. Depends only on domain.
 │   ├── infrastructure/  Adapters: Postgres, Scylla, Redis, OpenFGA, local storage.
-│   ├── server/          Axum HTTP + WebSocket binary.
-│   ├── workers/         Apalis background-job binary.
+│   ├── proto/           Internal gRPC contracts (tonic/prost). Native-only.
+│   ├── server/          Axum HTTP + WebSocket + internal gRPC query-plane binary.
+│   ├── workers/         Apalis background-job binary + internal gRPC job ingest.
 │   ├── shared/          DTOs + validation shared by backend and frontend (native + WASM).
 │   └── frontend/        Leptos SPA, built with Trunk to WebAssembly.
 ├── infra/               Docker Compose stack, schema files, OpenFGA model, nginx, scripts.
+├── docs/api/            Public contract for the external read API.
+├── loadtest/            Go load-test harness (login, API mix, WebSocket chat).
 ├── storage/uploads/     Local file uploads (gitignored).
 └── e2e/                 Full-stack end-to-end browser tests.
 ```
 
-Two runtime processes — **server** (HTTP/WebSocket) and **workers** (background jobs) — share the application and infrastructure crates and connect to the same backing stores.
+Two runtime processes — **server** (HTTP/WebSocket) and **workers** (background jobs) — share the application and infrastructure crates and connect to the same backing stores. They also talk to each other over an internal, token-gated gRPC plane: the server dispatches jobs to the workers' gRPC ingest first, falling back to a direct Apalis enqueue and then to a Redis job spool, with each hop circuit-breaker-gated.
 
 ## Prerequisites
 
 - Rust 1.94+ (pinned in `rust-toolchain.toml` — `rustup` installs it automatically)
 - Docker + Docker Compose
+- `protoc` (Protocol Buffers compiler) — `crates/proto`'s build script shells out to it (`apt install protobuf-compiler` / `winget install protobuf` / `brew install protobuf`)
 - [cargo-make](https://github.com/sagiegurari/cargo-make): `cargo install cargo-make --locked`
 - [Trunk](https://trunkrs.dev): `cargo install trunk` *(only for host-run frontend)*
 - [sqlx-cli](https://crates.io/crates/sqlx-cli): `cargo install sqlx-cli --no-default-features --features rustls,postgres` *(only for schema changes)*
@@ -110,6 +116,7 @@ Generate each with `openssl rand -hex 32`. These are placeholders in `.env.examp
 | --- | --- |
 | `JWT_SECRET` | Signs session tokens (min 32 bytes). |
 | `STORAGE_SIGNING_SECRET` | Signs presigned file-download URLs (distinct from `JWT_SECRET`). |
+| `INTERNAL_GRPC_TOKEN` | Shared bearer token gating the internal gRPC plane (min 32 bytes). Required at boot for both server and workers. |
 | `REDIS_PASSWORD` | Redis auth — also embedded in `REDIS_URL`. Never expose Redis unauthenticated. |
 | `OPENFGA_BEARER_TOKEN` | OpenFGA API auth — required in production (see below). |
 | `POSTGRES_PASSWORD` | Database password (containerized Postgres). |
@@ -123,6 +130,24 @@ Generate each with `openssl rand -hex 32`. These are placeholders in `.env.examp
 | `SCYLLA_HOSTS`, `SCYLLA_KEYSPACE` | `localhost:9042`, `portal_chat` | Chat-history backend. |
 | `OPENFGA_API_URL`, `OPENFGA_STORE_ID` | `http://localhost:8088` | Authorization service. `STORE_ID` is populated by bootstrap. |
 | `SERVER_HOST`, `SERVER_PORT` | `0.0.0.0`, `8080` | Backend bind address. |
+
+### Internal gRPC plane (server ↔ workers)
+
+| Variable | Example | Purpose |
+| --- | --- | --- |
+| `SERVER_GRPC_ADDR` | `0.0.0.0:50051` | Server query-plane bind address. |
+| `WORKERS_GRPC_ADDR` | `0.0.0.0:50052` | Workers job-ingest bind address. |
+| `WORKERS_GRPC_URL` | `http://127.0.0.1:50052` | Where the server dials the workers' ingest (primary job-dispatch hop). |
+| `INTERNAL_GRPC_TOKEN` | *(secret)* | Shared bearer token for both planes — see secrets above. |
+
+The plane is internal-only: keep both ports firewalled from anything that is not the server/workers pair.
+
+### External read API (`/api/ext/v1`)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `EXT_RATE_LIMIT` | `60` | Per-service-account-key request ceiling per rate-limit window. |
+| `EXT_IP_RATE_LIMIT` | `120` | Per-IP ceiling applied before key auth (several keys may share one host). |
 
 ### Storage, auth, and behavior
 
@@ -140,9 +165,7 @@ An IP allowlist middleware runs before auth and any handler. With `IP_ALLOWLIST_
 
 ### Production-only authorization hardening
 
-The dev defaults let OpenFGA run without auth. In production:
-
-- Set `OPENFGA_ALLOW_NO_AUTH=false` and provide `OPENFGA_BEARER_TOKEN`.
+- `OPENFGA_ALLOW_NO_AUTH` defaults to `false`, which makes `OPENFGA_BEARER_TOKEN` mandatory. Setting it to `true` (OpenFGA without auth) is a **local-dev-only** escape hatch — never in production.
 - Set `OPENFGA_DATASTORE_SSLMODE=require` (TLS to its Postgres datastore).
 
 ### Email (workers, optional)
@@ -181,6 +204,8 @@ cargo make down    # stop it, keeping data volumes
 | Service | Container port | Host port (env override) | Notes |
 | --- | --- | --- | --- |
 | Backend server | 8080 | `8080` (`SERVER_HOST_PORT`) | REST + WebSocket + files + health |
+| Server gRPC | 50051 | `50051` (`SERVER_GRPC_HOST_PORT`) | Internal query plane — token-gated, keep firewalled |
+| Workers gRPC | 50052 | — (not published) | Internal job ingest; host-run dev binds 50052 directly |
 | Frontend (nginx) | 80 | `80` (`FRONTEND_HOST_PORT`) | Full-stack compose only |
 | Frontend dev (Trunk) | 8081 | `8081` (`FRONTEND_DEV_PORT`) | Host-run quick start only |
 | PostgreSQL | 5432 | `5432` (`POSTGRES_HOST_PORT`) | |
@@ -199,6 +224,10 @@ cargo make down    # stop it, keeping data volumes
 | `GET /readyz` | Readiness | Per-backend JSON status; returns `503` if any backend is down, `200` otherwise. Use for load-balancer drain. |
 
 Readiness is driven by per-backend circuit breakers, probed every `HEALTH_PROBE_INTERVAL_SECS`.
+
+### External read API
+
+`/api/ext/v1` is a strictly read-only JSON API for scripts and reporting tools (projects, work requests, company reports). Authentication is via service-account keys (`pak_...`), created by a Director or HR at `POST /api/v1/service-accounts` — the key is shown once at creation and revocable at any time. Scopes map to endpoint groups; requests are rate-limited per key (`EXT_RATE_LIMIT`) and per IP (`EXT_IP_RATE_LIMIT`), and the IP allowlist applies before authentication. The full public contract lives in [`docs/api/external-api.md`](docs/api/external-api.md).
 
 ### Bootstrap
 
@@ -234,6 +263,7 @@ CI builds with `SQLX_OFFLINE` against the committed `.sqlx/` cache — commit th
 | Integration | `crates/server/tests/`, `crates/application/tests/` | `testcontainers` (real Postgres / Redis / Scylla / OpenFGA) |
 | Frontend component | `crates/frontend/tests/` | `wasm-bindgen-test` |
 | End-to-end browser | `e2e/` | browser automation against a running stack |
+| Load | `loadtest/` | Go harness — login, API mix, WebSocket chat scenarios (see its README) |
 
 ```bash
 cargo make test            # whole workspace
