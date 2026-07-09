@@ -27,9 +27,10 @@ use application::{
     resilience::HealthRegistry,
     service::{
         AnnouncementService, AuditService, ChatIngest, ChatIngestConfig, ChatService,
-        CommentService, DailyReportService, DayOffService, FlexHoursService, GroupService,
-        HolidayService, LeaveBalanceService, NotificationService, OvertimeService, PolicyProvider,
-        PolicyService, ProjectService, ReportService, RequestService, TicketService, UserService,
+        CommentService, DailyReportService, DayOffService, ExtReadService, FlexHoursService,
+        GroupService, HolidayService, LeaveBalanceService, NotificationService, OvertimeService,
+        PolicyProvider, PolicyService, ProjectService, ReportService, RequestService,
+        ServiceAccountService, TicketService, UserService,
     },
 };
 use domain::{
@@ -38,7 +39,7 @@ use domain::{
     ids::{
         ChannelId, CommentId, DailyReportId, DayOffId, FlexHoursId, GroupId, LeaveGrantId,
         MessageId, NotificationId, OvertimeId, ProjectCollaboratorId, ProjectId, ProjectInviteId,
-        ReportId, RequestId, TicketId, UserId,
+        ReportId, RequestId, ServiceAccountId, TicketId, UserId,
     },
     model::{
         Announcement, AttendancePolicy, AuditLog, Channel, ChannelKind, ChannelMembership,
@@ -46,7 +47,7 @@ use domain::{
         Group, GroupProjectStats, GroupRequestStats, GroupStaffStats, Holiday, LeaveGrant,
         LeaveTransaction, Membership, Message, MonthlyBucket, MonthlyReportData, Notification,
         NotificationPayload, Overtime, Period, Project, ProjectCollaborator, ProjectInvite, Report,
-        ReportKind, Request, RequestAttachment, RequestStatus, StaffMonthlyReport,
+        ReportKind, Request, RequestAttachment, RequestStatus, ServiceAccount, StaffMonthlyReport,
         StaffMonthlyStats, Ticket, TicketStats, User, UserStatus, YearlyReportData,
     },
     ports::{
@@ -64,7 +65,7 @@ use domain::{
         DailyReportRepository, DayOffRepository, FlexHoursRepository, GroupRepository,
         HolidayRepository, LeaveBalanceRepository, NotificationRepository, OvertimeRepository,
         PolicyRepository, ProjectRepository, ReportArchiveRepository, ReportStatsRepository,
-        RequestRepository, TicketRepository, UserRepository,
+        RequestRepository, ServiceAccountRepository, TicketRepository, UserRepository,
     },
 };
 use infrastructure::{local_storage::LocalStorage, signed_url::SignedUrl};
@@ -245,6 +246,13 @@ impl ProjectRepository for FakeProjects {
     ) -> Result<Vec<Project>, RepositoryError> {
         Ok(Vec::new())
     }
+    async fn list_page(
+        &self,
+        _after: Option<ProjectId>,
+        _limit: u32,
+    ) -> Result<Vec<Project>, RepositoryError> {
+        Ok(Vec::new())
+    }
     async fn save_project(&self, _project: &Project) -> Result<(), RepositoryError> {
         Ok(())
     }
@@ -303,6 +311,14 @@ impl RequestRepository for FakeRequests {
         _assignee: UserId,
         _status: Option<RequestStatus>,
         _q: Option<&str>,
+    ) -> Result<Vec<Request>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn list_page(
+        &self,
+        _project: Option<ProjectId>,
+        _after: Option<RequestId>,
+        _limit: u32,
     ) -> Result<Vec<Request>, RepositoryError> {
         Ok(Vec::new())
     }
@@ -566,6 +582,33 @@ impl AuditRepository for FakeAudit {
     }
 }
 
+struct FakeServiceAccounts;
+
+#[async_trait]
+impl ServiceAccountRepository for FakeServiceAccounts {
+    async fn create(&self, _account: &ServiceAccount) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+    async fn find_by_id(
+        &self,
+        _id: ServiceAccountId,
+    ) -> Result<Option<ServiceAccount>, RepositoryError> {
+        Ok(None)
+    }
+    async fn find_active_by_key_hash(
+        &self,
+        _key_hash: &[u8],
+    ) -> Result<Option<ServiceAccount>, RepositoryError> {
+        Ok(None)
+    }
+    async fn list(&self) -> Result<Vec<ServiceAccount>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn save(&self, _account: &ServiceAccount) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+}
+
 // --- ports ---------------------------------------------------------------------
 
 struct FakeAuthz;
@@ -575,6 +618,14 @@ impl AuthzClient for FakeAuthz {
     async fn check(
         &self,
         _user: UserId,
+        _relation: &str,
+        _object: &str,
+    ) -> Result<bool, AuthzError> {
+        Ok(false)
+    }
+    async fn check_subject(
+        &self,
+        _subject: &str,
         _relation: &str,
         _object: &str,
     ) -> Result<bool, AuthzError> {
@@ -1199,6 +1250,18 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         events.clone(),
     ));
 
+    // Hoisted: shared by the report routes and the ext read service.
+    let report_service = Arc::new(ReportService::new(
+        Arc::new(FakeReportStats),
+        Arc::new(FakeReportArchive),
+        Arc::new(FakeRenderer),
+        storage.clone(),
+        users.clone(),
+        leave_service.clone(),
+        flex_service.clone(),
+        perms.clone(),
+    ));
+
     let state = AppState {
         user: Arc::new(UserService::new(
             users.clone(),
@@ -1246,14 +1309,15 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
             Arc::new(FakeNotifications),
             perms.clone(),
         )),
-        report: Arc::new(ReportService::new(
-            Arc::new(FakeReportStats),
-            Arc::new(FakeReportArchive),
-            Arc::new(FakeRenderer),
-            storage.clone(),
-            users.clone(),
-            leave_service.clone(),
-            flex_service.clone(),
+        report: report_service.clone(),
+        service_accounts: Arc::new(ServiceAccountService::new(
+            Arc::new(FakeServiceAccounts),
+            perms.clone(),
+        )),
+        ext_read: Arc::new(ExtReadService::new(
+            projects.clone(),
+            requests.clone(),
+            report_service.clone(),
             perms.clone(),
         )),
         policy: Arc::new(PolicyService::new(
@@ -1310,5 +1374,7 @@ pub fn default_test_app() -> TestApp {
         auth_ip: 1000,
         api: 1000,
         chat: 1000,
+        ext: 1000,
+        ext_ip: 1000,
     })
 }

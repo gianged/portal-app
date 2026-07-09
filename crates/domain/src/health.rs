@@ -20,15 +20,18 @@ pub enum BackendId {
     Scylla,
     Redis,
     OpenFga,
+    /// The workers' internal gRPC ingest plane, probed by the server.
+    WorkersGrpc,
 }
 
 impl BackendId {
     /// Every backend, in a stable order for iterating the registry.
-    pub const ALL: [BackendId; 4] = [
+    pub const ALL: [BackendId; 5] = [
         BackendId::Postgres,
         BackendId::Scylla,
         BackendId::Redis,
         BackendId::OpenFga,
+        BackendId::WorkersGrpc,
     ];
 
     /// Stable wire token, matching the serde rename.
@@ -39,6 +42,14 @@ impl BackendId {
             Self::Scylla => "scylla",
             Self::Redis => "redis",
             Self::OpenFga => "open_fga",
+            Self::WorkersGrpc => "workers_grpc",
         }
+    }
+
+    /// Whether this backend being down should flip readiness. The workers gRPC
+    /// plane never gates: job dispatch falls back to the direct apalis path.
+    #[must_use]
+    pub const fn gates_readiness(self) -> bool {
+        !matches!(self, Self::WorkersGrpc)
     }
 }

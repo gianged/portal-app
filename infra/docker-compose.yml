@@ -151,12 +151,17 @@ services:
       STORAGE_ROOT: /app/storage
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
+      SERVER_GRPC_ADDR: 0.0.0.0:50051
+      WORKERS_GRPC_URL: http://workers:50052
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:?INTERNAL_GRPC_TOKEN is required — set it in .env}
+      EXT_RATE_LIMIT: ${EXT_RATE_LIMIT:-60}
       RUST_LOG: ${RUST_LOG:-info,portal=debug}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — set it in .env}
       STORAGE_SIGNING_SECRET: ${STORAGE_SIGNING_SECRET:?STORAGE_SIGNING_SECRET is required — set it in .env}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
     ports:
       - "${SERVER_HOST_PORT:-8080}:8080"
+      - "${SERVER_GRPC_HOST_PORT:-50051}:50051"
     volumes:
       - ../storage:/app/storage
       - ./openfga:/openfga:ro
@@ -199,6 +204,8 @@ services:
       OPENFGA_MODEL_PATH: /openfga/authorization-model.json
       OPENFGA_BEARER_TOKEN: ${OPENFGA_BEARER_TOKEN:?OPENFGA_BEARER_TOKEN is required — set it in .env}
       STORAGE_ROOT: /app/storage
+      WORKERS_GRPC_ADDR: 0.0.0.0:50052
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:?INTERNAL_GRPC_TOKEN is required — set it in .env}
       RUST_LOG: ${RUST_LOG:-info,portal=debug}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — set it in .env}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}

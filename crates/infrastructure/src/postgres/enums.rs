@@ -2,8 +2,33 @@ use domain::model::{
     AuditAction, BalanceExpiryPolicy, DailyReportEntryKind, DailyReportStatus, DayOffKind,
     DayOffStatus, FlexStatus, GroupKind, GroupRole, LeaveTxnKind, NotificationKind, OvertimeStatus,
     ProjectInviteStatus, ProjectStatus, ReportKind, ReportScope, RequestPriority, RequestStatus,
-    SystemRole, TicketCategory, TicketPriority, TicketStatus, UserStatus,
+    ServiceAccountStatus, SystemRole, TicketCategory, TicketPriority, TicketStatus, UserStatus,
 };
+
+#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[sqlx(type_name = "auth.service_account_status", rename_all = "snake_case")]
+pub(crate) enum SqlServiceAccountStatus {
+    Active,
+    Revoked,
+}
+
+impl From<ServiceAccountStatus> for SqlServiceAccountStatus {
+    fn from(v: ServiceAccountStatus) -> Self {
+        match v {
+            ServiceAccountStatus::Active => Self::Active,
+            ServiceAccountStatus::Revoked => Self::Revoked,
+        }
+    }
+}
+
+impl From<SqlServiceAccountStatus> for ServiceAccountStatus {
+    fn from(v: SqlServiceAccountStatus) -> Self {
+        match v {
+            SqlServiceAccountStatus::Active => Self::Active,
+            SqlServiceAccountStatus::Revoked => Self::Revoked,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, sqlx::Type)]
 #[sqlx(type_name = "auth.user_status", rename_all = "snake_case")]

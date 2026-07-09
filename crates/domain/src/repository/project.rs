@@ -22,6 +22,14 @@ pub trait ProjectRepository: Send + Sync {
         group_id: GroupId,
     ) -> Result<Vec<Project>, RepositoryError>;
 
+    /// Keyset page over every project, ordered by id ascending; `after` is
+    /// exclusive. Backs the internal query plane and the external read API.
+    async fn list_page(
+        &self,
+        after: Option<ProjectId>,
+        limit: u32,
+    ) -> Result<Vec<Project>, RepositoryError>;
+
     async fn save_project(&self, project: &Project) -> Result<(), RepositoryError>;
 
     async fn list_collaborators(

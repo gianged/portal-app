@@ -13,6 +13,7 @@ mod policy;
 mod project;
 mod reporting;
 mod request;
+mod service_account;
 mod ticket;
 mod user;
 
@@ -31,5 +32,6 @@ pub use policy::PgPolicyRepo;
 pub use project::PgProjectRepo;
 pub use reporting::PgReportingRepo;
 pub use request::PgRequestRepo;
+pub use service_account::PgServiceAccountRepo;
 pub use ticket::PgTicketRepo;
 pub use user::PgUserRepo;

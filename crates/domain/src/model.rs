@@ -14,6 +14,7 @@ mod policy;
 mod project;
 mod report;
 mod request;
+mod service_account;
 mod ticket;
 mod user;
 
@@ -45,5 +46,6 @@ pub use report::{
     YearlyReportData, YearlyTotals,
 };
 pub use request::{Request, RequestAttachment, RequestPriority, RequestStatus};
+pub use service_account::{ServiceAccount, ServiceAccountStatus};
 pub use ticket::{Ticket, TicketCategory, TicketPriority, TicketStatus};
 pub use user::{SystemRole, User, UserStatus};

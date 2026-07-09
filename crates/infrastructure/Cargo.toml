@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 domain = { path = "../domain" }
+proto = { path = "../proto" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -36,5 +37,6 @@ reqwest = { workspace = true }
 futures = { workspace = true }
 apalis = { workspace = true }
 apalis-redis = { workspace = true }
+redis032 = { workspace = true }
 lettre = { workspace = true }
 printpdf = { workspace = true }

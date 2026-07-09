@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf};
+use std::{env, net::SocketAddr, path::PathBuf};
 
 use anyhow::Context;
 use time::Duration;
@@ -35,6 +35,10 @@ pub struct Config {
     pub storage_public_base: String,
     /// HMAC key for signing storage download URLs.
     pub storage_signing_secret: String,
+    /// Bind address of the internal gRPC ingest plane.
+    pub grpc_addr: SocketAddr,
+    /// Shared bearer token gating the internal gRPC plane.
+    pub internal_grpc_token: String,
     /// Read notifications older than this are pruned.
     pub notification_retention: Duration,
     /// How often the notification-prune job runs.
@@ -82,6 +86,7 @@ pub struct Config {
 ///
 /// # Errors
 /// Returns an error if a required var is missing or any value fails to parse.
+#[allow(clippy::too_many_lines)]
 pub fn from_env() -> anyhow::Result<Config> {
     let scylla_hosts = optional("SCYLLA_HOSTS", "127.0.0.1:9042")
         .split(',')
@@ -142,6 +147,10 @@ pub fn from_env() -> anyhow::Result<Config> {
         .parse()
         .context("invalid LEAVE_EXPIRY_INTERVAL_HOURS")?;
 
+    let grpc_addr: SocketAddr = optional("WORKERS_GRPC_ADDR", "0.0.0.0:50052")
+        .parse()
+        .context("invalid WORKERS_GRPC_ADDR")?;
+
     let flex_recon_enabled: bool = optional("FLEX_RECON_ENABLED", "true")
         .parse()
         .context("invalid FLEX_RECON_ENABLED (expected true/false)")?;
@@ -183,6 +192,8 @@ pub fn from_env() -> anyhow::Result<Config> {
         storage_root: optional("STORAGE_ROOT", "./storage/uploads").into(),
         storage_public_base: optional("STORAGE_PUBLIC_BASE", "http://localhost:8080/api/v1"),
         storage_signing_secret: required_secret("STORAGE_SIGNING_SECRET")?,
+        grpc_addr,
+        internal_grpc_token: required_secret("INTERNAL_GRPC_TOKEN")?,
         notification_retention: Duration::days(retention_days),
         cleanup_interval: std::time::Duration::from_secs(cleanup_interval_hours * 3600),
         upload_grace: Duration::hours(upload_grace_hours),

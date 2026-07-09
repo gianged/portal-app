@@ -8,7 +8,10 @@ use std::sync::Arc;
 use domain::{
     ids::UserId,
     model::{NotificationKind, NotificationPayload, UserStatus},
-    ports::{job_queue::JobQueue, mailer::EmailMessage},
+    ports::{
+        job_queue::{JobQueue, QUEUE_EMAILS},
+        mailer::EmailMessage,
+    },
     repository::UserRepository,
 };
 
@@ -129,7 +132,7 @@ impl EmailNotifier {
                     continue;
                 }
             };
-            if let Err(e) = self.queue.enqueue("emails", &bytes).await {
+            if let Err(e) = self.queue.enqueue(QUEUE_EMAILS, &bytes).await {
                 tracing::warn!(error = %e, to = %message.to, "email: enqueue failed");
             }
         }

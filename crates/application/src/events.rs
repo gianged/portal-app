@@ -11,7 +11,10 @@ use domain::{
         OvertimeStatus, Project, ProjectInviteStatus, ProjectStatus, Request, RequestStatus,
         Ticket, TicketPriority, TicketStatus,
     },
-    ports::{event_publisher::EventPublisher, job_queue::JobQueue},
+    ports::{
+        event_publisher::EventPublisher,
+        job_queue::{JobQueue, QUEUE_AUDIT, QUEUE_NOTIFICATIONS},
+    },
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -470,10 +473,13 @@ impl EventBus {
     }
 
     /// Publishes `event` to the broadcast publisher and, for notify topics, also
-    /// enqueues it on the durable job queue.
+    /// enqueues it on the durable job queue. With the dispatch chain absorbing
+    /// transient failures, an enqueue error means the whole chain died: a lost
+    /// notification is logged and dropped (best-effort), a lost audit entry
+    /// fails the emit (the append-only log must not drop).
     ///
     /// # Errors
-    /// Returns an `Event` error if publishing to the broadcast publisher fails, or a `Job` error if enqueuing onto the job queue fails.
+    /// Returns an `Event` error if publishing to the broadcast publisher fails, or a `Job` error if the audit enqueue fails.
     ///
     /// # Panics
     ///
@@ -484,11 +490,13 @@ impl EventBus {
         let payload = serde_json::to_vec(&event)
             .expect("DomainEvent variants only contain serde-derivable types");
         self.publisher.publish(topic, &payload).await?;
-        if NOTIFY_TOPICS.contains(&topic) {
-            self.jobs.enqueue("notifications", &payload).await?;
+        if NOTIFY_TOPICS.contains(&topic)
+            && let Err(e) = self.jobs.enqueue(QUEUE_NOTIFICATIONS, &payload).await
+        {
+            tracing::error!(topic, error = %e, "notification enqueue failed; dropping fanout job");
         }
         if AUDIT_TOPICS.contains(&topic) {
-            self.audit_jobs.enqueue("audit", &payload).await?;
+            self.audit_jobs.enqueue(QUEUE_AUDIT, &payload).await?;
         }
         Ok(())
     }
@@ -510,18 +518,18 @@ impl EventBus {
     }
 
     /// Enqueues `event` onto the durable notification queue only, skipping the
-    /// broadcast and the `NOTIFY_TOPICS` / `AUDIT_TOPICS` routing.
-    ///
-    /// # Errors
-    /// Returns a `Job` error if enqueuing onto the job queue fails.
+    /// broadcast and the `NOTIFY_TOPICS` / `AUDIT_TOPICS` routing. Best-effort
+    /// like the notify path in [`Self::emit`]: a dead dispatch chain logs and
+    /// drops instead of failing the caller.
     ///
     /// # Panics
     /// Panics only if `serde_json::to_vec` fails for `DomainEvent`, which cannot
     /// happen for these infallibly-serialisable variants.
-    pub async fn enqueue_notification(&self, event: &DomainEvent) -> Result<()> {
+    pub async fn enqueue_notification(&self, event: &DomainEvent) {
         let payload = serde_json::to_vec(event)
             .expect("DomainEvent variants only contain serde-derivable types");
-        self.jobs.enqueue("notifications", &payload).await?;
-        Ok(())
+        if let Err(e) = self.jobs.enqueue(QUEUE_NOTIFICATIONS, &payload).await {
+            tracing::error!(error = %e, "notification enqueue failed; dropping fanout job");
+        }
     }
 }

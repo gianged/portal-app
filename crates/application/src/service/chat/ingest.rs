@@ -181,8 +181,8 @@ impl ChatIngest {
                 event,
                 DomainEvent::MessagePosted { mentions, .. } if !mentions.is_empty()
             );
-            if mentioned && let Err(e) = self.events.enqueue_notification(event).await {
-                tracing::warn!(error = %e, "chat ingest: notification enqueue failed");
+            if mentioned {
+                self.events.enqueue_notification(event).await;
             }
         }
     }

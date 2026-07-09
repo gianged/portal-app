@@ -14,6 +14,7 @@ pub mod overtime;
 pub mod policy;
 pub mod project;
 pub mod request;
+pub mod service_account;
 pub mod ticket;
 pub mod user;
 

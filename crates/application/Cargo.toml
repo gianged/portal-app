@@ -19,3 +19,4 @@ tokio = { workspace = true }
 arc-swap = { workspace = true }
 argon2 = { workspace = true }
 password-hash = { workspace = true }
+sha2 = { workspace = true }

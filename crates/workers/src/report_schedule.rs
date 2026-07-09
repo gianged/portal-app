@@ -8,7 +8,7 @@ use time::OffsetDateTime;
 
 use application::{GeneratedReport, ReportService};
 use domain::ports::{
-    job_queue::JobQueue,
+    job_queue::{JobQueue, QUEUE_EMAILS},
     mailer::{EmailAttachment, EmailMessage},
 };
 
@@ -98,7 +98,7 @@ async fn email_report(
         };
         match serde_json::to_vec(&message) {
             Ok(bytes) => {
-                if let Err(e) = email_queue.enqueue("emails", &bytes).await {
+                if let Err(e) = email_queue.enqueue(QUEUE_EMAILS, &bytes).await {
                     tracing::error!(error = %e, to = %message.to, "report email enqueue failed");
                 }
             }

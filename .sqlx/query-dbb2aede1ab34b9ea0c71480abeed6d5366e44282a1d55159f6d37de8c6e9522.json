@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO auth.service_accounts\n                 (id, name, key_hash, status, created_by, revoked_at, created_at, updated_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bytea",
+        {
+          "Custom": {
+            "name": "auth.service_account_status",
+            "kind": {
+              "Enum": [
+                "active",
+                "revoked"
+              ]
+            }
+          }
+        },
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dbb2aede1ab34b9ea0c71480abeed6d5366e44282a1d55159f6d37de8c6e9522"
+}

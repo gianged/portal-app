@@ -36,3 +36,4 @@ id_newtype!(DayOffId);
 id_newtype!(OvertimeId);
 id_newtype!(FlexHoursId);
 id_newtype!(FlexSegmentId);
+id_newtype!(ServiceAccountId);

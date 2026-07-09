@@ -122,6 +122,45 @@ impl RequestRepository for PgRequestRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    #[tracing::instrument(skip_all, fields(project = ?project, after = ?after, limit))]
+    async fn list_page(
+        &self,
+        project: Option<ProjectId>,
+        after: Option<RequestId>,
+        limit: u32,
+    ) -> Result<Vec<Request>, RepositoryError> {
+        // Keyset over the uuid-v7 pk: stable order, no OFFSET rescans.
+        let rows = sqlx::query_as!(
+            RequestRow,
+            r#"SELECT
+                 id,
+                 project_id,
+                 creator_user_id,
+                 assignee_user_id,
+                 title,
+                 description,
+                 status   AS "status: SqlRequestStatus",
+                 priority AS "priority: SqlRequestPriority",
+                 progress,
+                 due_at,
+                 completed_at,
+                 created_at,
+                 updated_at
+               FROM project.requests
+               WHERE ($1::uuid IS NULL OR project_id = $1)
+                 AND ($2::uuid IS NULL OR id > $2)
+               ORDER BY id
+               LIMIT $3"#,
+            project.map(|p| p.0),
+            after.map(|a| a.0),
+            i64::from(limit),
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(mappers::map_pg_error)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
     #[tracing::instrument(skip_all, fields(project_id = ?project_id))]
     async fn list_for_project(
         &self,

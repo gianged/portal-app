@@ -13,6 +13,7 @@ mod chat;
 mod comment;
 mod daily_report;
 mod day_off;
+mod ext;
 mod flex_hours;
 mod group;
 mod holiday;
@@ -23,6 +24,7 @@ mod policy;
 mod project;
 mod report;
 mod request;
+mod service_account;
 mod ticket;
 mod user;
 
@@ -41,6 +43,7 @@ pub use self::{
         create_day_off_command, day_off_dto, day_off_kind_domain, day_off_kind_dto,
         day_off_status_dto, decide_day_off_command,
     },
+    ext::{ext_project_dto, ext_request_dto},
     flex_hours::{decide_flex_command, flex_hours_dto, flex_status_dto, request_flex_command},
     group::{
         add_membership_command, create_group_command, group_dto, group_kind_domain, group_kind_dto,
@@ -65,6 +68,10 @@ pub use self::{
     request::{
         create_request_command, request_attachment_dto, request_dto, request_priority_domain,
         request_priority_dto, request_status_domain, request_status_dto, update_request_command,
+    },
+    service_account::{
+        created_service_account_dto, service_account_dto, service_account_scope_domain,
+        service_account_status_dto,
     },
     ticket::{
         raise_ticket_command, ticket_category_domain, ticket_category_dto, ticket_dto,
@@ -115,6 +122,7 @@ id_map!(day_off_id, DayOffId);
 id_map!(overtime_id, OvertimeId);
 id_map!(flex_hours_id, FlexHoursId);
 id_map!(flex_segment_id, FlexSegmentId);
+id_map!(service_account_id, ServiceAccountId);
 
 // `channel_id` would collide with the local binding name in the notification
 // payload match arms; this alias lets that module project a `ChannelId` there.

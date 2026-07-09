@@ -11,8 +11,9 @@ pub use events::{DomainEvent, EventBus};
 pub use permissions::Permissions;
 pub use service::{
     AnnouncementService, AuditProjector, AuditService, ChannelOverview, ChatService,
-    CommentService, DailyReportService, DayOffService, EmailNotifier, FlexHoursService,
-    GeneratedReport, GroupService, HolidayService, LeaveBalanceService, MaintenanceService,
-    NotificationFanout, NotificationService, OvertimeService, PolicyProvider, PolicyService,
-    ProjectService, ReportService, RequestService, StaffArchiveOutcome, TicketService, UserService,
+    CommentService, CreatedServiceAccount, DailyReportService, DayOffService, EmailNotifier,
+    ExtReadService, FlexHoursService, GeneratedReport, GroupService, HolidayService,
+    LeaveBalanceService, MaintenanceService, NotificationFanout, NotificationService,
+    OvertimeService, PolicyProvider, PolicyService, ProjectService, ReportService, RequestService,
+    ServiceAccountService, StaffArchiveOutcome, TicketService, UserService,
 };

@@ -75,6 +75,14 @@ impl AuthzClient for FakeAuthz {
     ) -> Result<bool, AuthzError> {
         Ok(false)
     }
+    async fn check_subject(
+        &self,
+        _subject: &str,
+        _relation: &str,
+        _object: &str,
+    ) -> Result<bool, AuthzError> {
+        Ok(false)
+    }
     async fn write_tuple(
         &self,
         subject: &str,
@@ -271,6 +279,13 @@ impl ProjectRepository for FakeProjects {
     ) -> Result<Vec<Project>, RepositoryError> {
         Ok(Vec::new())
     }
+    async fn list_page(
+        &self,
+        _after: Option<ProjectId>,
+        _limit: u32,
+    ) -> Result<Vec<Project>, RepositoryError> {
+        Ok(Vec::new())
+    }
     async fn save_project(&self, _project: &Project) -> Result<(), RepositoryError> {
         Ok(())
     }
@@ -325,6 +340,14 @@ impl RequestRepository for FakeRequests {
         _project_id: ProjectId,
         _status: Option<RequestStatus>,
         _q: Option<&str>,
+    ) -> Result<Vec<Request>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn list_page(
+        &self,
+        _project: Option<ProjectId>,
+        _after: Option<RequestId>,
+        _limit: u32,
     ) -> Result<Vec<Request>, RepositoryError> {
         Ok(Vec::new())
     }

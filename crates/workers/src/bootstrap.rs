@@ -68,10 +68,13 @@ pub struct WorkerContext {
     pub pg_breaker: Arc<CircuitBreaker>,
     /// Replays chat batches that couldn't reach Scylla during an outage.
     pub chat_drainer: Drainer,
+    /// Job dispatches the server spooled while both enqueue hops were down.
+    pub job_spool: Arc<dyn Spool>,
 }
 
 /// Builds the infrastructure adapters and opens the apalis job storage the worker
 /// consumes. Mirrors the server composition root, minus the HTTP/authz slice.
+#[allow(clippy::too_many_lines)]
 pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     let pool = postgres::build_pool(&cfg.database_url, cfg.pg_max_connections)
         .await
@@ -272,6 +275,14 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         DrainerConfig::default(),
     );
 
+    // Job-dispatch spool: the server's last-resort hop when gRPC and the direct
+    // apalis push are both unavailable; replayed by the job-spool drainer.
+    let job_spool: Arc<dyn Spool> = Arc::new(
+        RedisSpool::new(&cfg.redis_url, "jobs")
+            .await
+            .context("connecting redis (job spool)")?,
+    );
+
     let fanout = Arc::new(
         NotificationFanout::new(
             notifications,
@@ -301,5 +312,6 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         health_checks,
         pg_breaker,
         chat_drainer,
+        job_spool,
     })
 }

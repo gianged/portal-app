@@ -417,6 +417,9 @@ impl AuthzClient for NoopAuthz {
     async fn check(&self, _: UserId, _: &str, _: &str) -> Result<bool, AuthzError> {
         Ok(false)
     }
+    async fn check_subject(&self, _: &str, _: &str, _: &str) -> Result<bool, AuthzError> {
+        Ok(false)
+    }
     async fn write_tuple(&self, _: &str, _: &str, _: &str) -> Result<(), AuthzError> {
         Ok(())
     }

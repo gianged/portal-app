@@ -37,6 +37,14 @@ impl RelationTuple {
 pub trait AuthzClient: Send + Sync {
     async fn check(&self, user: UserId, relation: &str, object: &str) -> Result<bool, AuthzError>;
 
+    /// Like [`Self::check`] for a non-user subject, e.g. `service_account:<id>`.
+    async fn check_subject(
+        &self,
+        subject: &str,
+        relation: &str,
+        object: &str,
+    ) -> Result<bool, AuthzError>;
+
     /// Write a single tuple. `subject` is a fully-qualified id (`user:<id>`,
     /// `group:<id>`, `company:portal`, `user:*`), not just a user.
     async fn write_tuple(

@@ -45,6 +45,13 @@ pub struct RateLimits {
     /// Ceiling for WebSocket `SendMessage` frames, per authenticated user.
     /// Applied by [`within_chat_rate`] per frame, not as a middleware layer.
     pub chat: u64,
+    /// Ceiling for the external read API, per service-account key. Applied by
+    /// the `service_account` middleware, not a dedicated layer.
+    pub ext: u64,
+    /// Per-IP ceiling for `/api/ext/v1`, enforced before key authentication so
+    /// unauthenticated floods never reach the key lookup. Looser than `ext`:
+    /// several keys may share one host.
+    pub ext_ip: u64,
 }
 
 /// Per-IP limiter for the public auth routes. Prefers the trusted-proxy-resolved

@@ -207,6 +207,8 @@ async fn per_user_rate_limit_returns_429() {
         auth_ip: 1000,
         api: 0,
         chat: 1000,
+        ext: 1000,
+        ext_ip: 1000,
     });
     let token = app.state.token.issue(UserId(Uuid::now_v7()), 0);
     let response = router(app.state)

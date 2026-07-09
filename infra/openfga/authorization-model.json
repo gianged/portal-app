@@ -5,11 +5,17 @@
       "type": "user"
     },
     {
+      "type": "service_account"
+    },
+    {
       "type": "company",
       "relations": {
         "hr": { "this": {} },
         "director": { "this": {} },
         "member": { "this": {} },
+        "project_reader": { "this": {} },
+        "request_reader": { "this": {} },
+        "report_reader": { "this": {} },
         "can_manage_users": { "computedUserset": { "relation": "hr" } },
         "can_manage_groups": { "computedUserset": { "relation": "hr" } }
       },
@@ -23,6 +29,15 @@
           },
           "member": {
             "directly_related_user_types": [{ "type": "user", "wildcard": {} }]
+          },
+          "project_reader": {
+            "directly_related_user_types": [{ "type": "service_account" }]
+          },
+          "request_reader": {
+            "directly_related_user_types": [{ "type": "service_account" }]
+          },
+          "report_reader": {
+            "directly_related_user_types": [{ "type": "service_account" }]
           }
         }
       }

@@ -26,39 +26,44 @@ use application::{
     bootstrap,
     events::EventBus,
     permissions::Permissions,
-    resilience::{self, HealthRegistry},
+    resilience::{self, DispatchQueue, HealthRegistry},
     service::{
         AnnouncementService, AuditService, ChatIngest, ChatIngestConfig, ChatService,
-        CommentService, DailyReportService, DayOffService, FlexHoursService, GroupService,
-        HolidayService, LeaveBalanceService, NotificationService, OvertimeService, PolicyProvider,
-        PolicyService, ProjectService, ReportService, RequestService, TicketService, UserService,
+        CommentService, DailyReportService, DayOffService, ExtReadService, FlexHoursService,
+        GroupService, HolidayService, LeaveBalanceService, NotificationService, OvertimeService,
+        PolicyProvider, PolicyService, ProjectService, ReportService, RequestService,
+        ServiceAccountService, TicketService, UserService,
     },
 };
 use domain::{
     health::{BackendId, HealthStatus},
     ports::{
         event_subscriber::EventSubscriber, file_storage::FileStorage, health::HealthCheck,
-        presence::Presence, rate_limit::RateLimit, report_renderer::ReportRenderer, spool::Spool,
-        token_revocation::TokenRevocation,
+        job_queue::JobQueue, presence::Presence, rate_limit::RateLimit,
+        report_renderer::ReportRenderer, spool::Spool, token_revocation::TokenRevocation,
     },
     repository::{
         AuditRepository, ChatAttachmentRepository, ChatRepository, CommentRepository,
         DailyReportRepository, DayOffRepository, FlexHoursRepository, GroupRepository,
         HolidayRepository, LeaveBalanceRepository, NotificationRepository, OvertimeRepository,
         PolicyRepository, ProjectRepository, ReportArchiveRepository, ReportStatsRepository,
-        RequestRepository, TicketRepository, UserRepository,
+        RequestRepository, ServiceAccountRepository, TicketRepository, UserRepository,
     },
 };
 use infrastructure::{
-    health::{OpenFgaHealthCheck, PgHealthCheck, RedisHealthCheck, ScyllaHealthCheck},
+    grpc_jobs::GrpcJobQueue,
+    health::{
+        OpenFgaHealthCheck, PgHealthCheck, RedisHealthCheck, ScyllaHealthCheck,
+        WorkersGrpcHealthCheck,
+    },
     jobs::{self, ApalisAuditQueue, ApalisNotificationQueue},
     local_storage::LocalStorage,
     openfga::{self, OpenFgaAuthzClient},
     postgres::{
         self, PgAuditRepo, PgChatAttachmentRepo, PgCommentRepo, PgDailyReportRepo, PgDayOffRepo,
         PgFlexRepo, PgGroupRepo, PgHolidayRepo, PgLeaveBalanceRepo, PgNotificationRepo,
-        PgOvertimeRepo, PgPolicyRepo, PgProjectRepo, PgReportingRepo, PgRequestRepo, PgTicketRepo,
-        PgUserRepo,
+        PgOvertimeRepo, PgPolicyRepo, PgProjectRepo, PgReportingRepo, PgRequestRepo,
+        PgServiceAccountRepo, PgTicketRepo, PgUserRepo,
     },
     redis::{
         PresenceStore, RateLimiter, RedisEventPublisher, RedisEventSubscriber, RedisSpool,
@@ -67,6 +72,7 @@ use infrastructure::{
     report::PrintPdfReportRenderer,
     scylla::{self, ScyllaChatRepo},
     signed_url::SignedUrl,
+    telemetry,
 };
 use shared::dto::{
     common::{ApiError, ErrorCode},
@@ -76,20 +82,21 @@ use shared::dto::{
 use crate::{
     auth::TokenService,
     config::Config,
+    grpc::{GrpcPlane, query::QueryService},
     middleware::{
         auth,
         ip_allowlist::{self, IpAllowlist},
         rate_limit::{self, RateLimits},
-        request_id, trace,
+        request_id, service_account, trace,
     },
     realtime::Realtime,
     resolve,
     // `routes::auth` stays path-qualified at call sites: `auth` here names the
     // middleware module.
     routes::{
-        self, announcements, audit, chat, chat_ws, daily_reports, day_off, files, flex_hours,
+        self, announcements, audit, chat, chat_ws, daily_reports, day_off, ext, files, flex_hours,
         groups, holidays, leave_balance, notifications, overtime, policy, projects, reports,
-        requests, tickets, users,
+        requests, service_accounts, tickets, users,
     },
 };
 
@@ -127,6 +134,10 @@ pub struct AppState {
     pub overtime: Arc<OvertimeService>,
     // Per-day flexible-hours requests with leader approval, settled monthly.
     pub flex: Arc<FlexHoursService>,
+    // Admin-managed API keys for the external read surface.
+    pub service_accounts: Arc<ServiceAccountService>,
+    // Scope-gated read-only queries backing /api/ext/v1.
+    pub ext_read: Arc<ExtReadService>,
     // Director/HR gate for the report endpoints (resolved per request).
     pub perms: Arc<Permissions>,
     // Session-cookie tokens + the real-time pub/sub handle, consumed by the auth
@@ -169,11 +180,16 @@ impl IngestShutdown {
 }
 
 /// Builds every infrastructure adapter, assembles the application services, and
-/// returns the HTTP router plus an [`IngestShutdown`] handle for the chat drain
-/// task. `OpenFGA` is initialised here (get-or-create store + model), so no
-/// external bootstrap step is required.
+/// returns the HTTP router, an [`IngestShutdown`] handle for the chat drain
+/// task, and the internal [`GrpcPlane`] for `run` to serve. `OpenFGA` is
+/// initialised here (get-or-create store + model), so no external bootstrap
+/// step is required.
+///
+/// # Panics
+/// Panics only if the workers-gRPC breaker is missing from the health registry,
+/// which cannot happen: the registry is built from `BackendId::ALL` just above.
 #[allow(clippy::too_many_lines)]
-pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
+pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, GrpcPlane)> {
     // Backends.
     let pool = postgres::build_pool(&cfg.database_url, cfg.pg_max_connections)
         .await
@@ -265,6 +281,16 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
     bootstrap::seed_company(chats.as_ref(), perms.as_ref())
         .await
         .context("seeding company singleton")?;
+    // Health registry is built before the dispatch chain so the chain's primary
+    // hop shares the workers-gRPC breaker with the prober and `/readyz`.
+    let health = Arc::new(HealthRegistry::new(&BackendId::ALL));
+    let workers_grpc_breaker = health
+        .breaker(BackendId::WorkersGrpc)
+        .expect("workers grpc breaker registered");
+
+    // Job dispatch chain: workers gRPC -> direct apalis push -> durable spool.
+    // Both first hops land in the same apalis queue; the spool is replayed by
+    // the workers' job-spool drainer.
     let jobs = ApalisNotificationQueue::new(
         jobs::notification_storage(&cfg.redis_url)
             .await
@@ -275,10 +301,33 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
             .await
             .context("connecting apalis redis (audit jobs)")?,
     );
+    let job_spool: Arc<dyn Spool> = Arc::new(
+        RedisSpool::new(&cfg.redis_url, "jobs")
+            .await
+            .context("connecting redis (job spool)")?,
+    );
+    let grpc_dispatch: Arc<dyn JobQueue> = Arc::new(
+        GrpcJobQueue::new(&cfg.workers_grpc_url, &cfg.internal_grpc_token)
+            .context("building grpc job queue")?,
+    );
+    let notification_dispatch: Arc<dyn JobQueue> = Arc::new(DispatchQueue::new(
+        grpc_dispatch.clone(),
+        Arc::new(jobs),
+        job_spool.clone(),
+        workers_grpc_breaker.clone(),
+        telemetry::current_traceparent,
+    ));
+    let audit_dispatch: Arc<dyn JobQueue> = Arc::new(DispatchQueue::new(
+        grpc_dispatch,
+        Arc::new(audit_jobs),
+        job_spool,
+        workers_grpc_breaker,
+        telemetry::current_traceparent,
+    ));
     let events = Arc::new(EventBus::new(
         publisher.clone(),
-        Arc::new(jobs),
-        Arc::new(audit_jobs),
+        notification_dispatch,
+        audit_dispatch,
     ));
     let audit_service = Arc::new(AuditService::new(audit, perms.clone()));
     let storage_port: Arc<dyn FileStorage> = storage.clone();
@@ -298,10 +347,10 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
     ));
     let realtime = Realtime::new(publisher, subscriber);
 
-    // Health registry + per-backend probes (Postgres, Scylla, Redis, OpenFGA).
-    // The prober drives the breakers and feeds `/readyz`; it is supervised so a
-    // panic restarts it.
-    let health = Arc::new(HealthRegistry::new(&BackendId::ALL));
+    // Per-backend probes (Postgres, Scylla, Redis, OpenFGA, workers gRPC). The
+    // prober drives the breakers and feeds `/readyz`; it is supervised so a
+    // panic restarts it. The registry itself is built earlier, next to the
+    // dispatch chain that shares its workers-gRPC breaker.
     let health_checks: Vec<Arc<dyn HealthCheck>> = vec![
         Arc::new(PgHealthCheck::new(pool.clone())),
         scylla_health,
@@ -313,6 +362,10 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
         Arc::new(
             OpenFgaHealthCheck::new(&cfg.openfga_api_url, cfg.openfga_bearer_token.clone())
                 .context("building openfga health check")?,
+        ),
+        Arc::new(
+            WorkersGrpcHealthCheck::new(&cfg.workers_grpc_url)
+                .context("building workers grpc health check")?,
         ),
     ];
     {
@@ -423,6 +476,32 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
         events.clone(),
     ));
 
+    // Hoisted: shared by the HTTP report routes and the internal Query plane.
+    let report_service = Arc::new(ReportService::new(
+        report_stats,
+        report_archive,
+        report_renderer,
+        storage_port.clone(),
+        users.clone(),
+        leave_service.clone(),
+        flex_service.clone(),
+        perms.clone(),
+    ));
+
+    // External API: admin-issued keys + the scope-gated read-only queries.
+    let service_account_repo: Arc<dyn ServiceAccountRepository> =
+        Arc::new(PgServiceAccountRepo::new(pool.clone()));
+    let service_account_service = Arc::new(ServiceAccountService::new(
+        service_account_repo,
+        perms.clone(),
+    ));
+    let ext_read_service = Arc::new(ExtReadService::new(
+        projects.clone(),
+        requests.clone(),
+        report_service.clone(),
+        perms.clone(),
+    ));
+
     let state = AppState {
         user: Arc::new(UserService::new(
             users.clone(),
@@ -470,16 +549,9 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
             notifications.clone(),
             perms.clone(),
         )),
-        report: Arc::new(ReportService::new(
-            report_stats,
-            report_archive,
-            report_renderer,
-            storage_port.clone(),
-            users.clone(),
-            leave_service.clone(),
-            flex_service.clone(),
-            perms.clone(),
-        )),
+        report: report_service.clone(),
+        service_accounts: service_account_service,
+        ext_read: ext_read_service,
         policy: Arc::new(PolicyService::new(
             policy_repo.clone(),
             policy_provider.clone(),
@@ -511,6 +583,8 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
             auth_ip: cfg.auth_ip_rate_limit,
             api: cfg.api_rate_limit,
             chat: cfg.chat_rate_limit,
+            ext: cfg.ext_rate_limit,
+            ext_ip: cfg.ext_ip_rate_limit,
         },
         ip_allowlist: IpAllowlist {
             enabled: cfg.ip_allowlist_enabled,
@@ -522,8 +596,13 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown)> {
         health,
     };
 
+    let grpc = GrpcPlane::new(
+        cfg.grpc_addr,
+        cfg.internal_grpc_token.clone(),
+        QueryService::new(projects.clone(), requests.clone(), report_service),
+    );
     let app = router(state).layer(cors_layer(&cfg.cors_allowed_origins));
-    Ok((app, ingest_shutdown))
+    Ok((app, ingest_shutdown, grpc))
 }
 
 /// Composes the route tree and middleware stack over a fully-built [`AppState`].
@@ -555,6 +634,7 @@ pub fn router(state: AppState) -> Router {
         .merge(day_off::router())
         .merge(overtime::router())
         .merge(flex_hours::router())
+        .merge(service_accounts::router())
         .route_layer(from_fn_with_state(state.clone(), rate_limit::per_user))
         .route_layer(from_fn_with_state(state.clone(), auth::require_auth));
 
@@ -585,10 +665,25 @@ pub fn router(state: AppState) -> Router {
                 .layer(GlobalConcurrencyLimitLayer::new(MAX_IN_FLIGHT)),
         );
 
+    // External read-only surface for scripts: service-account bearer keys, no
+    // cookies, per-key limit inside the auth middleware. Own timeout; kept out
+    // of the SPA tree's load-shed so a script burst can't starve the app (the
+    // per-key limiter bounds it instead).
+    let ext_api = ext::router()
+        .route_layer(from_fn_with_state(
+            state.clone(),
+            service_account::require_service_account,
+        ))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(30),
+        ));
+
     Router::new()
         .route("/healthz", routing::get(healthz))
         .route("/readyz", routing::get(readyz))
         .nest("/api/v1", api)
+        .nest("/api/ext/v1", ext_api)
         // Applied outermost-to-innermost: trace, request-id, security headers, body
         // limit, catch-panic, then the router (its protected sub-tree adds auth +
         // limit); CORS is added by the caller.
@@ -725,12 +820,17 @@ fn map_status(status: HealthStatus) -> BackendStatus {
     }
 }
 
-/// Worst status across all backends: any `Down` -> `Down`, else any `Degraded`
-/// -> `Degraded`, else `Up`.
+/// Worst status across all backends: any gating `Down` -> `Down`, else
+/// anything short of `Up` -> `Degraded`, else `Up`. Non-gating backends
+/// (workers gRPC) surface as at most `Degraded`: job dispatch survives them
+/// via the fallback hops, so they must not drain the instance.
 fn overall_status(snapshot: &[(BackendId, HealthStatus)]) -> BackendStatus {
-    if snapshot.iter().any(|(_, s)| *s == HealthStatus::Down) {
+    if snapshot
+        .iter()
+        .any(|(id, s)| *s == HealthStatus::Down && id.gates_readiness())
+    {
         BackendStatus::Down
-    } else if snapshot.iter().any(|(_, s)| *s == HealthStatus::Degraded) {
+    } else if snapshot.iter().any(|(_, s)| *s != HealthStatus::Up) {
         BackendStatus::Degraded
     } else {
         BackendStatus::Up

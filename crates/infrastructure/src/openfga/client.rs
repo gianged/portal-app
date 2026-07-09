@@ -160,6 +160,27 @@ impl AuthzClient for OpenFgaAuthzClient {
         Ok(resp.allowed)
     }
 
+    /// Uncached: non-user subjects (service accounts) are low-rate callers
+    /// already throttled by the per-key limiter.
+    #[tracing::instrument(skip_all, fields(subject))]
+    async fn check_subject(
+        &self,
+        subject: &str,
+        relation: &str,
+        object: &str,
+    ) -> Result<bool, AuthzError> {
+        let req = CheckRequest {
+            tuple_key: TupleKeyDto {
+                user: subject.to_string(),
+                relation: relation.to_string(),
+                object: object.to_string(),
+            },
+            authorization_model_id: &self.authorization_model_id,
+        };
+        let resp: CheckResponse = self.post_json(self.store_url("check"), &req).await?;
+        Ok(resp.allowed)
+    }
+
     #[tracing::instrument(skip_all)]
     async fn write_tuple(
         &self,

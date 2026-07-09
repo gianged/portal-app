@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use domain::{
     error::{AuthzError, RepositoryError},
-    ids::{ChannelId, GroupId, ProjectId, TicketId, UserId},
+    ids::{ChannelId, GroupId, ProjectId, ServiceAccountId, TicketId, UserId},
     model::{Channel, GroupRole, Membership, SystemRole, User, UserStatus},
     ports::authz_client::{AuthzClient, RelationTuple},
     repository::{GroupRepository, UserRepository},
@@ -27,6 +27,9 @@ const REL_PARENT_GROUP: &str = "parent_group";
 const REL_REQUESTER: &str = "requester";
 const REL_ASSIGNEE: &str = "assignee";
 const REL_IT_GROUP: &str = "it_group";
+const REL_PROJECT_READER: &str = "project_reader";
+const REL_REQUEST_READER: &str = "request_reader";
+const REL_REPORT_READER: &str = "report_reader";
 
 /// The single well-known `company` object holding the org-wide `director`, `hr`,
 /// and `member` (wildcard) relations; reused when tying a resource to the company.
@@ -37,6 +40,10 @@ const USER_WILDCARD: &str = "user:*";
 
 fn subj_user(id: UserId) -> String {
     format!("user:{}", id.0)
+}
+
+fn subj_service_account(id: ServiceAccountId) -> String {
+    format!("service_account:{}", id.0)
 }
 
 fn subj_group(id: GroupId) -> String {
@@ -77,6 +84,27 @@ fn company_role_relation(role: SystemRole) -> &'static str {
     match role {
         SystemRole::Hr => REL_HR,
         SystemRole::Director => REL_DIRECTOR,
+    }
+}
+
+/// Read scope grantable to a service account on the external API, mapped 1:1 to
+/// a `company` relation assignable to `service_account` subjects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceAccountScope {
+    Projects,
+    Requests,
+    Reports,
+}
+
+impl ServiceAccountScope {
+    pub const ALL: [ServiceAccountScope; 3] = [Self::Projects, Self::Requests, Self::Reports];
+
+    const fn relation(self) -> &'static str {
+        match self {
+            Self::Projects => REL_PROJECT_READER,
+            Self::Requests => REL_REQUEST_READER,
+            Self::Reports => REL_REPORT_READER,
+        }
     }
 }
 
@@ -662,6 +690,68 @@ impl Permissions {
             .await
             .map_err(map_authz_write)
     }
+
+    // --- Service accounts (external read API) ---
+
+    /// Verifies the service account holds `scope` on the company singleton.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` when the scope was not granted, or a repository error if the authz backend is unavailable.
+    pub async fn require_service_account_scope(
+        &self,
+        account: ServiceAccountId,
+        scope: ServiceAccountScope,
+    ) -> Result<()> {
+        if self
+            .authz
+            .check_subject(
+                &subj_service_account(account),
+                scope.relation(),
+                COMPANY_OBJECT,
+            )
+            .await?
+        {
+            Ok(())
+        } else {
+            Err(Error::Forbidden)
+        }
+    }
+
+    /// Grants the given read scopes to a service account, atomically.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the write, or a repository error if the authz backend is unavailable.
+    pub async fn grant_service_account_scopes(
+        &self,
+        account: ServiceAccountId,
+        scopes: &[ServiceAccountScope],
+    ) -> Result<()> {
+        let subject = subj_service_account(account);
+        let writes: Vec<RelationTuple> = scopes
+            .iter()
+            .map(|s| RelationTuple::new(subject.clone(), s.relation(), COMPANY_OBJECT))
+            .collect();
+        self.authz
+            .write_tuples(&writes, &[])
+            .await
+            .map_err(map_authz_write)
+    }
+
+    /// Best-effort cleanup of every scope tuple on revocation. Correctness does
+    /// not depend on it (revoked keys no longer authenticate), so a missing
+    /// tuple is ignored: the single-tuple delete path is idempotent.
+    pub async fn revoke_service_account_scopes(&self, account: ServiceAccountId) {
+        let subject = subj_service_account(account);
+        for scope in ServiceAccountScope::ALL {
+            if let Err(e) = self
+                .authz
+                .delete_tuple(&subject, scope.relation(), COMPANY_OBJECT)
+                .await
+            {
+                tracing::warn!(error = %e, scope = scope.relation(), "service account scope cleanup failed");
+            }
+        }
+    }
 }
 
 /// Maps a tuple-write `AuthzError::Denied` to `Conflict` (the backend rejected the
@@ -742,6 +832,9 @@ mod tests {
             ("company", super::REL_HR),
             ("company", super::REL_DIRECTOR),
             ("company", super::REL_MEMBER),
+            ("company", super::REL_PROJECT_READER),
+            ("company", super::REL_REQUEST_READER),
+            ("company", super::REL_REPORT_READER),
             ("project", super::REL_OWNER_GROUP),
             ("project", super::REL_COLLABORATOR_GROUP),
             ("project", super::REL_COMPANY),

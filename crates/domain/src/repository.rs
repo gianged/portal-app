@@ -14,6 +14,7 @@ mod policy;
 mod project;
 mod report;
 mod request;
+mod service_account;
 mod ticket;
 mod user;
 
@@ -33,5 +34,6 @@ pub use policy::PolicyRepository;
 pub use project::ProjectRepository;
 pub use report::{ReportArchiveRepository, ReportStatsRepository};
 pub use request::RequestRepository;
+pub use service_account::ServiceAccountRepository;
 pub use ticket::TicketRepository;
 pub use user::UserRepository;

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth.service_accounts\n               SET name = $2,\n                   status = $3,\n                   revoked_at = $4,\n                   updated_at = $5\n               WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        {
+          "Custom": {
+            "name": "auth.service_account_status",
+            "kind": {
+              "Enum": [
+                "active",
+                "revoked"
+              ]
+            }
+          }
+        },
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "16e96e11c0048dc79d71e5d27455182552fa9d70041899e0ebd2df3f8fe3fd07"
+}

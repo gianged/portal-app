@@ -50,9 +50,18 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 futures = "0.3"
 dotenvy = "0.15"
 
+# internal gRPC plane (rustls only; protoc drives codegen via tonic-prost-build)
+tonic = "0.14"
+tonic-prost = "0.14"
+tonic-health = "0.14"
+tonic-prost-build = "0.14"
+prost = "0.14"
+
 # workers
 apalis = "0.7"
 apalis-redis = "0.7"
+# apalis-redis pins redis 0.32; used only to build its ConnectionManager with timeouts.
+redis032 = { package = "redis", version = "0.32", features = ["tokio-comp", "connection-manager"] }
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "hostname", "pool", "tokio1", "tokio1-rustls-tls"] }
 # PDF rendering; default-features=false drops the heavy html/azul layout stack.
 printpdf = { version = "0", default-features = false }

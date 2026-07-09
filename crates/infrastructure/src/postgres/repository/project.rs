@@ -132,6 +132,39 @@ impl ProjectRepository for PgProjectRepo {
         .map(|opt| opt.map(Into::into))
     }
 
+    #[tracing::instrument(skip_all, fields(after = ?after, limit))]
+    async fn list_page(
+        &self,
+        after: Option<ProjectId>,
+        limit: u32,
+    ) -> Result<Vec<Project>, RepositoryError> {
+        // Keyset over the uuid-v7 pk: stable order, no OFFSET rescans.
+        let rows = sqlx::query_as!(
+            ProjectRow,
+            r#"SELECT
+                 id,
+                 owner_group_id,
+                 created_by_user_id,
+                 name,
+                 description,
+                 status AS "status: SqlProjectStatus",
+                 progress,
+                 completed_at,
+                 created_at,
+                 updated_at
+               FROM project.projects
+               WHERE $1::uuid IS NULL OR id > $1
+               ORDER BY id
+               LIMIT $2"#,
+            after.map(|a| a.0),
+            i64::from(limit),
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(mappers::map_pg_error)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
     #[tracing::instrument(skip_all, fields(group_id = ?group_id))]
     async fn list_for_owner_group(
         &self,

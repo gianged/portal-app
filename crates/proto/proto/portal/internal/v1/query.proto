@@ -1,0 +1,180 @@
+syntax = "proto3";
+
+package portal.internal.v1;
+
+// Internal read plane over projects, requests, and report aggregates. Trusted:
+// callers authenticate with the shared internal token, no per-user authz.
+// Timestamps are rfc3339 strings (empty when absent), matching the REST DTOs.
+service Query {
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  rpc ListRequests(ListRequestsRequest) returns (ListRequestsResponse);
+  rpc GetRequest(GetRequestRequest) returns (GetRequestResponse);
+  rpc MonthlyReport(MonthlyReportRequest) returns (MonthlyReportStats);
+  rpc YearlyReport(YearlyReportRequest) returns (YearlyReportStats);
+}
+
+message ProjectRecord {
+  string id = 1;
+  string owner_group_id = 2;
+  string created_by_user_id = 3;
+  string name = 4;
+  string description = 5;
+  // planning | active | on_hold | completed | cancelled
+  string status = 6;
+  uint32 progress = 7;
+  string completed_at = 8;
+  string created_at = 9;
+  string updated_at = 10;
+}
+
+message RequestRecord {
+  string id = 1;
+  string project_id = 2;
+  string creator_user_id = 3;
+  // Empty while unassigned.
+  string assignee_user_id = 4;
+  string title = 5;
+  string description = 6;
+  // draft | submitted | assigned | in_progress | review | completed | cancelled
+  string status = 7;
+  // low | normal | high | urgent
+  string priority = 8;
+  uint32 progress = 9;
+  string due_at = 10;
+  string completed_at = 11;
+  string created_at = 12;
+  string updated_at = 13;
+}
+
+// Keyset pagination: `after` is the previous page's `next_cursor` (a uuid),
+// empty for the first page. `next_cursor` is empty on the last page.
+message ListProjectsRequest {
+  string after = 1;
+  uint32 limit = 2;
+}
+
+message ListProjectsResponse {
+  repeated ProjectRecord projects = 1;
+  string next_cursor = 2;
+}
+
+message GetProjectRequest {
+  string id = 1;
+}
+
+message GetProjectResponse {
+  ProjectRecord project = 1;
+}
+
+message ListRequestsRequest {
+  // Optional filter; empty means all projects.
+  string project_id = 1;
+  string after = 2;
+  uint32 limit = 3;
+}
+
+message ListRequestsResponse {
+  repeated RequestRecord requests = 1;
+  string next_cursor = 2;
+}
+
+message GetRequestRequest {
+  string id = 1;
+}
+
+message GetRequestResponse {
+  RequestRecord request = 1;
+}
+
+message MonthlyReportRequest {
+  int32 year = 1;
+  uint32 month = 2;
+}
+
+message YearlyReportRequest {
+  int32 year = 1;
+}
+
+message MonthlyReportStats {
+  string period_start = 1;
+  string period_end = 2;
+  repeated GroupReportRow groups = 3;
+  TicketStats tickets = 4;
+  StaffSummary staff = 5;
+}
+
+message GroupReportRow {
+  string group_id = 1;
+  string group_name = 2;
+  string group_kind = 3;
+  uint32 projects_total = 4;
+  uint32 projects_completed = 5;
+  uint32 projects_active = 6;
+  uint32 projects_on_hold = 7;
+  uint32 projects_planning = 8;
+  uint32 projects_cancelled = 9;
+  uint32 projects_stuck = 10;
+  uint32 avg_project_progress = 11;
+  uint32 requests_total = 12;
+  uint32 requests_completed = 13;
+  uint32 requests_open = 14;
+  uint32 request_completion_pct = 15;
+  uint32 headcount = 16;
+}
+
+message TicketStats {
+  uint32 created_in_period = 1;
+  uint32 resolved_in_period = 2;
+  repeated LabelCount by_status = 3;
+  repeated LabelCount by_category = 4;
+  optional double avg_resolve_hours = 5;
+}
+
+message LabelCount {
+  string label = 1;
+  uint32 count = 2;
+}
+
+message StaffSummary {
+  uint32 company_headcount = 1;
+  uint32 new_joiners = 2;
+  uint32 deactivations = 3;
+  repeated GroupHeadcount per_group = 4;
+}
+
+message GroupHeadcount {
+  string group_id = 1;
+  string group_name = 2;
+  uint32 headcount = 3;
+}
+
+message YearlyReportStats {
+  int32 year = 1;
+  GrowthSeries growth = 2;
+  YearlyTotals totals = 3;
+}
+
+message GrowthSeries {
+  repeated GrowthPoint headcount = 1;
+  repeated GrowthPoint new_joiners = 2;
+  repeated GrowthPoint tickets_created = 3;
+  repeated GrowthPoint projects_completed = 4;
+  repeated GrowthPoint requests_completed = 5;
+}
+
+message GrowthPoint {
+  int32 year = 1;
+  uint32 month = 2;
+  int64 value = 3;
+}
+
+message YearlyTotals {
+  uint32 company_headcount = 1;
+  int32 net_headcount_change = 2;
+  uint32 new_hires = 3;
+  uint32 departures = 4;
+  uint32 tickets_created = 5;
+  uint32 projects_completed = 6;
+  uint32 requests_completed = 7;
+}

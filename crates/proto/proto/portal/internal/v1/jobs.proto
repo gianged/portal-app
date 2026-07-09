@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package portal.internal.v1;
+
+// Internal job ingest: the server enqueues durable jobs over gRPC and the
+// workers handler pushes them into its local apalis storage, so queue
+// durability and retry semantics stay in apalis.
+service Jobs {
+  rpc Enqueue(EnqueueRequest) returns (EnqueueResponse);
+}
+
+message EnqueueRequest {
+  // Logical queue name: "notifications" | "audit" | "emails".
+  string queue = 1;
+  // Opaque payload bytes; the same JSON the direct apalis path persists.
+  bytes payload = 2;
+  // W3C traceparent of the enqueuing request; empty when absent.
+  string traceparent = 3;
+}
+
+message EnqueueResponse {}

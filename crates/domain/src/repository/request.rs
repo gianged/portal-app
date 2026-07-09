@@ -26,6 +26,16 @@ pub trait RequestRepository: Send + Sync {
         q: Option<&str>,
     ) -> Result<Vec<Request>, RepositoryError>;
 
+    /// Keyset page ordered by id ascending; `after` is exclusive and `project`
+    /// optionally filters. Backs the internal query plane and the external
+    /// read API.
+    async fn list_page(
+        &self,
+        project: Option<ProjectId>,
+        after: Option<RequestId>,
+        limit: u32,
+    ) -> Result<Vec<Request>, RepositoryError>;
+
     async fn save(&self, request: &Request) -> Result<(), RepositoryError>;
 
     async fn list_attachments(

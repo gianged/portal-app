@@ -42,6 +42,12 @@ pub struct Config {
     pub storage_root: PathBuf,
     pub storage_public_base: String,
     pub server_addr: SocketAddr,
+    /// Bind address of the internal gRPC query plane.
+    pub grpc_addr: SocketAddr,
+    /// URL of the workers' internal gRPC ingest plane (job dispatch primary hop).
+    pub workers_grpc_url: String,
+    /// Shared bearer token gating both internal gRPC planes.
+    pub internal_grpc_token: String,
     pub jwt_secret: String,
     /// HMAC key for presigned file-download URLs; deliberately distinct from
     /// `jwt_secret` so the two credentials can rotate independently.
@@ -60,6 +66,10 @@ pub struct Config {
     pub auth_ip_rate_limit: u64,
     pub api_rate_limit: u64,
     pub chat_rate_limit: u64,
+    /// Ceiling for the external read API, per service-account key.
+    pub ext_rate_limit: u64,
+    /// Per-IP ceiling for the external read API, applied before key auth.
+    pub ext_ip_rate_limit: u64,
     pub rate_limit_window_secs: i64,
     /// Origins allowed to call the API with credentials (the WASM frontend).
     /// Credentialed CORS forbids a wildcard, so these are enumerated.
@@ -86,6 +96,9 @@ pub fn from_env() -> anyhow::Result<Config> {
     let server_addr: SocketAddr = format!("{host}:{port}")
         .parse()
         .with_context(|| format!("invalid SERVER_HOST/SERVER_PORT: {host}:{port}"))?;
+    let grpc_addr: SocketAddr = optional("SERVER_GRPC_ADDR", "0.0.0.0:50051")
+        .parse()
+        .context("invalid SERVER_GRPC_ADDR")?;
 
     // Without a bearer token the OpenFGA API accepts unauthenticated writes to
     // the entire authorization graph, so its absence must be an explicit,
@@ -143,6 +156,9 @@ pub fn from_env() -> anyhow::Result<Config> {
         storage_root: optional("STORAGE_ROOT", "./storage/uploads").into(),
         storage_public_base: optional("STORAGE_PUBLIC_BASE", "http://localhost:8080/api/v1"),
         server_addr,
+        grpc_addr,
+        workers_grpc_url: optional("WORKERS_GRPC_URL", "http://127.0.0.1:50052"),
+        internal_grpc_token: required_secret("INTERNAL_GRPC_TOKEN")?,
         jwt_secret: required_secret("JWT_SECRET")?,
         storage_signing_secret: required_secret("STORAGE_SIGNING_SECRET")?,
         session_ttl_secs: session_ttl_hours * 3600,
@@ -161,6 +177,12 @@ pub fn from_env() -> anyhow::Result<Config> {
         chat_rate_limit: optional("CHAT_RATE_LIMIT", "120")
             .parse()
             .context("invalid CHAT_RATE_LIMIT")?,
+        ext_rate_limit: optional("EXT_RATE_LIMIT", "60")
+            .parse()
+            .context("invalid EXT_RATE_LIMIT")?,
+        ext_ip_rate_limit: optional("EXT_IP_RATE_LIMIT", "120")
+            .parse()
+            .context("invalid EXT_IP_RATE_LIMIT")?,
         rate_limit_window_secs: optional("RATE_LIMIT_WINDOW_SECS", "60")
             .parse()
             .context("invalid RATE_LIMIT_WINDOW_SECS")?,

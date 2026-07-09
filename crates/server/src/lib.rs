@@ -13,6 +13,7 @@ pub mod config;
 pub mod dto;
 pub mod error;
 pub mod extractors;
+pub mod grpc;
 pub mod middleware;
 pub mod realtime;
 pub mod resolve;
@@ -31,6 +32,9 @@ use infrastructure::telemetry;
 /// Grace after the shutdown signal before the watchdog forces exit.
 const FORCE_EXIT_GRACE: Duration = Duration::from_secs(3);
 
+/// Bound on waiting for the internal gRPC plane to drain after HTTP stops.
+const GRPC_DRAIN_GRACE: Duration = Duration::from_secs(5);
+
 /// Loads configuration, builds the router, and serves until a shutdown signal.
 pub async fn run() -> anyhow::Result<()> {
     // Populate the process env from the repo-root .env before config is parsed.
@@ -41,12 +45,19 @@ pub async fn run() -> anyhow::Result<()> {
     let _log_guard = telemetry::init(&config::telemetry_config());
 
     let cfg = config::from_env()?;
-    let (router, ingest) = app::build(&cfg).await?;
+    let (router, ingest, grpc) = app::build(&cfg).await?;
 
     let listener = TcpListener::bind(cfg.server_addr).await?;
     tracing::info!(addr = %cfg.server_addr, "server listening");
     // Guarantees Ctrl-C exits even if graceful shutdown stalls (e.g. a live WS).
     tokio::spawn(force_exit_watchdog());
+    // Internal gRPC plane on its own listener, sharing the shutdown signal. A
+    // failure is logged, not fatal: the HTTP surface stays up without it.
+    let mut grpc_task = tokio::spawn(async move {
+        if let Err(error) = grpc.serve(shutdown_signal()).await {
+            tracing::error!(%error, "internal grpc server failed");
+        }
+    });
     // `ConnectInfo` exposes the peer address to the per-IP rate limiter; graceful
     // shutdown lets in-flight requests and WebSocket connections drain on signal.
     let serve_result = axum::serve(
@@ -55,8 +66,17 @@ pub async fn run() -> anyhow::Result<()> {
     )
     .with_graceful_shutdown(shutdown_signal())
     .await;
-    // HTTP server stopped: flush the chat ingest buffer's tail before exit, even
-    // if serve returned an error, so optimistically-acked messages still persist.
+    // Drain the gRPC plane, then flush the chat ingest buffer's tail before
+    // exit, even if serve returned an error, so optimistically-acked messages
+    // still persist. The drain is bounded: after an abnormal serve error no
+    // shutdown signal ever fires, and the gRPC task would wait forever.
+    if time::timeout(GRPC_DRAIN_GRACE, &mut grpc_task)
+        .await
+        .is_err()
+    {
+        grpc_task.abort();
+        tracing::warn!("internal grpc drain timed out; aborted");
+    }
     ingest.shutdown().await;
     serve_result?;
     Ok(())

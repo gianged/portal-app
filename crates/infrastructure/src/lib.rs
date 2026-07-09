@@ -1,5 +1,6 @@
 #![allow(clippy::missing_errors_doc)]
 
+pub mod grpc_jobs;
 pub mod health;
 pub mod jobs;
 pub mod local_storage;

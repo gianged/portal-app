@@ -5,6 +5,12 @@
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use proto::{
+    tonic::transport::{Channel, Endpoint},
+    tonic_health::pb::{
+        HealthCheckRequest, health_check_response::ServingStatus, health_client::HealthClient,
+    },
+};
 use redis::aio::ConnectionManager;
 use reqwest::StatusCode;
 // `::scylla` names the driver crate, not this crate's own `scylla` module.
@@ -155,6 +161,49 @@ impl OpenFgaHealthCheck {
             healthz_url: format!("{}/healthz", endpoint.trim_end_matches('/')),
             bearer_token,
         })
+    }
+}
+
+/// Workers-gRPC probe: standard `grpc.health.v1/Check` against the workers'
+/// ingest plane. Non-gating in readiness — dispatch falls back to apalis.
+pub struct WorkersGrpcHealthCheck {
+    channel: Channel,
+}
+
+impl WorkersGrpcHealthCheck {
+    pub fn new(url: &str) -> Result<Self, HealthError> {
+        let channel = Endpoint::from_shared(url.to_owned())
+            .map_err(|e| HealthError::Backend(e.to_string()))?
+            .connect_timeout(PING_TIMEOUT)
+            .timeout(PING_TIMEOUT)
+            .connect_lazy();
+        Ok(Self { channel })
+    }
+}
+
+#[async_trait]
+impl HealthCheck for WorkersGrpcHealthCheck {
+    fn backend(&self) -> BackendId {
+        BackendId::WorkersGrpc
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn ping(&self) -> Result<(), HealthError> {
+        with_timeout(async {
+            let mut client = HealthClient::new(self.channel.clone());
+            let response = client
+                .check(HealthCheckRequest {
+                    service: String::new(),
+                })
+                .await
+                .map_err(backend)?;
+            if response.get_ref().status() == ServingStatus::Serving {
+                Ok(())
+            } else {
+                Err(HealthError::Backend("workers grpc not serving".to_owned()))
+            }
+        })
+        .await
     }
 }
 

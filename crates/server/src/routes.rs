@@ -7,6 +7,7 @@ pub mod chat;
 pub mod chat_ws;
 pub mod daily_reports;
 pub mod day_off;
+pub mod ext;
 pub mod flex_hours;
 pub mod groups;
 pub mod holidays;
@@ -17,6 +18,7 @@ pub mod policy;
 pub mod projects;
 pub mod reports;
 pub mod requests;
+pub mod service_accounts;
 pub mod tickets;
 pub mod users;
 

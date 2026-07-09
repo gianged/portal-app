@@ -107,6 +107,11 @@ CREATE TYPE attendance.flex_status AS ENUM (
 );
 
 -- auth
+CREATE TYPE auth.service_account_status AS ENUM (
+    'active',
+    'revoked'
+);
+
 CREATE TYPE auth.system_role AS ENUM (
     'director',
     'hr'
@@ -314,6 +319,27 @@ CREATE TABLE auth.users (
         CHECK ((status = 'deactivated') = (deactivated_at IS NOT NULL)),
     CONSTRAINT chk_users_status_first_login_consistency
         CHECK ((status = 'pending') = (first_logged_in_at IS NULL))
+);
+
+-- auth.service_accounts --------------------------------------------------------
+-- Admin-issued API keys for external read-only scripts (/api/ext/v1). key_hash
+-- is the SHA-256 of the pak_* secret (high-entropy, so a fast hash suffices);
+-- the plaintext is shown once at creation and never stored. id is an
+-- app-supplied UUIDv7 (no DB default).
+CREATE TABLE auth.service_accounts (
+    id          UUID        NOT NULL,
+    name        TEXT        NOT NULL,
+    key_hash    BYTEA       NOT NULL,
+    status      auth.service_account_status NOT NULL DEFAULT 'active',
+    created_by  UUID        NOT NULL,
+    revoked_at  TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT pk_service_accounts PRIMARY KEY (id),
+    CONSTRAINT uq_service_accounts_key_hash UNIQUE (key_hash),
+    CONSTRAINT chk_service_accounts_status_revoked_at_consistency
+        CHECK ((status = 'revoked') = (revoked_at IS NOT NULL))
 );
 
 -- audit.audit_log ------------------------------------------------------------
@@ -801,6 +827,12 @@ CREATE TABLE attendance.flex_segments (
 --    contradict the lifecycle rules in domain-logic.txt.
 -- -----------------------------------------------------------------------------
 
+-- auth.service_accounts
+ALTER TABLE auth.service_accounts
+    ADD CONSTRAINT fk_service_accounts_created_by
+    FOREIGN KEY (created_by) REFERENCES auth.users (id)
+    ON DELETE RESTRICT;
+
 -- org.memberships
 ALTER TABLE org.memberships
     ADD CONSTRAINT fk_memberships_group_id
@@ -1071,6 +1103,15 @@ CREATE INDEX idx_users_status_active
     ON auth.users (status)
     WHERE status = 'active';
 
+-- auth.service_accounts
+CREATE INDEX idx_service_accounts_created_by
+    ON auth.service_accounts (created_by);
+
+-- key rotation: only active accounts contend for a name; a revoked one frees it
+CREATE UNIQUE INDEX uq_service_accounts_active_name
+    ON auth.service_accounts (name)
+    WHERE status = 'active';
+
 -- org.groups
 -- invariant: at most one IT group at any time
 CREATE UNIQUE INDEX uq_groups_one_it
@@ -1316,6 +1357,10 @@ CREATE INDEX idx_flex_segments_flex_id
 
 CREATE TRIGGER trg_users_set_updated_at
     BEFORE UPDATE ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+CREATE TRIGGER trg_service_accounts_set_updated_at
+    BEFORE UPDATE ON auth.service_accounts
     FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 
 CREATE TRIGGER trg_groups_set_updated_at

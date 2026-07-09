@@ -6,7 +6,9 @@ mod cleanup;
 mod config;
 mod emails;
 mod flex_reconciliation;
+mod grpc;
 mod job_error;
+mod job_spool;
 mod leave_expiry;
 mod notifications;
 mod report_schedule;
@@ -44,6 +46,7 @@ fn main() -> anyhow::Result<()> {
         .expect("workers thread panicked")
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run() -> anyhow::Result<()> {
     // Populate the process env from the repo-root .env before config is parsed.
     dotenvy::dotenv().ok();
@@ -68,7 +71,37 @@ async fn run() -> anyhow::Result<()> {
         health_checks,
         pg_breaker,
         chat_drainer,
+        job_spool,
     } = bootstrap::build(&cfg).await?;
+
+    // Internal gRPC ingest (+ standard health service), alongside the Monitor.
+    // Shares the shutdown signal; a crash is logged, the direct apalis hop and
+    // the job spool keep dispatch alive while it is down.
+    {
+        let jobs_service = grpc::GrpcJobs::new(
+            storage.clone(),
+            audit_storage.clone(),
+            email_storage.clone(),
+        );
+        let addr = cfg.grpc_addr;
+        let token = cfg.internal_grpc_token.clone();
+        tokio::spawn(async move {
+            if let Err(error) = grpc::serve(jobs_service, addr, &token).await {
+                tracing::error!(%error, "workers grpc server failed");
+            }
+        });
+    }
+
+    // Replays job dispatches the server spooled while both enqueue hops were down.
+    {
+        let drainer = job_spool::JobSpoolDrainer::new(
+            job_spool,
+            storage.clone(),
+            audit_storage.clone(),
+            email_storage.clone(),
+        );
+        resilience::supervise("job-spool-drainer", move || drainer.clone().run());
+    }
 
     // Health prober drives the per-backend circuit breakers (fail-fast + recovery).
     {
@@ -185,7 +218,7 @@ async fn force_exit_watchdog() {
 
 /// Resolves on the first shutdown signal: Ctrl-C on every platform, plus
 /// `SIGTERM` on Unix (the orchestrator's stop signal).
-async fn wait_for_shutdown() {
+pub(crate) async fn wait_for_shutdown() {
     let ctrl_c = async {
         if let Err(error) = signal::ctrl_c().await {
             tracing::error!(%error, "failed to install Ctrl-C handler");
