@@ -42,6 +42,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: native
+      # crates/proto's build script shells out to protoc.
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       # frontend is wasm-only (leptos_animate needs web_sys_unstable_apis); it is
       # linted separately on the wasm target by the clippy-wasm job.
       - run: cargo clippy --workspace --exclude frontend --all-targets -- -D warnings
@@ -73,6 +75,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: native
+      # crates/proto's build script shells out to protoc.
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       # Runs unit tests, the bins, AND the tests/ integration crates. Every current
       # tests/ target is in-memory (tower oneshot + fakes) and needs no Docker. Any
       # future Docker-backed test is gated behind `#![cfg(feature = "integration")]`
@@ -106,6 +110,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: msrv
+      # crates/proto's build script shells out to protoc.
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       # rust-toolchain.toml pins stable for developers; +1.94 overrides it so this
       # job actually gates the declared MSRV. check-only, since lint output drifts
       # between toolchain versions.
