@@ -1,62 +1,28 @@
 use std::sync::Arc;
 
-use uuid::Uuid;
-
 use domain::{
     ids::{ProjectId, RequestId, ServiceAccountId},
     model::{MonthlyReportData, Project, Request, YearlyReportData},
-    repository::{ProjectRepository, RequestRepository},
 };
 
 use crate::{
-    error::{Error, Result},
+    error::Result,
     permissions::{Permissions, ServiceAccountScope},
-    service::ReportService,
+    service::{Page, ReadPlaneService},
 };
 
-const DEFAULT_LIMIT: u32 = 100;
-const MAX_LIMIT: u32 = 500;
-
-/// One keyset page; `next_cursor` is the last item's id when the page came
-/// back full, i.e. more rows may remain.
-pub struct ExtPage<T> {
-    pub items: Vec<T>,
-    pub next_cursor: Option<Uuid>,
-}
-
-fn page<T>(items: Vec<T>, limit: u32, id_of: impl Fn(&T) -> Uuid) -> ExtPage<T> {
-    let next_cursor = if items.len() == limit as usize {
-        items.last().map(id_of)
-    } else {
-        None
-    };
-    ExtPage { items, next_cursor }
-}
-
 /// Read-only queries backing the external `/api/ext/v1` surface. Every method
-/// gates on the calling service account's granted scope, then reads via the
-/// repositories / report service. Strictly no mutations.
+/// gates on the calling service account's granted scope, then delegates to the
+/// shared [`ReadPlaneService`]. Strictly no mutations.
 pub struct ExtReadService {
-    projects: Arc<dyn ProjectRepository>,
-    requests: Arc<dyn RequestRepository>,
-    report: Arc<ReportService>,
+    read: Arc<ReadPlaneService>,
     perms: Arc<Permissions>,
 }
 
 impl ExtReadService {
     #[must_use]
-    pub fn new(
-        projects: Arc<dyn ProjectRepository>,
-        requests: Arc<dyn RequestRepository>,
-        report: Arc<ReportService>,
-        perms: Arc<Permissions>,
-    ) -> Self {
-        Self {
-            projects,
-            requests,
-            report,
-            perms,
-        }
+    pub fn new(read: Arc<ReadPlaneService>, perms: Arc<Permissions>) -> Self {
+        Self { read, perms }
     }
 
     /// Keyset page over every project; `after` is the previous page's last id.
@@ -69,13 +35,11 @@ impl ExtReadService {
         account: ServiceAccountId,
         after: Option<ProjectId>,
         limit: Option<u32>,
-    ) -> Result<ExtPage<Project>> {
+    ) -> Result<Page<Project>> {
         self.perms
             .require_service_account_scope(account, ServiceAccountScope::Projects)
             .await?;
-        let limit = clamp_limit(limit);
-        let rows = self.projects.list_page(after, limit).await?;
-        Ok(page(rows, limit, |p| p.id.0))
+        self.read.list_projects(after, limit).await
     }
 
     /// # Errors
@@ -86,10 +50,7 @@ impl ExtReadService {
         self.perms
             .require_service_account_scope(account, ServiceAccountScope::Projects)
             .await?;
-        self.projects
-            .find_by_id(id)
-            .await?
-            .ok_or(Error::NotFound("project"))
+        self.read.get_project(id).await
     }
 
     /// Keyset page over requests, optionally filtered to one project.
@@ -103,13 +64,11 @@ impl ExtReadService {
         project: Option<ProjectId>,
         after: Option<RequestId>,
         limit: Option<u32>,
-    ) -> Result<ExtPage<Request>> {
+    ) -> Result<Page<Request>> {
         self.perms
             .require_service_account_scope(account, ServiceAccountScope::Requests)
             .await?;
-        let limit = clamp_limit(limit);
-        let rows = self.requests.list_page(project, after, limit).await?;
-        Ok(page(rows, limit, |r| r.id.0))
+        self.read.list_requests(project, after, limit).await
     }
 
     /// # Errors
@@ -120,10 +79,7 @@ impl ExtReadService {
         self.perms
             .require_service_account_scope(account, ServiceAccountScope::Requests)
             .await?;
-        self.requests
-            .find_by_id(id)
-            .await?
-            .ok_or(Error::NotFound("request"))
+        self.read.get_request(id).await
     }
 
     /// # Errors
@@ -139,7 +95,7 @@ impl ExtReadService {
         self.perms
             .require_service_account_scope(account, ServiceAccountScope::Reports)
             .await?;
-        self.report.monthly_stats(year, month).await
+        self.read.monthly_report(year, month).await
     }
 
     /// # Errors
@@ -154,13 +110,6 @@ impl ExtReadService {
         self.perms
             .require_service_account_scope(account, ServiceAccountScope::Reports)
             .await?;
-        self.report.yearly_stats(year).await
-    }
-}
-
-fn clamp_limit(limit: Option<u32>) -> u32 {
-    match limit {
-        None | Some(0) => DEFAULT_LIMIT,
-        Some(n) => n.min(MAX_LIMIT),
+        self.read.yearly_report(year).await
     }
 }

@@ -1,6 +1,6 @@
-//! Trusted internal read plane: projects, requests, and report aggregates
-//! straight from the repositories/report service, no per-user authz. The token
-//! interceptor on the listener is the only gate.
+//! Trusted internal read plane: a thin proto boundary over the shared
+//! `ReadPlaneService`, no per-user authz. The token interceptor on the
+//! listener is the only gate.
 
 use std::sync::Arc;
 
@@ -9,12 +9,11 @@ use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use uuid::Uuid;
 
-use application::service::ReportService;
+use application::service::ReadPlaneService;
 use domain::{
     error::RepositoryError,
     ids::{ProjectId, RequestId},
     model::{MonthlyReportData, Project, YearlyReportData},
-    repository::{ProjectRepository, RequestRepository},
 };
 use proto::{
     internal::v1::{
@@ -23,74 +22,54 @@ use proto::{
         ListRequestsResponse, MonthlyReportRequest, MonthlyReportStats, ProjectRecord,
         RequestRecord, YearlyReportRequest, YearlyReportStats, query_server::Query,
     },
-    tonic::{Response, Status},
+    tonic::{self, Status},
 };
 
-const DEFAULT_LIMIT: u32 = 100;
-const MAX_LIMIT: u32 = 500;
-
 pub struct QueryService {
-    projects: Arc<dyn ProjectRepository>,
-    requests: Arc<dyn RequestRepository>,
-    report: Arc<ReportService>,
+    read: Arc<ReadPlaneService>,
 }
 
 impl QueryService {
     #[must_use]
-    pub fn new(
-        projects: Arc<dyn ProjectRepository>,
-        requests: Arc<dyn RequestRepository>,
-        report: Arc<ReportService>,
-    ) -> Self {
-        Self {
-            projects,
-            requests,
-            report,
-        }
+    pub fn new(read: Arc<ReadPlaneService>) -> Self {
+        Self { read }
     }
 }
 
-#[proto::tonic::async_trait]
+#[tonic::async_trait]
 impl Query for QueryService {
     async fn list_projects(
         &self,
-        request: proto::tonic::Request<ListProjectsRequest>,
-    ) -> Result<Response<ListProjectsResponse>, Status> {
+        request: tonic::Request<ListProjectsRequest>,
+    ) -> Result<tonic::Response<ListProjectsResponse>, Status> {
         let ListProjectsRequest { after, limit } = request.into_inner();
         let after = parse_cursor(&after)?.map(ProjectId);
-        let limit = clamp_limit(limit);
-        let rows = self
-            .projects
-            .list_page(after, limit)
+        let page = self
+            .read
+            .list_projects(after, opt_limit(limit))
             .await
-            .map_err(repo_status)?;
-        let next_cursor = next_cursor(rows.len(), limit, rows.last().map(|p| p.id.0));
-        Ok(Response::new(ListProjectsResponse {
-            projects: rows.iter().map(project_record).collect(),
-            next_cursor,
+            .map_err(app_status)?;
+        Ok(tonic::Response::new(ListProjectsResponse {
+            projects: page.items.iter().map(project_record).collect(),
+            next_cursor: cursor_string(page.next_cursor),
         }))
     }
 
     async fn get_project(
         &self,
-        request: proto::tonic::Request<GetProjectRequest>,
-    ) -> Result<Response<GetProjectResponse>, Status> {
+        request: tonic::Request<GetProjectRequest>,
+    ) -> Result<tonic::Response<GetProjectResponse>, Status> {
         let id = parse_id(&request.into_inner().id).map(ProjectId)?;
-        let project = self
-            .projects
-            .find_by_id(id)
-            .await
-            .map_err(repo_status)?
-            .ok_or_else(|| Status::not_found("project not found"))?;
-        Ok(Response::new(GetProjectResponse {
+        let project = self.read.get_project(id).await.map_err(app_status)?;
+        Ok(tonic::Response::new(GetProjectResponse {
             project: Some(project_record(&project)),
         }))
     }
 
     async fn list_requests(
         &self,
-        request: proto::tonic::Request<ListRequestsRequest>,
-    ) -> Result<Response<ListRequestsResponse>, Status> {
+        request: tonic::Request<ListRequestsRequest>,
+    ) -> Result<tonic::Response<ListRequestsResponse>, Status> {
         let ListRequestsRequest {
             project_id,
             after,
@@ -98,57 +77,50 @@ impl Query for QueryService {
         } = request.into_inner();
         let project = parse_cursor(&project_id)?.map(ProjectId);
         let after = parse_cursor(&after)?.map(RequestId);
-        let limit = clamp_limit(limit);
-        let rows = self
-            .requests
-            .list_page(project, after, limit)
+        let page = self
+            .read
+            .list_requests(project, after, opt_limit(limit))
             .await
-            .map_err(repo_status)?;
-        let next_cursor = next_cursor(rows.len(), limit, rows.last().map(|r| r.id.0));
-        Ok(Response::new(ListRequestsResponse {
-            requests: rows.iter().map(request_record).collect(),
-            next_cursor,
+            .map_err(app_status)?;
+        Ok(tonic::Response::new(ListRequestsResponse {
+            requests: page.items.iter().map(request_record).collect(),
+            next_cursor: cursor_string(page.next_cursor),
         }))
     }
 
     async fn get_request(
         &self,
-        request: proto::tonic::Request<GetRequestRequest>,
-    ) -> Result<Response<GetRequestResponse>, Status> {
+        request: tonic::Request<GetRequestRequest>,
+    ) -> Result<tonic::Response<GetRequestResponse>, Status> {
         let id = parse_id(&request.into_inner().id).map(RequestId)?;
-        let found = self
-            .requests
-            .find_by_id(id)
-            .await
-            .map_err(repo_status)?
-            .ok_or_else(|| Status::not_found("request not found"))?;
-        Ok(Response::new(GetRequestResponse {
+        let found = self.read.get_request(id).await.map_err(app_status)?;
+        Ok(tonic::Response::new(GetRequestResponse {
             request: Some(request_record(&found)),
         }))
     }
 
     async fn monthly_report(
         &self,
-        request: proto::tonic::Request<MonthlyReportRequest>,
-    ) -> Result<Response<MonthlyReportStats>, Status> {
+        request: tonic::Request<MonthlyReportRequest>,
+    ) -> Result<tonic::Response<MonthlyReportStats>, Status> {
         let MonthlyReportRequest { year, month } = request.into_inner();
         let month =
             u8::try_from(month).map_err(|_| Status::invalid_argument("month must be 1-12"))?;
         let data = self
-            .report
-            .monthly_stats(year, month)
+            .read
+            .monthly_report(year, month)
             .await
             .map_err(app_status)?;
-        Ok(Response::new(monthly_stats(&data)))
+        Ok(tonic::Response::new(monthly_stats(&data)))
     }
 
     async fn yearly_report(
         &self,
-        request: proto::tonic::Request<YearlyReportRequest>,
-    ) -> Result<Response<YearlyReportStats>, Status> {
+        request: tonic::Request<YearlyReportRequest>,
+    ) -> Result<tonic::Response<YearlyReportStats>, Status> {
         let year = request.into_inner().year;
-        let data = self.report.yearly_stats(year).await.map_err(app_status)?;
-        Ok(Response::new(yearly_stats(&data)))
+        let data = self.read.yearly_report(year).await.map_err(app_status)?;
+        Ok(tonic::Response::new(yearly_stats(&data)))
     }
 }
 
@@ -324,34 +296,20 @@ fn parse_cursor(raw: &str) -> Result<Option<Uuid>, Status> {
     parse_id(raw).map(Some)
 }
 
-fn clamp_limit(limit: u32) -> u32 {
-    if limit == 0 {
-        DEFAULT_LIMIT
-    } else {
-        limit.min(MAX_LIMIT)
-    }
+/// Proto uses 0 for "no limit given"; the read service applies the default.
+fn opt_limit(limit: u32) -> Option<u32> {
+    (limit > 0).then_some(limit)
 }
 
-/// Cursor for the next page: the last id when the page came back full.
-fn next_cursor(returned: usize, limit: u32, last: Option<Uuid>) -> String {
-    if returned == limit as usize {
-        last.map(|id| id.to_string()).unwrap_or_default()
-    } else {
-        String::new()
-    }
-}
-
-fn repo_status(e: RepositoryError) -> Status {
-    match e {
-        RepositoryError::NotFound => Status::not_found("not found"),
-        other => Status::internal(other.to_string()),
-    }
+fn cursor_string(cursor: Option<Uuid>) -> String {
+    cursor.map(|id| id.to_string()).unwrap_or_default()
 }
 
 fn app_status(e: application::Error) -> Status {
     match e {
         application::Error::NotFound(what) => Status::not_found(what),
         application::Error::Validation(msg) => Status::invalid_argument(msg),
+        application::Error::Repository(RepositoryError::NotFound) => Status::not_found("not found"),
         other => Status::internal(other.to_string()),
     }
 }

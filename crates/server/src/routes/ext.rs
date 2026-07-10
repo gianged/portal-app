@@ -9,7 +9,7 @@ use axum::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use application::service::ExtPage;
+use application::service::Page;
 use domain::ids::{ProjectId, RequestId};
 use shared::dto::{
     ext::{ExtProjectDto, ExtRequestDto, PageDto},
@@ -52,7 +52,7 @@ struct YearlyQuery {
     year: i32,
 }
 
-fn page_dto<T, D>(page: &ExtPage<T>, map: impl Fn(&T) -> D) -> PageDto<D> {
+fn page_dto<T, D>(page: &Page<T>, map: impl Fn(&T) -> D) -> PageDto<D> {
     PageDto {
         items: page.items.iter().map(map).collect(),
         next_cursor: page.next_cursor.map(|id| id.to_string()),

@@ -31,8 +31,8 @@ use application::{
         AnnouncementService, AuditService, ChatIngest, ChatIngestConfig, ChatService,
         CommentService, DailyReportService, DayOffService, ExtReadService, FlexHoursService,
         GroupService, HolidayService, LeaveBalanceService, NotificationService, OvertimeService,
-        PolicyProvider, PolicyService, ProjectService, ReportService, RequestService,
-        ServiceAccountService, TicketService, UserService,
+        PolicyProvider, PolicyService, ProjectService, ReadPlaneService, ReportService,
+        RequestService, ServiceAccountService, TicketService, UserService,
     },
 };
 use domain::{
@@ -495,12 +495,12 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
         service_account_repo,
         perms.clone(),
     ));
-    let ext_read_service = Arc::new(ExtReadService::new(
+    let read_plane = Arc::new(ReadPlaneService::new(
         projects.clone(),
         requests.clone(),
         report_service.clone(),
-        perms.clone(),
     ));
+    let ext_read_service = Arc::new(ExtReadService::new(read_plane.clone(), perms.clone()));
 
     let state = AppState {
         user: Arc::new(UserService::new(
@@ -599,7 +599,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
     let grpc = GrpcPlane::new(
         cfg.grpc_addr,
         cfg.internal_grpc_token.clone(),
-        QueryService::new(projects.clone(), requests.clone(), report_service),
+        QueryService::new(read_plane),
     );
     let app = router(state).layer(cors_layer(&cfg.cors_allowed_origins));
     Ok((app, ingest_shutdown, grpc))

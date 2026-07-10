@@ -29,8 +29,8 @@ use application::{
         AnnouncementService, AuditService, ChatIngest, ChatIngestConfig, ChatService,
         CommentService, DailyReportService, DayOffService, ExtReadService, FlexHoursService,
         GroupService, HolidayService, LeaveBalanceService, NotificationService, OvertimeService,
-        PolicyProvider, PolicyService, ProjectService, ReportService, RequestService,
-        ServiceAccountService, TicketService, UserService,
+        PolicyProvider, PolicyService, ProjectService, ReadPlaneService, ReportService,
+        RequestService, ServiceAccountService, TicketService, UserService,
     },
 };
 use domain::{
@@ -1315,9 +1315,11 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
             perms.clone(),
         )),
         ext_read: Arc::new(ExtReadService::new(
-            projects.clone(),
-            requests.clone(),
-            report_service.clone(),
+            Arc::new(ReadPlaneService::new(
+                projects.clone(),
+                requests.clone(),
+                report_service.clone(),
+            )),
             perms.clone(),
         )),
         policy: Arc::new(PolicyService::new(
