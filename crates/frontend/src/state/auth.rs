@@ -1,5 +1,6 @@
 use leptos::prelude::*;
-use shared::dto::user::UserDto;
+
+use shared::dto::{group::GroupRole, ids::GroupId, user::UserDto};
 
 #[derive(Clone, Copy)]
 pub struct AuthState {
@@ -35,5 +36,29 @@ impl AuthState {
     #[must_use]
     pub fn is_authenticated(&self) -> bool {
         self.user.with(Option::is_some)
+    }
+
+    /// Whether the signed-in user leads `group`. Untracked read.
+    #[must_use]
+    pub fn is_leader_of(&self, group: GroupId) -> bool {
+        self.has_role_in(group, |r| r == GroupRole::Leader)
+    }
+
+    /// Whether the signed-in user leads or sub-leads `group`. Untracked read.
+    #[must_use]
+    pub fn leads_or_subleads(&self, group: GroupId) -> bool {
+        self.has_role_in(group, |r| {
+            matches!(r, GroupRole::Leader | GroupRole::SubLeader)
+        })
+    }
+
+    fn has_role_in(&self, group: GroupId, pred: impl Fn(GroupRole) -> bool) -> bool {
+        self.user.with_untracked(|u| {
+            u.as_ref().is_some_and(|x| {
+                x.memberships
+                    .iter()
+                    .any(|m| m.group_id == group && pred(m.role))
+            })
+        })
     }
 }

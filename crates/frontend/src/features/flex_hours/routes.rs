@@ -1,22 +1,16 @@
 use leptos::prelude::*;
 
 use crate::features::flex_hours::components::{Approvals, FlexHours};
-use crate::features::home::shell::AuthedPage;
+use crate::state::title;
 
 #[component]
 pub fn FlexHoursPage() -> impl IntoView {
-    view! {
-        <AuthedPage title="Flexible hours">
-            <FlexHours />
-        </AuthedPage>
-    }
+    title::set_page_title("Flexible hours");
+    view! { <FlexHours /> }
 }
 
 #[component]
 pub fn FlexApprovalsPage() -> impl IntoView {
-    view! {
-        <AuthedPage title="Flex approvals">
-            <Approvals />
-        </AuthedPage>
-    }
+    title::set_page_title("Flex approvals");
+    view! { <Approvals /> }
 }

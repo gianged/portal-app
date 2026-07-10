@@ -1,22 +1,16 @@
 use leptos::prelude::*;
 
 use crate::features::day_off::components::{Approvals, TimeOff};
-use crate::features::home::shell::AuthedPage;
+use crate::state::title;
 
 #[component]
 pub fn TimeOffPage() -> impl IntoView {
-    view! {
-        <AuthedPage title="Time off">
-            <TimeOff />
-        </AuthedPage>
-    }
+    title::set_page_title("Time off");
+    view! { <TimeOff /> }
 }
 
 #[component]
 pub fn LeaveApprovalsPage() -> impl IntoView {
-    view! {
-        <AuthedPage title="Leave approvals">
-            <Approvals />
-        </AuthedPage>
-    }
+    title::set_page_title("Leave approvals");
+    view! { <Approvals /> }
 }

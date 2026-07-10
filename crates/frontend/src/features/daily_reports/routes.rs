@@ -1,22 +1,16 @@
 use leptos::prelude::*;
 
 use crate::features::daily_reports::components::{MyDay, TeamReports};
-use crate::features::home::shell::AuthedPage;
+use crate::state::title;
 
 #[component]
 pub fn DailyReportPage() -> impl IntoView {
-    view! {
-        <AuthedPage title="Daily report">
-            <MyDay />
-        </AuthedPage>
-    }
+    title::set_page_title("Daily report");
+    view! { <MyDay /> }
 }
 
 #[component]
 pub fn TeamReportsPage() -> impl IntoView {
-    view! {
-        <AuthedPage title="Team daily reports">
-            <TeamReports />
-        </AuthedPage>
-    }
+    title::set_page_title("Team daily reports");
+    view! { <TeamReports /> }
 }

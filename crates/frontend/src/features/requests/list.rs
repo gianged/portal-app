@@ -129,7 +129,7 @@ pub fn RequestsIndex() -> impl IntoView {
                             </Select>
                         </div>
                         <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_create>
-                            <Icon name=IconName::Plus size=14 /> " New request"
+                            <Icon name=IconName::Plus size=14 /> "New request"
                         </Button>
                     </Cluster>
                 </TableToolbar>

@@ -39,7 +39,7 @@ pub fn TableToolbar(children: Children) -> impl IntoView {
 pub fn Table(children: Children) -> impl IntoView {
     let cls = theme::class(format!(
         "width: 100%; border-collapse: collapse; \
-         & thead th {{ text-align: left; font-family: {ff}; font-weight: {fw}; font-size: 12px; \
+         & thead th {{ text-align: left; font-family: {ff}; font-weight: {fw}; font-size: {th_fs}; \
             color: {tm}; text-transform: uppercase; letter-spacing: 0.04em; padding: {py} {px}; \
             background: {sub}; border-bottom: 1px solid {b}; white-space: nowrap; }} \
          & tbody td {{ padding: {py} {px}; border-bottom: 1px solid {b}; font-size: {fs}; \
@@ -51,6 +51,7 @@ pub fn Table(children: Children) -> impl IntoView {
          & .mono {{ font-family: {fm}; }}",
         ff = typography::FONT_SANS,
         fw = typography::WEIGHT_MEDIUM,
+        th_fs = typography::TEXT_BADGE,
         tm = color::TEXT_MUTED,
         py = space::D3,
         px = space::D4,

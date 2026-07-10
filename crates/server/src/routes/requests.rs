@@ -230,6 +230,8 @@ async fn detail(
 ) -> Result<Json<RequestDetailDto>, AppError> {
     let rid = RequestId(id);
     let request = state.request.find(auth.user_id, rid).await?;
+    let project = state.project.find(auth.user_id, request.project_id).await?;
+    let owner_group = resolve::group_summary(&state.group, project.owner_group_id).await?;
     let attachments = state.request.list_attachments(auth.user_id, rid).await?;
 
     let uploader_ids: Vec<UserId> = attachments.iter().map(|a| a.uploaded_by_user_id).collect();
@@ -250,6 +252,7 @@ async fn detail(
 
     Ok(Json(RequestDetailDto {
         request: single(&state, &request).await?,
+        owner_group,
         attachments: attachment_dtos,
     }))
 }

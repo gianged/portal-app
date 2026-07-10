@@ -47,7 +47,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/target/release/${BINARY_NAME} /usr/local/bin/app
-EXPOSE 8080
+EXPOSE 8090
 ENV RUST_BACKTRACE=1
 CMD ["/usr/local/bin/app"]
 
@@ -62,5 +62,5 @@ WORKDIR /app
 # bind-mounted source — known WSL2 footgun.
 ENV CARGO_TARGET_DIR=/build/target
 ENV RUST_BACKTRACE=1
-EXPOSE 8080
+EXPOSE 8090
 # command supplied by docker-compose.dev.yml

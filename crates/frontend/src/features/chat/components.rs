@@ -3,18 +3,21 @@
 use leptos::prelude::*;
 
 use shared::dto::chat::MessageDto;
-use shared::dto::ids::ChannelId;
 
 use crate::features::chat::channel_list::ChannelList;
 use crate::features::chat::composer::Composer;
 use crate::features::chat::message_thread::MessageThread;
 use crate::primitives::empty_state::EmptyState;
 use crate::primitives::icon::IconName;
+use crate::state::chat::ChatUiState;
 use crate::theme::{self, color, radius, space};
 
 #[component]
 pub fn ChatView() -> impl IntoView {
-    let channel = RwSignal::new(None::<ChannelId>);
+    // Layout-owned selection, so the open channel survives leaving and re-entering /chat.
+    let channel = use_context::<ChatUiState>()
+        .expect("ChatUiState context")
+        .selected_channel;
     let messages: RwSignal<Vec<MessageDto>> = RwSignal::new(Vec::new());
     let typing = RwSignal::new(false);
 

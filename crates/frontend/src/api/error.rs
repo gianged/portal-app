@@ -20,17 +20,12 @@ pub enum FrontendError {
     Validation(String),
 }
 
-impl From<reqwasm::Error> for FrontendError {
-    fn from(err: reqwasm::Error) -> Self {
+impl From<gloo::net::Error> for FrontendError {
+    fn from(err: gloo::net::Error) -> Self {
         match err {
-            reqwasm::Error::JsError(e) => Self::Network(e.to_string()),
-            reqwasm::Error::SerdeError(e) => Self::Serde(e.to_string()),
+            gloo::net::Error::JsError(e) => Self::Network(e.to_string()),
+            gloo::net::Error::SerdeError(e) => Self::Serde(e.to_string()),
+            gloo::net::Error::GlooError(msg) => Self::Network(msg),
         }
-    }
-}
-
-impl From<serde_json::Error> for FrontendError {
-    fn from(err: serde_json::Error) -> Self {
-        Self::Serde(err.to_string())
     }
 }

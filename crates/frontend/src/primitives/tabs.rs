@@ -43,8 +43,9 @@ pub fn Tab(
         c = color::ACCENT,
     ));
     let count_cls = theme::class(format!(
-        "font-size: 11px; padding: 1px 6px; border-radius: {r}; \
+        "font-size: {fs}; padding: 1px 6px; border-radius: {r}; \
          background: {bg}; color: {c}; font-weight: {fw};",
+        fs = typography::TEXT_COUNT,
         r = radius::PILL,
         bg = color::BG_SUNKEN,
         c = color::TEXT_MUTED,

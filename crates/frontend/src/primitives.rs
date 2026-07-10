@@ -8,6 +8,7 @@ pub mod center;
 pub mod chart;
 pub mod checkbox;
 pub mod cluster;
+pub mod confirm;
 pub mod dialog;
 pub mod dots;
 pub mod dropdown;

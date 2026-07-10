@@ -161,8 +161,9 @@ fn audit_row(log: &AuditLogDto) -> AnyView {
         c = color::TEXT_MUTED,
     ));
     let when_cls = theme::class(format!(
-        "font-family: {ff}; font-size: 11.5px; color: {c}; flex-shrink: 0;",
+        "font-family: {ff}; font-size: {fs}; color: {c}; flex-shrink: 0;",
         ff = typography::FONT_SANS,
+        fs = typography::TEXT_TINY,
         c = color::TEXT_FAINT,
     ));
 

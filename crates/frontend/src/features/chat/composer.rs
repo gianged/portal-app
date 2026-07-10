@@ -30,6 +30,7 @@ pub fn Composer(
     let toast = use_context::<ToastState>().expect("ToastState context");
     let text = RwSignal::new(String::new());
     let pending = RwSignal::new(Vec::<ChatAttachmentDto>::new());
+    let sending = RwSignal::new(false);
     let file_ref: NodeRef<HtmlInputEl> = NodeRef::new();
     let last_sent = StoredValue::new(None::<String>);
 
@@ -55,6 +56,9 @@ pub fn Composer(
         let Some(cid) = channel.get_untracked() else {
             return;
         };
+        if sending.get_untracked() {
+            return;
+        }
         let body = text.get_untracked();
         if body.trim().is_empty() {
             return;
@@ -75,6 +79,8 @@ pub fn Composer(
                 attachment_keys,
             });
         } else {
+            sending.set(true);
+            let restore = body.clone();
             task::spawn_local(async move {
                 let req = SendMessageRequest {
                     body,
@@ -83,8 +89,15 @@ pub fn Composer(
                 };
                 match api::send(cid, &req).await {
                     Ok(msg) => ws::push_message(messages, msg),
-                    Err(e) => toast.error_from(&e),
+                    Err(e) => {
+                        toast.error_from(&e);
+                        // Give the typed text back unless a new draft was started.
+                        if text.get_untracked().is_empty() {
+                            text.set(restore);
+                        }
+                    }
                 }
+                sending.set(false);
             });
         }
     };
@@ -140,11 +153,12 @@ pub fn Composer(
     ));
     let hidden_input = theme::class("display: none;");
 
+    let send_disabled = Signal::derive(move || text.get().trim().is_empty() || sending.get());
     let trailing = view! {
         <Button variant=ButtonVariant::Icon on_click=pick_file>
             <Icon name=IconName::Paperclip size=15 />
         </Button>
-        <Button variant=ButtonVariant::Icon on_click=send_btn>
+        <Button variant=ButtonVariant::Icon on_click=send_btn disabled=send_disabled>
             <Icon name=IconName::Send size=15 />
         </Button>
     }
@@ -189,7 +203,9 @@ fn pending_chip(a: &ChatAttachmentDto, pending: RwSignal<Vec<ChatAttachmentDto>>
         <span class=chip_cls>
             <Icon name=IconName::Paperclip size=12 />
             {filename}
-            <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm on_click=remove>"✕"</Button>
+            <Button variant=ButtonVariant::Icon size=ButtonSize::Sm on_click=remove>
+                <Icon name=IconName::Close size=12 />
+            </Button>
         </span>
     }
     .into_any()

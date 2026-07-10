@@ -680,8 +680,9 @@ fn StatusPill(status: DailyReportStatus) -> impl IntoView {
 
 fn section_title_cls() -> String {
     theme::class(format!(
-        "font-size: 13px; font-weight: {fw}; color: {c}; text-transform: uppercase; \
+        "font-size: {fs}; font-weight: {fw}; color: {c}; text-transform: uppercase; \
          letter-spacing: 0.04em;",
+        fs = typography::TEXT_LABEL,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_MUTED,
     ))

@@ -16,9 +16,9 @@ fn dimension(size: AvatarSize) -> &'static str {
 
 fn font_size(size: AvatarSize) -> &'static str {
     match size {
-        AvatarSize::Sm => "11px",
-        AvatarSize::Md => "12.5px",
-        AvatarSize::Lg => "14px",
+        AvatarSize::Sm => typography::TEXT_COUNT,
+        AvatarSize::Md => typography::TEXT_CAPTION,
+        AvatarSize::Lg => typography::TEXT_BODY,
     }
 }
 

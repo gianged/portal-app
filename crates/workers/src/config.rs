@@ -190,7 +190,7 @@ pub fn from_env() -> anyhow::Result<Config> {
         .into(),
         openfga_bearer_token,
         storage_root: optional("STORAGE_ROOT", "./storage/uploads").into(),
-        storage_public_base: optional("STORAGE_PUBLIC_BASE", "http://localhost:8080/api/v1"),
+        storage_public_base: optional("STORAGE_PUBLIC_BASE", "http://localhost:8090/api/v1"),
         storage_signing_secret: required_secret("STORAGE_SIGNING_SECRET")?,
         grpc_addr,
         internal_grpc_token: required_secret("INTERNAL_GRPC_TOKEN")?,

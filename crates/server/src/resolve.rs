@@ -6,6 +6,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    slice,
     sync::Mutex,
     time::{Duration, Instant},
 };
@@ -17,7 +18,7 @@ use domain::{
 };
 use shared::dto::{
     common::{GroupSummaryDto, UserSummaryDto},
-    user::UserRole,
+    user::{UserMembershipDto, UserRole},
 };
 
 use crate::{dto, error::AppError};
@@ -139,19 +140,43 @@ pub async fn role_for_user(groups: &GroupService, user: &User) -> Result<UserRol
     Ok(compute_role(user, m, it_group))
 }
 
-/// Resolves display roles for a batch of users (one membership fetch + one
-/// IT-group lookup). Used where the response carries `UserDto`, not summaries.
-pub async fn role_map(
+/// Resolves the display role plus wire memberships for one user.
+pub async fn identity_for_user(
+    groups: &GroupService,
+    user: &User,
+) -> Result<(UserRole, Vec<UserMembershipDto>), AppError> {
+    let mut map = identity_map(groups, slice::from_ref(user)).await?;
+    Ok(map
+        .remove(&user.id)
+        .unwrap_or((UserRole::Member, Vec::new())))
+}
+
+/// Batch identity resolution for `UserDto` carriers: display role + wire
+/// memberships per user (one membership fetch, one group fetch, one IT-group
+/// lookup).
+pub async fn identity_map(
     groups: &GroupService,
     users: &[User],
-) -> Result<HashMap<UserId, UserRole>, AppError> {
+) -> Result<HashMap<UserId, (UserRole, Vec<UserMembershipDto>)>, AppError> {
     let ids: Vec<UserId> = users.iter().map(|u| u.id).collect();
     let memberships = groups.active_memberships_for_users(&ids).await?;
     let it_group = groups.it_group_id().await?;
+    let group_ids: HashSet<GroupId> = memberships.values().flatten().map(|m| m.group_id).collect();
+    let groups_by_id = group_map(groups, group_ids).await?;
     let mut map = HashMap::with_capacity(users.len());
     for user in users {
         let m = memberships.get(&user.id).map_or(&[][..], Vec::as_slice);
-        map.insert(user.id, compute_role(user, m, it_group));
+        let role = compute_role(user, m, it_group);
+        let wire = m
+            .iter()
+            .map(|mm| {
+                let name = groups_by_id
+                    .get(&mm.group_id)
+                    .map_or_else(|| "Unknown group".to_owned(), |g| g.name.clone());
+                dto::user_membership_dto(mm, name)
+            })
+            .collect();
+        map.insert(user.id, (role, wire));
     }
     Ok(map)
 }

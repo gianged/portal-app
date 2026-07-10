@@ -31,8 +31,9 @@ pub fn Checkbox(
         a = color::ACCENT,
     ));
     let checked_box = theme::class(format!(
-        "background: {a} !important; border-color: {a} !important; color: #fff;",
+        "background: {a} !important; border-color: {a} !important; color: {fg};",
         a = color::ACCENT,
+        fg = color::TEXT_ON_ACCENT,
     ));
 
     let on_click = move |_| {

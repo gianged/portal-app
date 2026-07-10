@@ -79,8 +79,8 @@ pub use self::{
     },
     user::{
         create_user_command, resolve_user_role, system_role_domain, system_role_dto,
-        unknown_user_summary, update_profile_command, user_dto, user_profile_dto, user_status_dto,
-        user_summary_dto,
+        unknown_user_summary, update_profile_command, user_dto, user_membership_dto,
+        user_profile_dto, user_status_dto, user_summary_dto,
     },
 };
 

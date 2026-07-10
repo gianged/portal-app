@@ -27,10 +27,9 @@ leptos_router = { workspace = true }
 leptos_animate = { workspace = true }
 stylist = { workspace = true }
 # `futures` enables the awaitable timer (`gloo::timers::future::TimeoutFuture`)
-# used by the WS heartbeat + reconnect backoff.
-gloo = { workspace = true, features = ["futures"] }
-# `websocket` powers the chat `WsClient`; `http` (default) backs the REST client.
-reqwasm = { workspace = true, features = ["websocket"] }
+# used by the WS heartbeat + reconnect backoff; `net` (gloo-net) backs the REST
+# client and the chat `WsClient`.
+gloo = { workspace = true, features = ["futures", "net"] }
 # `SinkExt`/`StreamExt` for driving the WebSocket's split sink/stream.
 futures = { workspace = true }
 # Most web-sys APIs the frontend uses arrive transitively via leptos; these are the

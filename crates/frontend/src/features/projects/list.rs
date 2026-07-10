@@ -4,7 +4,7 @@ use leptos::{prelude::*, task};
 use leptos_router::components::A;
 use uuid::Uuid;
 
-use shared::dto::group::GroupDto;
+use shared::dto::group::{GroupDto, GroupRole};
 use shared::dto::ids::{GroupId, ProjectInviteId};
 use shared::dto::project::{
     CreateProjectRequest, ProjectDto, ProjectInviteDto, RespondInviteRequest,
@@ -46,19 +46,26 @@ pub fn ProjectsIndex() -> impl IntoView {
     let search = RwSignal::new(String::new());
     let dq = debounce::debounced(search.into(), 300);
 
-    // Auto-select the caller's own group once the directory loads.
+    // Auto-select the caller's own group once the directory loads, preferring
+    // a group they lead.
     Effect::new(move |_| {
         if group.get_untracked().is_some() {
             return;
         }
         if let Some(Ok(list)) = groups.get() {
-            let my = auth
-                .user
-                .with_untracked(|u| u.as_ref().and_then(|x| x.group_name.clone()));
-            if let Some(name) = my
-                && let Some(g) = list.iter().find(|g| g.name == name)
+            let my = auth.user.with_untracked(|u| {
+                u.as_ref().and_then(|x| {
+                    x.memberships
+                        .iter()
+                        .find(|m| m.role == GroupRole::Leader)
+                        .or_else(|| x.memberships.first())
+                        .map(|m| m.group_id)
+                })
+            });
+            if let Some(gid) = my
+                && list.iter().any(|g| g.id == gid)
             {
-                group.set(Some(g.id));
+                group.set(Some(gid));
             }
         }
     });
@@ -103,7 +110,7 @@ pub fn ProjectsIndex() -> impl IntoView {
                         <Input value=search on_input=Callback::new(move |v| search.set(v)) placeholder="Search projects…" />
                     </div>
                     <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_create>
-                        <Icon name=IconName::Plus size=14 /> " New project"
+                        <Icon name=IconName::Plus size=14 /> "New project"
                     </Button>
                 </Cluster>
             </Cluster>

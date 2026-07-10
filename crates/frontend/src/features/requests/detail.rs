@@ -39,6 +39,16 @@ fn human_size(bytes: u64) -> String {
     }
 }
 
+/// What the signed-in viewer is to this request; drives which lifecycle
+/// actions render. The server stays authoritative.
+#[derive(Clone, Copy)]
+struct ViewerCaps {
+    is_creator: bool,
+    is_assignee: bool,
+    /// Leader or sub-leader of the owning project's owner group.
+    owner_lead: bool,
+}
+
 #[derive(Clone, Copy)]
 enum RequestAction {
     Submit,
@@ -71,6 +81,8 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
     let reload = RwSignal::new(0u32);
     let assign_open = RwSignal::new(false);
     let assign_target = RwSignal::new(None::<UserId>);
+    let assign_busy = RwSignal::new(false);
+    let busy = RwSignal::new(false);
     let file_ref: NodeRef<HtmlInputEl> = NodeRef::new();
 
     Effect::new(move |_| {
@@ -80,11 +92,15 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
         }
     });
 
-    // Run a lifecycle action: resolve the future, toast, re-fetch.
+    // Run a lifecycle action: resolve the future, toast, re-fetch. One at a time.
     let run = move |action: RequestAction| {
         let Some(rid) = id.get_untracked() else {
             return;
         };
+        if busy.get_untracked() {
+            return;
+        }
+        busy.set(true);
         task::spawn_local(async move {
             match action_future(action, rid).await {
                 Ok(_) => {
@@ -93,10 +109,14 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                 }
                 Err(e) => toast.error_from(&e),
             }
+            busy.set(false);
         });
     };
 
     let confirm_assign = Callback::new(move |()| {
+        if assign_busy.get_untracked() {
+            return;
+        }
         let Some(uid) = assign_target.get_untracked() else {
             toast.error("Pick someone to assign.");
             return;
@@ -104,7 +124,7 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
         let Some(rid) = id.get_untracked() else {
             return;
         };
-        assign_open.set(false);
+        assign_busy.set(true);
         task::spawn_local(async move {
             let req = AssignRequestRequest {
                 assignee_user_id: uid,
@@ -112,10 +132,12 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
             match api::assign(rid, &req).await {
                 Ok(_) => {
                     toast.success("Request assigned");
+                    assign_open.set(false);
                     reload.update(|n| *n += 1);
                 }
                 Err(e) => toast.error_from(&e),
             }
+            assign_busy.set(false);
         });
     });
 
@@ -164,12 +186,15 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                     let title_v = title_block(&r.title);
                     let meta_v = meta_line(r);
                     let desc_v = desc_block(&r.description);
-                    let actions_v = lifecycle_bar(status, run, open_assign);
-                    let attach_v = attachments_card(&d, pick_file, upload, file_ref);
-                    let is_assignee = auth.user.with_untracked(|u| {
-                        u.as_ref().map(|u| u.id) == r.assignee.as_ref().map(|a| a.id)
+                    let caps = auth.user.with_untracked(|u| ViewerCaps {
+                        is_creator: u.as_ref().map(|x| x.id) == Some(r.creator.id),
+                        is_assignee: u.as_ref().map(|x| x.id)
+                            == r.assignee.as_ref().map(|a| a.id),
+                        owner_lead: auth.leads_or_subleads(d.owner_group.id),
                     });
-                    let progress_editor = if is_assignee && status == RequestStatus::InProgress {
+                    let actions_v = lifecycle_bar(status, caps, run, open_assign, busy.into());
+                    let attach_v = attachments_card(&d, pick_file, upload, file_ref);
+                    let progress_editor = if caps.is_assignee && status == RequestStatus::InProgress {
                         if let Some(rid) = id.get_untracked() {
                             view! { <ProgressEditor id=rid initial=progress reload=reload /> }.into_any()
                         } else {
@@ -207,74 +232,104 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                 kind=TrailKind::Request
                 refresh=reload
             />
-            <AssignDialog open=assign_open target=assign_target on_confirm=confirm_assign />
+            <AssignDialog open=assign_open target=assign_target on_confirm=confirm_assign busy=assign_busy />
         </Stack>
     }
 }
 
 fn lifecycle_bar(
     status: RequestStatus,
+    caps: ViewerCaps,
     run: impl Fn(RequestAction) + Copy + Send + Sync + 'static,
     open_assign: Callback<MouseEvent>,
+    busy: Signal<bool>,
 ) -> AnyView {
     let btn = move |label: &'static str, variant: ButtonVariant, action: RequestAction| {
         let cb = Callback::new(move |_| run(action));
-        view! { <Button variant=variant size=ButtonSize::Sm on_click=cb>{label}</Button> }
+        view! { <Button variant=variant size=ButtonSize::Sm on_click=cb disabled=busy>{label}</Button> }
             .into_any()
     };
     let assign = move || {
         view! {
-            <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_assign>
-                <Icon name=IconName::Users size=14 /> " Assign"
+            <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_assign disabled=busy>
+                <Icon name=IconName::Users size=14 /> "Assign"
             </Button>
         }
         .into_any()
     };
-
-    let buttons: Vec<AnyView> = match status {
-        RequestStatus::Draft => vec![
-            btn("Submit", ButtonVariant::Primary, RequestAction::Submit),
-            btn(
-                "Cancel request",
-                ButtonVariant::Destructive,
-                RequestAction::Cancel,
-            ),
-        ],
-        RequestStatus::Submitted => vec![
-            assign(),
-            btn(
-                "Cancel request",
-                ButtonVariant::Destructive,
-                RequestAction::Cancel,
-            ),
-        ],
-        RequestStatus::Assigned => vec![
-            btn("Start work", ButtonVariant::Primary, RequestAction::Start),
-            assign(),
-            btn(
-                "Cancel request",
-                ButtonVariant::Destructive,
-                RequestAction::Cancel,
-            ),
-        ],
-        RequestStatus::InProgress => vec![
-            btn(
-                "Send for review",
-                ButtonVariant::Primary,
-                RequestAction::Review,
-            ),
-            btn(
-                "Cancel request",
-                ButtonVariant::Destructive,
-                RequestAction::Cancel,
-            ),
-        ],
-        RequestStatus::Review => vec![
-            btn("Approve", ButtonVariant::Primary, RequestAction::Approve),
-            btn("Reject", ButtonVariant::Secondary, RequestAction::Reject),
-        ],
-        RequestStatus::Completed | RequestStatus::Cancelled => Vec::new(),
+    let cancel = move || {
+        btn(
+            "Cancel request",
+            ButtonVariant::Destructive,
+            RequestAction::Cancel,
+        )
     };
+    // Mirrors the server rules: submit = creator; assign = owner-group lead;
+    // start/review = assignee; approve/reject = creator or lead;
+    // cancel = creator, assignee, or lead.
+    let can_cancel = caps.is_creator || caps.is_assignee || caps.owner_lead;
+
+    let mut buttons: Vec<AnyView> = Vec::new();
+    match status {
+        RequestStatus::Draft => {
+            if caps.is_creator {
+                buttons.push(btn("Submit", ButtonVariant::Primary, RequestAction::Submit));
+            }
+            if can_cancel {
+                buttons.push(cancel());
+            }
+        }
+        RequestStatus::Submitted => {
+            if caps.owner_lead {
+                buttons.push(assign());
+            }
+            if can_cancel {
+                buttons.push(cancel());
+            }
+        }
+        RequestStatus::Assigned => {
+            if caps.is_assignee {
+                buttons.push(btn(
+                    "Start work",
+                    ButtonVariant::Primary,
+                    RequestAction::Start,
+                ));
+            }
+            if caps.owner_lead {
+                buttons.push(assign());
+            }
+            if can_cancel {
+                buttons.push(cancel());
+            }
+        }
+        RequestStatus::InProgress => {
+            if caps.is_assignee {
+                buttons.push(btn(
+                    "Send for review",
+                    ButtonVariant::Primary,
+                    RequestAction::Review,
+                ));
+            }
+            if can_cancel {
+                buttons.push(cancel());
+            }
+        }
+        RequestStatus::Review => {
+            if caps.is_creator || caps.owner_lead {
+                buttons.push(btn(
+                    "Approve",
+                    ButtonVariant::Primary,
+                    RequestAction::Approve,
+                ));
+                buttons.push(btn(
+                    "Reject",
+                    ButtonVariant::Secondary,
+                    RequestAction::Reject,
+                ));
+            }
+        }
+        RequestStatus::Completed | RequestStatus::Cancelled => {}
+    }
 
     if buttons.is_empty() {
         return ().into_any();
@@ -287,6 +342,7 @@ fn AssignDialog(
     open: RwSignal<bool>,
     target: RwSignal<Option<UserId>>,
     on_confirm: Callback<()>,
+    #[prop(into)] busy: Signal<bool>,
 ) -> impl IntoView {
     let on_close = Callback::new(move |()| open.set(false));
     let cancel = Callback::new(move |_| open.set(false));
@@ -300,7 +356,9 @@ fn AssignDialog(
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=confirm>"Assign"</Button>
+                <Button variant=ButtonVariant::Primary on_click=confirm disabled=busy>
+                    {move || if busy.get() { "Assigning…" } else { "Assign" }}
+                </Button>
             </DialogFooter>
         </Dialog>
     }
@@ -353,7 +411,7 @@ fn attachments_card(
                 <Cluster gap=Gap::Sm justify="space-between".to_string()>
                     {heading("Attachments")}
                     <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=pick_file>
-                        <Icon name=IconName::Paperclip size=14 /> " Upload"
+                        <Icon name=IconName::Paperclip size=14 /> "Upload"
                     </Button>
                 </Cluster>
                 {if has {

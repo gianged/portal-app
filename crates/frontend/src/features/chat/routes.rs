@@ -1,13 +1,10 @@
 use leptos::prelude::*;
 
 use crate::features::chat::components::ChatView;
-use crate::features::home::shell::AuthedPage;
+use crate::state::title;
 
 #[component]
 pub fn ChatPage() -> impl IntoView {
-    view! {
-        <AuthedPage title="Chat">
-            <ChatView />
-        </AuthedPage>
-    }
+    title::set_page_title("Chat");
+    view! { <ChatView /> }
 }

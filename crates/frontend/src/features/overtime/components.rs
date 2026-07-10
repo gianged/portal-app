@@ -400,7 +400,8 @@ fn DecideCard(overtime: OvertimeDto, is_hr: bool, on_done: Callback<()>) -> impl
 #[component]
 fn SectionTitle(title: &'static str) -> impl IntoView {
     let cls = theme::class(format!(
-        "font-size: 13px; font-weight: {fw}; color: {c}; text-transform: uppercase; letter-spacing: 0.04em;",
+        "font-size: {fs}; font-weight: {fw}; color: {c}; text-transform: uppercase; letter-spacing: 0.04em;",
+        fs = typography::TEXT_LABEL,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_MUTED,
     ));

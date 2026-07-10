@@ -163,10 +163,10 @@ fn roster_card(
                     {ui::section_heading("Members")}
                     <Cluster gap=Gap::Xs>
                         <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_transfer>
-                            <Icon name=IconName::Crown size=14 /> " Transfer lead"
+                            <Icon name=IconName::Crown size=14 /> "Transfer lead"
                         </Button>
                         <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_add>
-                            <Icon name=IconName::Plus size=14 /> " Add member"
+                            <Icon name=IconName::Plus size=14 /> "Add member"
                         </Button>
                     </Cluster>
                 </Cluster>
@@ -202,7 +202,7 @@ fn member_row(
     let remove_cb = Callback::new(move |_| remove(uid));
 
     let controls = if role == GroupRole::Leader {
-        view! { <Badge variant=BadgeVariant::Accent><Icon name=IconName::Crown size=10 /> " Leader"</Badge> }
+        view! { <Badge variant=BadgeVariant::Accent><Icon name=IconName::Crown size=10 /> "Leader"</Badge> }
             .into_any()
     } else {
         let on_role = Callback::new(move |v: String| change_role(uid, role_from_wire(&v)));

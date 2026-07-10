@@ -61,9 +61,10 @@ pub fn DialogHeader(
     #[prop(optional, into)] subtitle: Option<String>,
 ) -> impl IntoView {
     let title_cls = theme::class(format!(
-        "font-family: {ff}; font-size: 16px; font-weight: {fw}; color: {c}; \
+        "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c}; \
          margin: 0; letter-spacing: -0.015em;",
         ff = typography::FONT_SANS,
+        fs = typography::TEXT_H3,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));

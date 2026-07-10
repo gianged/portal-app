@@ -117,7 +117,7 @@ pub fn AnnouncementsIndex() -> impl IntoView {
                     </Select>
                 </div>
                 <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_post>
-                    <Icon name=IconName::Megaphone size=14 /> " Broadcast"
+                    <Icon name=IconName::Megaphone size=14 /> "Broadcast"
                 </Button>
             </Cluster>
 

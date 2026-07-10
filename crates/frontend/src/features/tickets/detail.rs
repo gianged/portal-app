@@ -213,7 +213,7 @@ fn lifecycle_bar(
     let assign_btn = move || {
         view! {
             <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_assign>
-                <Icon name=IconName::Users size=14 /> " Assign"
+                <Icon name=IconName::Users size=14 /> "Assign"
             </Button>
         }
         .into_any()

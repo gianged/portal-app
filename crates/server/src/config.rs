@@ -92,7 +92,7 @@ pub struct Config {
 
 pub fn from_env() -> anyhow::Result<Config> {
     let host = optional("SERVER_HOST", "0.0.0.0");
-    let port = optional("SERVER_PORT", "8080");
+    let port = optional("SERVER_PORT", "8090");
     let server_addr: SocketAddr = format!("{host}:{port}")
         .parse()
         .with_context(|| format!("invalid SERVER_HOST/SERVER_PORT: {host}:{port}"))?;
@@ -126,7 +126,7 @@ pub fn from_env() -> anyhow::Result<Config> {
         .parse()
         .context("invalid SESSION_TTL_HOURS")?;
 
-    let cors_allowed_origins = optional("CORS_ALLOWED_ORIGINS", "http://localhost:8080")
+    let cors_allowed_origins = optional("CORS_ALLOWED_ORIGINS", "http://localhost:8090")
         .split(',')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -154,7 +154,7 @@ pub fn from_env() -> anyhow::Result<Config> {
         .into(),
         openfga_bearer_token,
         storage_root: optional("STORAGE_ROOT", "./storage/uploads").into(),
-        storage_public_base: optional("STORAGE_PUBLIC_BASE", "http://localhost:8080/api/v1"),
+        storage_public_base: optional("STORAGE_PUBLIC_BASE", "http://localhost:8090/api/v1"),
         server_addr,
         grpc_addr,
         workers_grpc_url: optional("WORKERS_GRPC_URL", "http://127.0.0.1:50052"),

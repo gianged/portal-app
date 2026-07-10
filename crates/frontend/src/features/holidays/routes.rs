@@ -1,13 +1,10 @@
 use leptos::prelude::*;
 
 use crate::features::holidays::components::HolidayCalendar;
-use crate::features::home::shell::AuthedPage;
+use crate::state::title;
 
 #[component]
 pub fn HolidaysPage() -> impl IntoView {
-    view! {
-        <AuthedPage title="Holidays">
-            <HolidayCalendar />
-        </AuthedPage>
-    }
+    title::set_page_title("Holidays");
+    view! { <HolidayCalendar /> }
 }

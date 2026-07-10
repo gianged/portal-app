@@ -1,6 +1,6 @@
 use leptos::{prelude::*, task};
 use leptos_router::{
-    components::{Route, Router, Routes},
+    components::{ParentRoute, Route, Router, Routes},
     path,
 };
 
@@ -18,6 +18,7 @@ use crate::features::flex_hours::routes::{FlexApprovalsPage, FlexHoursPage};
 use crate::features::groups::routes::{GroupDetailPage, GroupsPage};
 use crate::features::holidays::routes::HolidaysPage;
 use crate::features::home::routes::{DashboardPage, FilesPage, LandingPage, PermissionsPage};
+use crate::features::home::shell::AuthedLayout;
 use crate::features::leave::routes::LeavePage;
 use crate::features::notifications::api;
 use crate::features::notifications::routes::InboxPage;
@@ -90,35 +91,39 @@ pub fn App() -> impl IntoView {
             <Routes fallback=NotFound>
                 <Route path=path!("/") view=LandingPage />
                 <Route path=path!("/login") view=LoginPage />
-                <Route path=path!("/dashboard") view=DashboardPage />
-                <Route path=path!("/inbox") view=InboxPage />
-                <Route path=path!("/announcements") view=AnnouncementsPage />
-                <Route path=path!("/groups") view=GroupsPage />
-                <Route path=path!("/groups/:id") view=GroupDetailPage />
-                <Route path=path!("/projects") view=ProjectsPage />
-                <Route path=path!("/projects/:id") view=ProjectDetailPage />
-                <Route path=path!("/requests") view=RequestsPage />
-                <Route path=path!("/requests/:id") view=RequestDetailPage />
-                <Route path=path!("/tickets") view=TicketsPage />
-                <Route path=path!("/tickets/:id") view=TicketDetailPage />
-                <Route path=path!("/chat") view=ChatPage />
-                <Route path=path!("/users") view=UsersPage />
-                <Route path=path!("/users/:id") view=UserDetailPage />
-                <Route path=path!("/files") view=FilesPage />
-                <Route path=path!("/permissions") view=PermissionsPage />
-                <Route path=path!("/audit") view=AuditPage />
-                <Route path=path!("/reports") view=ReportsPage />
-                <Route path=path!("/policy") view=PolicyPage />
-                <Route path=path!("/daily-reports") view=DailyReportPage />
-                <Route path=path!("/daily-reports/team") view=TeamReportsPage />
-                <Route path=path!("/leave") view=LeavePage />
-                <Route path=path!("/time-off") view=TimeOffPage />
-                <Route path=path!("/leave-approvals") view=LeaveApprovalsPage />
-                <Route path=path!("/holidays") view=HolidaysPage />
-                <Route path=path!("/overtime") view=OvertimePage />
-                <Route path=path!("/overtime-approvals") view=OvertimeApprovalsPage />
-                <Route path=path!("/flex-hours") view=FlexHoursPage />
-                <Route path=path!("/flex-approvals") view=FlexApprovalsPage />
+                // Pathless layout: the shell mounts once and pages swap inside
+                // its outlet, so sidebar scroll survives navigation.
+                <ParentRoute path=path!("") view=AuthedLayout>
+                    <Route path=path!("/dashboard") view=DashboardPage />
+                    <Route path=path!("/inbox") view=InboxPage />
+                    <Route path=path!("/announcements") view=AnnouncementsPage />
+                    <Route path=path!("/groups") view=GroupsPage />
+                    <Route path=path!("/groups/:id") view=GroupDetailPage />
+                    <Route path=path!("/projects") view=ProjectsPage />
+                    <Route path=path!("/projects/:id") view=ProjectDetailPage />
+                    <Route path=path!("/requests") view=RequestsPage />
+                    <Route path=path!("/requests/:id") view=RequestDetailPage />
+                    <Route path=path!("/tickets") view=TicketsPage />
+                    <Route path=path!("/tickets/:id") view=TicketDetailPage />
+                    <Route path=path!("/chat") view=ChatPage />
+                    <Route path=path!("/users") view=UsersPage />
+                    <Route path=path!("/users/:id") view=UserDetailPage />
+                    <Route path=path!("/files") view=FilesPage />
+                    <Route path=path!("/permissions") view=PermissionsPage />
+                    <Route path=path!("/audit") view=AuditPage />
+                    <Route path=path!("/reports") view=ReportsPage />
+                    <Route path=path!("/policy") view=PolicyPage />
+                    <Route path=path!("/daily-reports") view=DailyReportPage />
+                    <Route path=path!("/daily-reports/team") view=TeamReportsPage />
+                    <Route path=path!("/leave") view=LeavePage />
+                    <Route path=path!("/time-off") view=TimeOffPage />
+                    <Route path=path!("/leave-approvals") view=LeaveApprovalsPage />
+                    <Route path=path!("/holidays") view=HolidaysPage />
+                    <Route path=path!("/overtime") view=OvertimePage />
+                    <Route path=path!("/overtime-approvals") view=OvertimeApprovalsPage />
+                    <Route path=path!("/flex-hours") view=FlexHoursPage />
+                    <Route path=path!("/flex-approvals") view=FlexApprovalsPage />
+                </ParentRoute>
             </Routes>
         </Router>
         <ToastHost />

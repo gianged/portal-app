@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::dto::{
-    common::UserSummaryDto,
+    common::{GroupSummaryDto, UserSummaryDto},
     ids::{ProjectId, RequestAttachmentId, RequestId, UserId},
 };
 
@@ -91,6 +91,9 @@ pub struct RequestDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestDetailDto {
     pub request: RequestDto,
+    /// Owner group of the request's project; drives client-side gating of the
+    /// leader-only lifecycle actions.
+    pub owner_group: GroupSummaryDto,
     pub attachments: Vec<RequestAttachmentDto>,
 }
 

@@ -6,11 +6,11 @@ use shared::dto::{
     common::UserSummaryDto,
     user::{
         CreateUserRequest, SystemRole as WireSystemRole, UpdateProfileRequest, UserDto,
-        UserProfileDto, UserRole, UserStatus as WireUserStatus,
+        UserMembershipDto, UserProfileDto, UserRole, UserStatus as WireUserStatus,
     },
 };
 
-use super::user_id;
+use super::{group_id, group_role_dto, user_id};
 
 #[must_use]
 pub fn system_role_dto(role: model::SystemRole) -> WireSystemRole {
@@ -63,13 +63,26 @@ pub fn resolve_user_role(
 }
 
 #[must_use]
-pub fn user_dto(user: &model::User, role: UserRole) -> UserDto {
+pub fn user_dto(
+    user: &model::User,
+    role: UserRole,
+    memberships: Vec<UserMembershipDto>,
+) -> UserDto {
     UserDto {
         id: user_id(user.id),
         name: user.full_name.clone(),
         email: user.email.clone(),
         role,
-        group_name: None,
+        memberships,
+    }
+}
+
+#[must_use]
+pub fn user_membership_dto(m: &model::Membership, group_name: String) -> UserMembershipDto {
+    UserMembershipDto {
+        group_id: group_id(m.group_id),
+        group_name,
+        role: group_role_dto(m.role),
     }
 }
 

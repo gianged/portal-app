@@ -6,19 +6,17 @@ use shared::dto::ids::GroupId;
 
 use crate::features::groups::detail::GroupDetail;
 use crate::features::groups::list::GroupsIndex;
-use crate::features::home::shell::AuthedPage;
+use crate::state::title;
 
 #[component]
 pub fn GroupsPage() -> impl IntoView {
-    view! {
-        <AuthedPage title="Groups">
-            <GroupsIndex />
-        </AuthedPage>
-    }
+    title::set_page_title("Groups");
+    view! { <GroupsIndex /> }
 }
 
 #[component]
 pub fn GroupDetailPage() -> impl IntoView {
+    title::set_page_title("Group");
     let params = hooks::use_params_map();
     let id = Memo::new(move |_| {
         params
@@ -28,9 +26,5 @@ pub fn GroupDetailPage() -> impl IntoView {
             .and_then(|s| Uuid::parse_str(s).ok())
             .map(GroupId)
     });
-    view! {
-        <AuthedPage title="Group">
-            <GroupDetail id=id />
-        </AuthedPage>
-    }
+    view! { <GroupDetail id=id /> }
 }

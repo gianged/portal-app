@@ -1,13 +1,10 @@
 use leptos::prelude::*;
 
-use crate::features::home::shell::AuthedPage;
 use crate::features::leave::components::MyLeave;
+use crate::state::title;
 
 #[component]
 pub fn LeavePage() -> impl IntoView {
-    view! {
-        <AuthedPage title="My leave">
-            <MyLeave />
-        </AuthedPage>
-    }
+    title::set_page_title("My leave");
+    view! { <MyLeave /> }
 }

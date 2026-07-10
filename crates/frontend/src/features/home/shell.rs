@@ -1,19 +1,23 @@
 use leptos::prelude::*;
+use leptos_router::components::Outlet;
 
 use crate::features::auth::components::RequireAuth;
 use crate::features::home::components::{SidebarNav, Topbar};
 use crate::primitives::sidebar::SidebarLayout;
+use crate::state::chat::ChatUiState;
+use crate::state::title::PageTitleState;
 use crate::theme::{self, space};
 
-/// Signed-in page: the auth guard wrapping [`AppShell`], so the guard and frame aren't repeated per page.
+/// Persistent signed-in layout: mounted once by the router, so the sidebar and
+/// topbar (and their DOM state, e.g. sidebar scroll) survive navigation.
 #[component]
-pub fn AuthedPage(#[prop(into)] title: String, children: ChildrenFn) -> impl IntoView {
-    // RequireAuth re-renders its children, so stash the page body in a StoredValue to call it each render.
-    let children = StoredValue::new(children);
+pub fn AuthedLayout() -> impl IntoView {
+    provide_context(PageTitleState::new());
+    provide_context(ChatUiState::new());
     view! {
         <RequireAuth>
-            <AppShell title=title.clone()>
-                {move || children.with_value(|c| c())}
+            <AppShell>
+                <Outlet />
             </AppShell>
         </RequireAuth>
     }
@@ -21,7 +25,7 @@ pub fn AuthedPage(#[prop(into)] title: String, children: ChildrenFn) -> impl Int
 
 /// Authenticated app frame: fixed sidebar, sticky topbar, and a centered padded content column.
 #[component]
-pub fn AppShell(#[prop(into)] title: String, children: Children) -> impl IntoView {
+pub fn AppShell(children: Children) -> impl IntoView {
     let main_cls = theme::class(format!(
         "padding: {p1} {p2} {p3}; max-width: {mw}; width: 100%; margin: 0 auto;",
         p1 = space::D6,
@@ -32,7 +36,7 @@ pub fn AppShell(#[prop(into)] title: String, children: Children) -> impl IntoVie
 
     let side = view! { <SidebarNav /> }.into_any();
     let main = view! {
-        <Topbar title=title />
+        <Topbar />
         <main class=main_cls>{children()}</main>
     }
     .into_any();

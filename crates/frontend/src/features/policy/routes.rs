@@ -1,13 +1,10 @@
 use leptos::prelude::*;
 
-use crate::features::home::shell::AuthedPage;
 use crate::features::policy::components::PolicyForm;
+use crate::state::title;
 
 #[component]
 pub fn PolicyPage() -> impl IntoView {
-    view! {
-        <AuthedPage title="Attendance policy">
-            <PolicyForm />
-        </AuthedPage>
-    }
+    title::set_page_title("Attendance policy");
+    view! { <PolicyForm /> }
 }

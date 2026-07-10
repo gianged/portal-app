@@ -247,8 +247,9 @@ fn comment_row(
         c = color::TEXT_STRONG,
     ));
     let time_cls = theme::class(format!(
-        "font-family: {ff}; font-size: 11.5px; color: {c};",
+        "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
+        fs = typography::TEXT_TINY,
         c = color::TEXT_FAINT,
     ));
     let text_cls = theme::class(format!(

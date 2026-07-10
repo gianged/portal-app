@@ -11,9 +11,11 @@ use futures::{
     FutureExt, SinkExt, StreamExt,
     channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
 };
-use gloo::timers::future::TimeoutFuture;
+use gloo::{
+    net::websocket::{Message, futures::WebSocket},
+    timers::future::TimeoutFuture,
+};
 use leptos::{prelude::*, task};
-use reqwasm::websocket::{Message, futures::WebSocket};
 
 use shared::dto::ids::ChannelId;
 use shared::dto::ws::{ClientFrame, ServerFrame};
@@ -150,7 +152,7 @@ impl WsClient {
 /// and the server's `/api/v1` mount resolve to `/api/v1/chat/ws`).
 fn ws_url() -> String {
     let Some(window) = web_sys::window() else {
-        return "ws://127.0.0.1:8080/api/v1/chat/ws".to_owned();
+        return "ws://127.0.0.1:8090/api/v1/chat/ws".to_owned();
     };
     let loc = window.location();
     let scheme = match loc.protocol().as_deref() {

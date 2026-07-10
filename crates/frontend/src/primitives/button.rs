@@ -44,7 +44,7 @@ impl ButtonSize {
         match self {
             Self::Sm => typography::TEXT_CAPTION,
             Self::Md => typography::TEXT_SMALL,
-            Self::Lg => "14.5px",
+            Self::Lg => typography::TEXT_LEAD,
         }
     }
 }
@@ -82,9 +82,10 @@ fn variant_css(v: ButtonVariant) -> String {
             ba = color::BG_ACTIVE,
         ),
         ButtonVariant::Destructive => format!(
-            "background: {d}; color: #fff; border-color: {d}; box-shadow: {s}, inset 0 1px 0 rgba(255,255,255,0.12); \
+            "background: {d}; color: {fg}; border-color: {d}; box-shadow: {s}, inset 0 1px 0 rgba(255,255,255,0.12); \
              &:hover:not(:disabled) {{ background: {dh}; border-color: {dh}; }}",
             d = color::DANGER,
+            fg = color::TEXT_ON_ACCENT,
             dh = color::DANGER_HOVER,
             s = typography::SHADOW_XS,
         ),

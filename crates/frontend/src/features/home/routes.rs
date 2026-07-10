@@ -4,19 +4,18 @@ use shared::dto::{
     chat::ChannelSummaryDto, group::GroupDto, request::RequestDto, ticket::TicketDto,
 };
 
-use crate::features::auth::components::RequireAuth;
 use crate::features::home::api as home_api;
 use crate::features::home::components::{Hero, Wordmark};
 use crate::features::home::panels::{
     ChannelsPanel, Loadable, RequestsPanel, StatTiles, TicketsPanel,
 };
-use crate::features::home::shell::{AppShell, AuthedPage};
 use crate::primitives::card::Card;
 use crate::primitives::center::Center;
 use crate::primitives::empty_state::EmptyState;
 use crate::primitives::icon::IconName;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
+use crate::state::title;
 use crate::theme::{self, color, space, typography};
 
 #[component]
@@ -31,20 +30,22 @@ pub fn LandingPage() -> impl IntoView {
         c = color::TEXT_STRONG,
     ));
     let subtitle = theme::class(format!(
-        "font-family: {ff}; font-size: 14.5px; color: {c}; margin: 0;",
+        "font-family: {ff}; font-size: {fs}; color: {c}; margin: 0;",
         ff = typography::FONT_SANS,
+        fs = typography::TEXT_LEAD,
         c = color::TEXT_MUTED,
     ));
     let cta = theme::class(format!(
         "display: inline-flex; align-items: center; justify-content: center; \
          height: {h}; padding: 0 {p}; background: {bg}; color: {fg}; \
          border-radius: 8px; text-decoration: none; \
-         font-family: {ff}; font-size: 14.5px; font-weight: {fw};",
+         font-family: {ff}; font-size: {fs}; font-weight: {fw};",
         h = space::BTN_H_LG,
         p = space::D5,
         bg = color::ACCENT,
         fg = color::TEXT_ON_ACCENT,
         ff = typography::FONT_SANS,
+        fs = typography::TEXT_LEAD,
         fw = typography::WEIGHT_MEDIUM,
     ));
 
@@ -70,13 +71,8 @@ pub fn LandingPage() -> impl IntoView {
 
 #[component]
 pub fn DashboardPage() -> impl IntoView {
-    view! {
-        <RequireAuth>
-            <AppShell title="Home">
-                <DashboardContent />
-            </AppShell>
-        </RequireAuth>
-    }
+    title::set_page_title("Home");
+    view! { <DashboardContent /> }
 }
 
 #[component]
@@ -130,29 +126,27 @@ fn first_name(full: &str) -> String {
 /// File access is via request attachments; there is no standalone file browser (backend is download-by-key only).
 #[component]
 pub fn FilesPage() -> impl IntoView {
+    title::set_page_title("Files");
     view! {
-        <AuthedPage title="Files">
-            <EmptyState
-                icon=IconName::Folder
-                title="Files live with their work item"
-                description="Attachments are uploaded and downloaded from the request they belong to. \
-                             There's no separate file browser."
-            />
-        </AuthedPage>
+        <EmptyState
+            icon=IconName::Folder
+            title="Files live with their work item"
+            description="Attachments are uploaded and downloaded from the request they belong to. \
+                         There's no separate file browser."
+        />
     }
 }
 
 /// Access control is resolved server-side via OpenFGA; there is no permission-editing surface in the UI.
 #[component]
 pub fn PermissionsPage() -> impl IntoView {
+    title::set_page_title("Permissions");
     view! {
-        <AuthedPage title="Permissions">
-            <EmptyState
-                icon=IconName::Lock
-                title="Permissions follow the org graph"
-                description="Who can see and do what is derived from group roles and project \
-                             membership via OpenFGA, not edited directly here."
-            />
-        </AuthedPage>
+        <EmptyState
+            icon=IconName::Lock
+            title="Permissions follow the org graph"
+            description="Who can see and do what is derived from group roles and project \
+                         membership via OpenFGA, not edited directly here."
+        />
     }
 }

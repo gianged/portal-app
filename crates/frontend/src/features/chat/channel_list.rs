@@ -75,7 +75,7 @@ pub fn ChannelList(selected: RwSignal<Option<ChannelId>>) -> impl IntoView {
             <div class=header>
                 {ui::section_heading("Channels")}
                 <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm on_click=open_dm>
-                    <Icon name=IconName::Plus size=14 /> " DM"
+                    <Icon name=IconName::Plus size=14 /> "DM"
                 </Button>
             </div>
             {move || match channels.get() {
@@ -149,24 +149,30 @@ fn channel_row(c: &ChannelSummaryDto, selected: RwSignal<Option<ChannelId>>) -> 
 fn NewDmDialog(open: RwSignal<bool>, on_opened: Callback<ChannelId>) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
     let target = RwSignal::new(None::<UserId>);
+    let submitting = RwSignal::new(false);
     let on_close = Callback::new(move |()| open.set(false));
     let cancel = Callback::new(move |_| open.set(false));
     let on_select = Callback::new(move |u: UserId| target.set(Some(u)));
 
     let confirm = Callback::new(move |_| {
+        if submitting.get_untracked() {
+            return;
+        }
         let Some(uid) = target.get_untracked() else {
             toast.error("Pick someone to message.");
             return;
         };
-        open.set(false);
+        submitting.set(true);
         task::spawn_local(async move {
             match api::open_direct(uid).await {
                 Ok(channel) => {
                     target.set(None);
+                    open.set(false);
                     on_opened.run(channel_id(&channel));
                 }
                 Err(e) => toast.error_from(&e),
             }
+            submitting.set(false);
         });
     });
 
@@ -178,7 +184,9 @@ fn NewDmDialog(open: RwSignal<bool>, on_opened: Callback<ChannelId>) -> impl Int
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=confirm>"Open"</Button>
+                <Button variant=ButtonVariant::Primary on_click=confirm disabled=Signal::derive(move || submitting.get())>
+                    {move || if submitting.get() { "Opening…" } else { "Open" }}
+                </Button>
             </DialogFooter>
         </Dialog>
     }

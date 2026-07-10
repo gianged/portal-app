@@ -92,7 +92,7 @@ pub fn TicketsIndex() -> impl IntoView {
                             <Input value=search on_input=Callback::new(move |v| search.set(v)) placeholder="Search tickets…" />
                         </div>
                         <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_raise>
-                            <Icon name=IconName::Plus size=14 /> " Raise ticket"
+                            <Icon name=IconName::Plus size=14 /> "Raise ticket"
                         </Button>
                     </Cluster>
                 </TableToolbar>

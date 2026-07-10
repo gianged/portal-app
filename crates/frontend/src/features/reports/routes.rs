@@ -3,7 +3,6 @@ use leptos::prelude::*;
 
 use shared::dto::user::UserRole;
 
-use crate::features::home::shell::AuthedPage;
 use crate::features::reports::archive::ReportArchive;
 use crate::features::reports::monthly::MonthlyTab;
 use crate::features::reports::staff::StaffMonthlyTab;
@@ -11,6 +10,7 @@ use crate::features::reports::yearly::YearlyTab;
 use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::tabs::{Tab, Tabs};
 use crate::state::auth::AuthState;
+use crate::state::title;
 use crate::theme::{self, color, typography};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -22,11 +22,8 @@ enum ReportTab {
 
 #[component]
 pub fn ReportsPage() -> impl IntoView {
-    view! {
-        <AuthedPage title="Reports">
-            <ReportsIndex />
-        </AuthedPage>
-    }
+    title::set_page_title("Reports");
+    view! { <ReportsIndex /> }
 }
 
 #[component]

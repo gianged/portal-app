@@ -150,7 +150,7 @@ services:
       OPENFGA_BEARER_TOKEN: ${OPENFGA_BEARER_TOKEN:?OPENFGA_BEARER_TOKEN is required — set it in .env}
       STORAGE_ROOT: /app/storage
       SERVER_HOST: 0.0.0.0
-      SERVER_PORT: 8080
+      SERVER_PORT: 8090
       SERVER_GRPC_ADDR: 0.0.0.0:50051
       WORKERS_GRPC_URL: http://workers:50052
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:?INTERNAL_GRPC_TOKEN is required — set it in .env}
@@ -160,7 +160,7 @@ services:
       STORAGE_SIGNING_SECRET: ${STORAGE_SIGNING_SECRET:?STORAGE_SIGNING_SECRET is required — set it in .env}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
     ports:
-      - "${SERVER_HOST_PORT:-8080}:8080"
+      - "${SERVER_HOST_PORT:-8090}:8090"
       - "${SERVER_GRPC_HOST_PORT:-50051}:50051"
     volumes:
       - ../storage:/app/storage
@@ -175,7 +175,7 @@ services:
       openfga:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8090/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

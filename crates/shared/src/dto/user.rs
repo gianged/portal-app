@@ -73,6 +73,15 @@ impl SystemRole {
     }
 }
 
+/// One active group membership on the wire user; lets the client evaluate
+/// per-group leadership exactly instead of trusting the flattened `role`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserMembershipDto {
+    pub group_id: GroupId,
+    pub group_name: String,
+    pub role: GroupRole,
+}
+
 /// Lightweight user shape for lists and the auth response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserDto {
@@ -80,7 +89,7 @@ pub struct UserDto {
     pub name: String,
     pub email: String,
     pub role: UserRole,
-    pub group_name: Option<String>,
+    pub memberships: Vec<UserMembershipDto>,
 }
 
 /// Fuller account view for the profile / admin detail screen. Secrets

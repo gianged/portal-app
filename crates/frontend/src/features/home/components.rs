@@ -14,6 +14,7 @@ use crate::primitives::stack::Gap;
 use crate::state::auth::AuthState;
 use crate::state::notifications::NotificationsState;
 use crate::state::theme::ThemeState;
+use crate::state::title::PageTitleState;
 use crate::state::toast::ToastState;
 use crate::theme::{self, color, radius, space, typography};
 use crate::util::format;
@@ -235,9 +236,10 @@ pub fn sidebar_sections() -> Vec<NavSection> {
 pub fn Wordmark() -> impl IntoView {
     let cls = theme::class(format!(
         "display: inline-flex; align-items: center; gap: {g}; font-family: {ff}; \
-         font-size: 16px; font-weight: {fw}; color: {c}; letter-spacing: -0.02em;",
+         font-size: {fs}; font-weight: {fw}; color: {c}; letter-spacing: -0.02em;",
         g = space::D2,
         ff = typography::FONT_SANS,
+        fs = typography::TEXT_H3,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));
@@ -315,15 +317,17 @@ pub fn SidebarNav() -> impl IntoView {
         fw = typography::WEIGHT_MEDIUM,
     ));
     let count_cls = theme::class(format!(
-        "font-size: 11px; padding: 1px 6px; background: {bg}; color: {c}; border-radius: {r}; \
+        "font-size: {fs}; padding: 1px 6px; background: {bg}; color: {c}; border-radius: {r}; \
          font-weight: {fw}; min-width: 18px; text-align: center;",
+        fs = typography::TEXT_COUNT,
         bg = color::BG_SUNKEN,
         c = color::TEXT_MUTED,
         r = radius::PILL,
         fw = typography::WEIGHT_MEDIUM,
     ));
     let soon_cls = theme::class(format!(
-        "font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: {c};",
+        "font-size: {fs}; letter-spacing: 0.04em; text-transform: uppercase; color: {c};",
+        fs = typography::TEXT_MICRO,
         c = color::TEXT_FAINT,
     ));
     let grow_cls = theme::class("flex: 1; min-width: 0;");
@@ -402,7 +406,10 @@ pub fn SidebarNav() -> impl IntoView {
 }
 
 #[component]
-pub fn Topbar(#[prop(into)] title: String) -> impl IntoView {
+pub fn Topbar() -> impl IntoView {
+    let title = use_context::<PageTitleState>()
+        .expect("PageTitleState context")
+        .title;
     let bar = theme::class(format!(
         "height: {h}; flex-shrink: 0; display: flex; align-items: center; \
          justify-content: space-between; padding: 0 {p}; border-bottom: 1px solid {b}; \
@@ -435,7 +442,7 @@ pub fn Topbar(#[prop(into)] title: String) -> impl IntoView {
             <div class=crumb>
                 <span>"Workspace"</span>
                 <Icon name=IconName::ChevronRight size=12 />
-                <span class=strong>{title}</span>
+                <span class=strong>{move || title.get()}</span>
             </div>
             <Cluster gap=Gap::Sm>
                 <ThemeToggle />
@@ -479,9 +486,11 @@ fn NotificationsBell() -> impl IntoView {
     let badge = theme::class(format!(
         "position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px; \
          padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; \
-         background: {bg}; color: #fff; border-radius: {r}; font-size: 10px; font-weight: {fw}; \
+         background: {bg}; color: {fg}; border-radius: {r}; font-size: {fs}; font-weight: {fw}; \
          border: 2px solid {bd};",
         bg = color::DANGER,
+        fg = color::TEXT_ON_ACCENT,
+        fs = typography::TEXT_MICRO,
         r = radius::PILL,
         fw = typography::WEIGHT_SEMIBOLD,
         bd = color::BG,
@@ -556,10 +565,12 @@ fn UserMenu() -> impl IntoView {
     let on_logout = Callback::new(move |_| {
         let navigate = navigate.clone();
         task::spawn_local(async move {
+            // Stop the socket first: revoking the session mid-connection would
+            // otherwise race the reconnect loop while logout is in flight.
+            ws.stop();
             if let Err(e) = auth_api::logout().await {
                 toast.error_from(&e);
             }
-            ws.stop();
             auth.clear();
             navigate("/login", NavigateOptions::default());
         });
@@ -643,9 +654,10 @@ pub fn Hero(#[prop(into)] greeting: String, #[prop(into)] subtitle: String) -> i
         c = color::TEXT_STRONG,
     ));
     let p = theme::class(format!(
-        "font-family: {ff}; font-size: 14.5px; color: {c}; \
+        "font-family: {ff}; font-size: {fs}; color: {c}; \
          margin: 6px 0 0; max-width: 560px;",
         ff = typography::FONT_SANS,
+        fs = typography::TEXT_LEAD,
         c = color::TEXT_MUTED,
     ));
 

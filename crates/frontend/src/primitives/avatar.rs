@@ -21,9 +21,9 @@ impl AvatarSize {
 
     fn font_size(self) -> &'static str {
         match self {
-            Self::Sm => "11px",
-            Self::Md => "12.5px",
-            Self::Lg => "14px",
+            Self::Sm => typography::TEXT_COUNT,
+            Self::Md => typography::TEXT_CAPTION,
+            Self::Lg => typography::TEXT_BODY,
         }
     }
 }

@@ -69,11 +69,11 @@ async fn login(
         .map_err(application::Error::from)?;
     let token = state.token.issue(user.id, ver);
     let jar = jar.add(state.token.session_cookie(token));
-    let role = resolve::role_for_user(&state.group, &user).await?;
+    let (role, memberships) = resolve::identity_for_user(&state.group, &user).await?;
     Ok((
         jar,
         Json(LoginResponse {
-            user: dto::user_dto(&user, role),
+            user: dto::user_dto(&user, role, memberships),
         }),
     ))
 }
@@ -103,8 +103,8 @@ async fn me(State(state): State<AppState>, auth: AuthUser) -> Result<Json<UserDt
         .find(auth.user_id)
         .await?
         .ok_or(application::Error::NotFound("user"))?;
-    let role = resolve::role_for_user(&state.group, &user).await?;
-    Ok(Json(dto::user_dto(&user, role)))
+    let (role, memberships) = resolve::identity_for_user(&state.group, &user).await?;
+    Ok(Json(dto::user_dto(&user, role, memberships)))
 }
 
 /// Self-service password change. Existing sessions (including this one) are

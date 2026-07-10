@@ -77,9 +77,10 @@ fn StatTile(
         c = color::TEXT_FAINT,
     ));
     let value_cls = theme::class(format!(
-        "font-family: {ff}; font-size: 26px; font-weight: {fw}; \
+        "font-family: {ff}; font-size: {fs}; font-weight: {fw}; \
          letter-spacing: -0.02em; color: {c};",
         ff = typography::FONT_SANS,
+        fs = typography::TEXT_DISPLAY,
         fw = typography::WEIGHT_SEMIBOLD,
         c = color::TEXT_STRONG,
     ));

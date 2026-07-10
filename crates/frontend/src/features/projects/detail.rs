@@ -10,7 +10,6 @@ use shared::dto::project::{
     ChangeProjectStatusRequest, InviteGroupRequest, ProjectDetailDto, ProjectStatus,
 };
 use shared::dto::request::RequestDto;
-use shared::dto::user::UserRole;
 
 use crate::features::audit::components::{AuditTrailPanel, TrailKind};
 use crate::features::groups::api as groups_api;
@@ -22,6 +21,7 @@ use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
 use crate::primitives::chart::ProgressBar;
 use crate::primitives::cluster::Cluster;
+use crate::primitives::confirm::ConfirmDialog;
 use crate::primitives::dialog::{Dialog, DialogBody, DialogFooter, DialogHeader};
 use crate::primitives::icon::{Icon, IconName};
 use crate::primitives::input::Input;
@@ -61,6 +61,9 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
     let requests: Loadable<Vec<RequestDto>> = RwSignal::new(None);
     let reload = RwSignal::new(0u32);
     let invite_open = RwSignal::new(false);
+    let busy = RwSignal::new(false);
+    let confirm_remove = RwSignal::new(None::<(GroupId, String)>);
+    let confirm_revoke = RwSignal::new(None::<(ProjectInviteId, String)>);
 
     Effect::new(move |_| {
         let _ = reload.get();
@@ -74,6 +77,10 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
         let Some(pid) = id.get_untracked() else {
             return;
         };
+        if busy.get_untracked() {
+            return;
+        }
+        busy.set(true);
         let req = ChangeProjectStatusRequest {
             status: target.status(),
         };
@@ -85,10 +92,19 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                 }
                 Err(e) => toast.error_from(&e),
             }
+            busy.set(false);
         });
     };
 
-    let remove_collab = move |gid: GroupId| {
+    // Rows only stage the target; the mutation runs from the confirm dialog.
+    let request_remove = move |gid: GroupId, name: String| confirm_remove.set(Some((gid, name)));
+    let request_revoke =
+        move |iid: ProjectInviteId, name: String| confirm_revoke.set(Some((iid, name)));
+
+    let remove_collab = Callback::new(move |()| {
+        let Some((gid, _)) = confirm_remove.get_untracked() else {
+            return;
+        };
         let Some(pid) = id.get_untracked() else {
             return;
         };
@@ -101,9 +117,12 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                 Err(e) => toast.error_from(&e),
             }
         });
-    };
+    });
 
-    let revoke = move |iid: ProjectInviteId| {
+    let revoke = Callback::new(move |()| {
+        let Some((iid, _)) = confirm_revoke.get_untracked() else {
+            return;
+        };
         task::spawn_local(async move {
             match api::revoke_invite(iid).await {
                 Ok(_) => {
@@ -113,7 +132,7 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                 Err(e) => toast.error_from(&e),
             }
         });
-    };
+    });
 
     let open_invite = Callback::new(move |_| invite_open.set(true));
     let invited = Callback::new(move |()| reload.update(|n| *n += 1));
@@ -130,15 +149,18 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                     let title_v = ui::page_title(&d.project.name);
                     let owner = d.project.owner_group.name.clone();
                     let desc_v = desc_block(&d.project.description);
-                    let actions_v = status_bar(status, run);
-                    let collab_v = collaborators_card(&d, remove_collab, open_invite);
-                    let invites_v = pending_invites_card(&d, revoke);
-                    let can_edit_progress = auth.user.with_untracked(|u| {
-                        u.as_ref().is_some_and(|u| {
-                            matches!(u.role, UserRole::GroupLeader | UserRole::GroupSubLeader)
-                                && u.group_name.as_deref() == Some(owner.as_str())
-                        })
-                    });
+                    let owner_gid = d.project.owner_group.id;
+                    // Server rules: status/collaborators/invites = owner-group
+                    // leader; progress = leader or sub-leader.
+                    let can_manage = auth.is_leader_of(owner_gid);
+                    let can_edit_progress = auth.leads_or_subleads(owner_gid);
+                    let actions_v = if can_manage {
+                        status_bar(status, run, busy.into())
+                    } else {
+                        ().into_any()
+                    };
+                    let collab_v = collaborators_card(&d, request_remove, open_invite, can_manage);
+                    let invites_v = pending_invites_card(&d, request_revoke, can_manage);
                     let progress_editor = if can_edit_progress {
                         if let Some(pid) = id.get_untracked() {
                             view! { <ProgressEditor id=pid initial=progress reload=reload /> }.into_any()
@@ -176,6 +198,32 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                 refresh=reload
             />
             <InviteGroupDialog open=invite_open id=id on_invited=invited />
+            <ConfirmDialog
+                open=Signal::derive(move || confirm_remove.get().is_some())
+                title="Remove collaborator"
+                message=Signal::derive(move || {
+                    confirm_remove
+                        .get()
+                        .map(|(_, name)| format!("Remove {name} from this project? Their access ends immediately."))
+                        .unwrap_or_default()
+                })
+                confirm_label="Remove"
+                on_confirm=remove_collab
+                on_close=Callback::new(move |()| confirm_remove.set(None))
+            />
+            <ConfirmDialog
+                open=Signal::derive(move || confirm_revoke.get().is_some())
+                title="Revoke invite"
+                message=Signal::derive(move || {
+                    confirm_revoke
+                        .get()
+                        .map(|(_, name)| format!("Revoke the pending invite for {name}?"))
+                        .unwrap_or_default()
+                })
+                confirm_label="Revoke"
+                on_confirm=revoke
+                on_close=Callback::new(move |()| confirm_revoke.set(None))
+            />
         </Stack>
     }
 }
@@ -183,10 +231,11 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
 fn status_bar(
     status: ProjectStatus,
     run: impl Fn(StatusTarget) + Copy + Send + Sync + 'static,
+    busy: Signal<bool>,
 ) -> AnyView {
     let btn = move |label: &'static str, variant: ButtonVariant, target: StatusTarget| {
         let cb = Callback::new(move |_| run(target));
-        view! { <Button variant=variant size=ButtonSize::Sm on_click=cb>{label}</Button> }
+        view! { <Button variant=variant size=ButtonSize::Sm on_click=cb disabled=busy>{label}</Button> }
             .into_any()
     };
     let buttons: Vec<AnyView> = match status {
@@ -217,8 +266,9 @@ fn status_bar(
 
 fn collaborators_card(
     detail: &ProjectDetailDto,
-    remove: impl Fn(GroupId) + Copy + Send + Sync + 'static,
+    request_remove: impl Fn(GroupId, String) + Copy + Send + Sync + 'static,
     open_invite: Callback<MouseEvent>,
+    can_manage: bool,
 ) -> AnyView {
     let rows = detail
         .collaborators
@@ -226,7 +276,8 @@ fn collaborators_card(
         .map(|c| {
             let gid = c.group.id;
             let name = c.group.name.clone();
-            let remove_cb = Callback::new(move |_| remove(gid));
+            let confirm_name = name.clone();
+            let remove_cb = Callback::new(move |_| request_remove(gid, confirm_name.clone()));
             let row = theme::class(format!(
                 "display: flex; align-items: center; gap: {g}; padding: {p} 0; border-bottom: 1px solid {b};",
                 g = space::D2, p = space::D2, b = color::BORDER,
@@ -239,7 +290,9 @@ fn collaborators_card(
                 <div class=row>
                     <Icon name=IconName::Users size=14 />
                     <span class=grow>{name}</span>
-                    <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm on_click=remove_cb>"Remove"</Button>
+                    {can_manage.then(|| view! {
+                        <Button variant=ButtonVariant::Destructive size=ButtonSize::Sm on_click=remove_cb>"Remove"</Button>
+                    })}
                 </div>
             }
         })
@@ -250,9 +303,11 @@ fn collaborators_card(
             <Stack gap=Gap::Md>
                 <Cluster gap=Gap::Sm justify="space-between".to_string()>
                     {ui::section_heading("Collaborating groups")}
-                    <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_invite>
-                        <Icon name=IconName::Plus size=14 /> " Invite group"
-                    </Button>
+                    {can_manage.then(|| view! {
+                        <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_invite>
+                            <Icon name=IconName::Plus size=14 /> "Invite group"
+                        </Button>
+                    })}
                 </Cluster>
                 {if has { view! { <div>{rows}</div> }.into_any() } else { ui::subtle("No collaborating groups yet.") }}
             </Stack>
@@ -263,7 +318,8 @@ fn collaborators_card(
 
 fn pending_invites_card(
     detail: &ProjectDetailDto,
-    revoke: impl Fn(ProjectInviteId) + Copy + Send + Sync + 'static,
+    request_revoke: impl Fn(ProjectInviteId, String) + Copy + Send + Sync + 'static,
+    can_manage: bool,
 ) -> AnyView {
     if detail.pending_invites.is_empty() {
         return ().into_any();
@@ -274,7 +330,8 @@ fn pending_invites_card(
         .map(|inv| {
             let iid = inv.id;
             let name = inv.invited_group.name.clone();
-            let revoke_cb = Callback::new(move |_| revoke(iid));
+            let confirm_name = name.clone();
+            let revoke_cb = Callback::new(move |_| request_revoke(iid, confirm_name.clone()));
             let row = theme::class(format!(
                 "display: flex; align-items: center; gap: {g}; padding: {p} 0; border-bottom: 1px solid {b};",
                 g = space::D2, p = space::D2, b = color::BORDER,
@@ -288,7 +345,9 @@ fn pending_invites_card(
                     <Icon name=IconName::Clock size=14 />
                     <span class=grow>{name}</span>
                     <Badge>"Pending"</Badge>
-                    <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm on_click=revoke_cb>"Revoke"</Button>
+                    {can_manage.then(|| view! {
+                        <Button variant=ButtonVariant::Destructive size=ButtonSize::Sm on_click=revoke_cb>"Revoke"</Button>
+                    })}
                 </div>
             }
         })
@@ -346,6 +405,7 @@ fn InviteGroupDialog(
     let groups: Loadable<Vec<GroupDto>> = RwSignal::new(None);
     load::load(groups, groups_api::list());
     let group = RwSignal::new(None::<GroupId>);
+    let submitting = RwSignal::new(false);
 
     let on_close = Callback::new(move |()| open.set(false));
     let cancel = Callback::new(move |_| open.set(false));
@@ -354,6 +414,9 @@ fn InviteGroupDialog(
         Signal::derive(move || group.get().map(|g| g.0.to_string()).unwrap_or_default());
 
     let confirm = Callback::new(move |_| {
+        if submitting.get_untracked() {
+            return;
+        }
         let Some(gid) = group.get_untracked() else {
             toast.error("Pick a group to invite.");
             return;
@@ -361,16 +424,19 @@ fn InviteGroupDialog(
         let Some(pid) = id.get_untracked() else {
             return;
         };
-        open.set(false);
+        submitting.set(true);
         let req = InviteGroupRequest { group_id: gid };
         task::spawn_local(async move {
             match api::invite_group(pid, &req).await {
                 Ok(_) => {
                     toast.success("Group invited");
+                    group.set(None);
+                    open.set(false);
                     on_invited.run(());
                 }
                 Err(e) => toast.error_from(&e),
             }
+            submitting.set(false);
         });
     });
 
@@ -390,7 +456,9 @@ fn InviteGroupDialog(
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=confirm>"Send invite"</Button>
+                <Button variant=ButtonVariant::Primary on_click=confirm disabled=Signal::derive(move || submitting.get())>
+                    {move || if submitting.get() { "Sending…" } else { "Send invite" }}
+                </Button>
             </DialogFooter>
         </Dialog>
     }

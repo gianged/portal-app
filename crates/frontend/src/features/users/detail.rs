@@ -130,7 +130,7 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
                                         <Cluster gap=Gap::Xs>
                                             <Badge variant=status_variant(status)>{status.label()}</Badge>
                                             <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_edit>
-                                                <Icon name=IconName::Edit size=14 /> " Edit"
+                                                <Icon name=IconName::Edit size=14 /> "Edit"
                                             </Button>
                                             {pwd_action}
                                             {reset_action}

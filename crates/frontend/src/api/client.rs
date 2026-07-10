@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use reqwasm::http::{Request, Response};
+use gloo::net::http::{Request, Response};
 use serde::{Serialize, de::DeserializeOwned};
 use shared::dto::common::{ApiError, ErrorCode};
 use web_sys::FormData;
@@ -25,12 +25,7 @@ where
     B: Serialize,
     T: DeserializeOwned,
 {
-    let body_str = serde_json::to_string(body)?;
-    let resp = Request::post(&api_url(path))
-        .header("content-type", "application/json")
-        .body(body_str)
-        .send()
-        .await?;
+    let resp = Request::post(&api_url(path)).json(body)?.send().await?;
     handle_json(resp).await
 }
 
@@ -47,12 +42,7 @@ where
     B: Serialize,
     T: DeserializeOwned,
 {
-    let body_str = serde_json::to_string(body)?;
-    let resp = Request::patch(&api_url(path))
-        .header("content-type", "application/json")
-        .body(body_str)
-        .send()
-        .await?;
+    let resp = Request::patch(&api_url(path)).json(body)?.send().await?;
     handle_json(resp).await
 }
 
@@ -62,12 +52,7 @@ where
     B: Serialize,
     T: DeserializeOwned,
 {
-    let body_str = serde_json::to_string(body)?;
-    let resp = Request::put(&api_url(path))
-        .header("content-type", "application/json")
-        .body(body_str)
-        .send()
-        .await?;
+    let resp = Request::put(&api_url(path)).json(body)?.send().await?;
     handle_json(resp).await
 }
 
@@ -98,12 +83,7 @@ pub async fn post_json_no_content<B>(path: &str, body: &B) -> Result<(), Fronten
 where
     B: Serialize,
 {
-    let body_str = serde_json::to_string(body)?;
-    let resp = Request::post(&api_url(path))
-        .header("content-type", "application/json")
-        .body(body_str)
-        .send()
-        .await?;
+    let resp = Request::post(&api_url(path)).json(body)?.send().await?;
     handle_empty(resp).await
 }
 
@@ -114,7 +94,7 @@ pub async fn post_multipart<T>(path: &str, form: FormData) -> Result<T, Frontend
 where
     T: DeserializeOwned,
 {
-    let resp = Request::post(&api_url(path)).body(form).send().await?;
+    let resp = Request::post(&api_url(path)).body(form)?.send().await?;
     handle_json(resp).await
 }
 

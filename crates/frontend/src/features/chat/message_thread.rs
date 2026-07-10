@@ -15,6 +15,7 @@ use crate::features::chat::ws;
 use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::cluster::Cluster;
+use crate::primitives::confirm::ConfirmDialog;
 use crate::primitives::dialog::{Dialog, DialogBody, DialogFooter, DialogHeader};
 use crate::primitives::icon::{Icon, IconName};
 use crate::primitives::pagination::LoadMore;
@@ -22,7 +23,7 @@ use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::textarea::Textarea;
 use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
-use crate::theme::{self, color, space, typography};
+use crate::theme::{self, color, radius, space, typography};
 use crate::util::format;
 
 const PAGE: u32 = 50;
@@ -50,14 +51,20 @@ pub fn MessageThread(
         edit_body.set(body);
         edit_open.set(true);
     };
-    // The WS echo (apply_server_frame) folds the delete back into messages, so no optimistic update here.
-    let do_delete = move |cid: ChannelId, mid: MessageId| {
+    // Deleting asks for confirmation first; the WS echo (apply_server_frame)
+    // folds the delete back into messages, so no optimistic update here.
+    let confirm_delete = RwSignal::new(None::<(ChannelId, MessageId)>);
+    let do_delete = move |cid: ChannelId, mid: MessageId| confirm_delete.set(Some((cid, mid)));
+    let run_delete = Callback::new(move |()| {
+        let Some((cid, mid)) = confirm_delete.get_untracked() else {
+            return;
+        };
         task::spawn_local(async move {
             if let Err(e) = api::delete(cid, mid).await {
                 toast.error_from(&e);
             }
         });
-    };
+    });
 
     // Channel switch: reset, subscribe over WS, load the latest page, mark read.
     Effect::new(move |_| {
@@ -148,6 +155,14 @@ pub fn MessageThread(
             </Show>
         </div>
         <MessageEditDialog open=edit_open channel=channel message=edit_msg body=edit_body />
+        <ConfirmDialog
+            open=Signal::derive(move || confirm_delete.get().is_some())
+            title="Delete message"
+            message=Signal::derive(|| "Delete this message? This can't be undone.".to_owned())
+            confirm_label="Delete"
+            on_confirm=run_delete
+            on_close=Callback::new(move |()| confirm_delete.set(None))
+        />
     }
 }
 
@@ -172,7 +187,7 @@ static ROW_CLS: LazyLock<RowClasses> = LazyLock::new(|| RowClasses {
         g = space::D3,
         py = space::D2,
         px = space::D4,
-        r = "6px",
+        r = radius::SM,
         bh = color::BG_SUBTLE,
     )),
     bodywrap: theme::class("min-width: 0; flex: 1;"),
@@ -185,8 +200,9 @@ static ROW_CLS: LazyLock<RowClasses> = LazyLock::new(|| RowClasses {
         c = color::TEXT_STRONG,
     )),
     time: theme::class(format!(
-        "font-family: {ff}; font-size: 11.5px; color: {c};",
+        "font-family: {ff}; font-size: {fs}; color: {c};",
         ff = typography::FONT_SANS,
+        fs = typography::TEXT_TINY,
         c = color::TEXT_FAINT,
     )),
     text: theme::class(format!(
@@ -204,8 +220,9 @@ static ROW_CLS: LazyLock<RowClasses> = LazyLock::new(|| RowClasses {
     )),
     actions: theme::class("margin-left: auto;"),
     img: theme::class(format!(
-        "max-width: 320px; max-height: 240px; border-radius: 6px; border: 1px solid {b}; \
+        "max-width: 320px; max-height: 240px; border-radius: {r}; border: 1px solid {b}; \
          display: block;",
+        r = radius::SM,
         b = color::BORDER,
     )),
     file: theme::class(format!(
@@ -251,7 +268,7 @@ fn message_row(
                 <div class=cls.actions.clone()>
                     <Cluster gap=Gap::Xs>
                         <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm on_click=edit_cb>"Edit"</Button>
-                        <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm on_click=delete_cb>"Delete"</Button>
+                        <Button variant=ButtonVariant::Destructive size=ButtonSize::Sm on_click=delete_cb>"Delete"</Button>
                     </Cluster>
                 </div>
             }

@@ -1,22 +1,16 @@
 use leptos::prelude::*;
 
-use crate::features::home::shell::AuthedPage;
 use crate::features::overtime::components::{Approvals, Overtime};
+use crate::state::title;
 
 #[component]
 pub fn OvertimePage() -> impl IntoView {
-    view! {
-        <AuthedPage title="Overtime">
-            <Overtime />
-        </AuthedPage>
-    }
+    title::set_page_title("Overtime");
+    view! { <Overtime /> }
 }
 
 #[component]
 pub fn OvertimeApprovalsPage() -> impl IntoView {
-    view! {
-        <AuthedPage title="Overtime approvals">
-            <Approvals />
-        </AuthedPage>
-    }
+    title::set_page_title("Overtime approvals");
+    view! { <Approvals /> }
 }

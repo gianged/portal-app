@@ -37,10 +37,11 @@ pub fn Badge(
     let (bg, fg, border) = variant.colors();
     let cls = theme::class(format!(
         "display: inline-flex; align-items: center; gap: 4px; height: 22px; \
-         padding: 0 8px; font-family: {ff}; font-size: 12px; font-weight: {fw}; \
+         padding: 0 8px; font-family: {ff}; font-size: {fs}; font-weight: {fw}; \
          border-radius: {r}; background: {bg}; color: {fg}; border: 1px solid {border}; \
          line-height: 1; letter-spacing: 0.005em; white-space: nowrap;",
         ff = typography::FONT_SANS,
+        fs = typography::TEXT_BADGE,
         fw = typography::WEIGHT_MEDIUM,
         r = radius::PILL,
     ));

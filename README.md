@@ -129,7 +129,7 @@ Generate each with `openssl rand -hex 32`. These are placeholders in `.env.examp
 | `REDIS_URL` | `redis://:<pw>@localhost:6379` | Redis connection (sessions, pub-sub, presence, rate limit). |
 | `SCYLLA_HOSTS`, `SCYLLA_KEYSPACE` | `localhost:9042`, `portal_chat` | Chat-history backend. |
 | `OPENFGA_API_URL`, `OPENFGA_STORE_ID` | `http://localhost:8088` | Authorization service. `STORE_ID` is populated by bootstrap. |
-| `SERVER_HOST`, `SERVER_PORT` | `0.0.0.0`, `8080` | Backend bind address. |
+| `SERVER_HOST`, `SERVER_PORT` | `0.0.0.0`, `8090` | Backend bind address. |
 
 ### Internal gRPC plane (server ↔ workers)
 
@@ -154,7 +154,7 @@ The plane is internal-only: keep both ports firewalled from anything that is not
 | Variable | Example | Purpose |
 | --- | --- | --- |
 | `STORAGE_ROOT` | `./storage/uploads` | Directory where uploads are written — use an absolute path on a persistent volume in production. |
-| `STORAGE_PUBLIC_BASE` | `http://localhost:8080/api/v1` | Public base for signed URLs — **must include `/api/v1`**. |
+| `STORAGE_PUBLIC_BASE` | `http://localhost:8090/api/v1` | Public base for signed URLs — **must include `/api/v1`**. |
 | `SESSION_TTL_HOURS` | `24` | Session lifetime. |
 | `HEALTH_PROBE_INTERVAL_SECS` | `5` | How often backends are probed (drives circuit breakers and `/readyz`). |
 | `RUST_LOG` | `info,portal=debug` | Log filter. |
@@ -186,15 +186,15 @@ cargo make down    # stop it, keeping data volumes
 
 ### Images
 
-- **`Dockerfile`** (repo root) — builds the Rust binaries. Multi-target: `runtime` (debian-slim, runs one binary chosen via `--build-arg BINARY_NAME=server|workers`, exposes 8080) and `dev` (rust + cargo-watch for live rebuild). The same image serves both `server` and `workers`.
+- **`Dockerfile`** (repo root) — builds the Rust binaries. Multi-target: `runtime` (debian-slim, runs one binary chosen via `--build-arg BINARY_NAME=server|workers`, exposes 8090) and `dev` (rust + cargo-watch for live rebuild). The same image serves both `server` and `workers`.
 - **`Dockerfile.frontend`** — builds the WASM frontend. `runtime` target runs `trunk build --release` and serves `dist/` from nginx on port 80; `dev` target runs `trunk serve` on 8081.
 
 ### nginx (frontend container)
 
 `infra/nginx/nginx.conf` serves the SPA on port 80 and:
 
-- proxies `/api/` → `server:8080` (REST, auth, files),
-- proxies `/ws/` → `server:8080` with WebSocket upgrade and 24h read timeout,
+- proxies `/api/` → `server:8090` (REST, auth, files),
+- proxies `/ws/` → `server:8090` with WebSocket upgrade and 24h read timeout,
 - falls back unmatched routes to `index.html` (client-side routing),
 - caches fingerprinted static assets for 30 days,
 - sets `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a per-request nonce CSP.
@@ -203,7 +203,7 @@ cargo make down    # stop it, keeping data volumes
 
 | Service | Container port | Host port (env override) | Notes |
 | --- | --- | --- | --- |
-| Backend server | 8080 | `8080` (`SERVER_HOST_PORT`) | REST + WebSocket + files + health |
+| Backend server | 8090 | `8090` (`SERVER_HOST_PORT`) | REST + WebSocket + files + health |
 | Server gRPC | 50051 | `50051` (`SERVER_GRPC_HOST_PORT`) | Internal query plane — token-gated, keep firewalled |
 | Workers gRPC | 50052 | — (not published) | Internal job ingest; host-run dev binds 50052 directly |
 | Frontend (nginx) | 80 | `80` (`FRONTEND_HOST_PORT`) | Full-stack compose only |
@@ -211,7 +211,7 @@ cargo make down    # stop it, keeping data volumes
 | PostgreSQL | 5432 | `5432` (`POSTGRES_HOST_PORT`) | |
 | Redis | 6379 | `6379` (`REDIS_HOST_PORT`) | |
 | ScyllaDB | 9042 | `9042` (`SCYLLA_HOST_PORT`) | CQL |
-| OpenFGA HTTP | 8080 | `8088` (`OPENFGA_HTTP_HOST_PORT`) | Host port avoids clash with server 8080 |
+| OpenFGA HTTP | 8080 | `8088` (`OPENFGA_HTTP_HOST_PORT`) | OpenFGA's own container port; host 8088 keeps it distinct |
 | OpenFGA gRPC | 8081 | `8089` (`OPENFGA_GRPC_HOST_PORT`) | |
 
 ## Operations

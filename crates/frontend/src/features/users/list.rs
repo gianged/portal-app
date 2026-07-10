@@ -68,7 +68,7 @@ pub fn UsersIndex() -> impl IntoView {
                             <Input value=search on_input=Callback::new(move |v| search.set(v)) placeholder="Search people…" />
                         </div>
                         <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_create>
-                            <Icon name=IconName::Plus size=14 /> " New user"
+                            <Icon name=IconName::Plus size=14 /> "New user"
                         </Button>
                     </Cluster>
                 </TableToolbar>
@@ -108,7 +108,12 @@ fn user_row(u: UserDto) -> impl IntoView {
     let name = u.name.clone();
     let email = u.email.clone();
     let role = u.role.label();
-    let group = u.group_name.unwrap_or_default();
+    let group = u
+        .memberships
+        .iter()
+        .map(|m| m.group_name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
     let link_cls = theme::class(format!(
         "color: {c}; font-weight: {fw}; text-decoration: none; &:hover {{ color: {a}; }}",
         c = color::TEXT_STRONG,

@@ -64,10 +64,15 @@ async fn list(
         .user
         .list_active(limit, offset, search.as_deref())
         .await?;
-    let roles = resolve::role_map(&state.group, &users).await?;
+    let mut identities = resolve::identity_map(&state.group, &users).await?;
     let out = users
         .iter()
-        .map(|u| dto::user_dto(u, roles.get(&u.id).copied().unwrap_or(UserRole::Member)))
+        .map(|u| {
+            let (role, memberships) = identities
+                .remove(&u.id)
+                .unwrap_or((UserRole::Member, Vec::new()));
+            dto::user_dto(u, role, memberships)
+        })
         .collect();
     Ok(Json(out))
 }

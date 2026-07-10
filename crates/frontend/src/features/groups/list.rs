@@ -49,7 +49,7 @@ pub fn GroupsIndex() -> impl IntoView {
             <Cluster gap=Gap::Sm justify="space-between".to_string()>
                 {ui::section_heading("Groups")}
                 <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_create>
-                    <Icon name=IconName::Plus size=14 /> " New group"
+                    <Icon name=IconName::Plus size=14 /> "New group"
                 </Button>
             </Cluster>
             {move || match groups.get() {
