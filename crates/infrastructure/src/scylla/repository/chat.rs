@@ -73,7 +73,6 @@ pub struct ScyllaChatRepo {
 }
 
 impl ScyllaChatRepo {
-    #[allow(clippy::too_many_lines)]
     pub async fn new(session: Arc<Session>) -> Result<Self, RepositoryError> {
         let stmts = Statements {
             find_channel: prepare(

@@ -1155,7 +1155,6 @@ pub struct TestApp {
 
 /// Assembles a full [`AppState`] over in-memory fakes with the given rate-limit
 /// ceilings. No network or filesystem is touched.
-#[allow(clippy::too_many_lines)]
 #[must_use]
 pub fn test_app(rate_limits: RateLimits) -> TestApp {
     let users = Arc::new(FakeUsers::default());

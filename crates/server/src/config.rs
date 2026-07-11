@@ -94,7 +94,6 @@ pub struct Config {
     pub trusted_proxies: Vec<IpNet>,
 }
 
-#[allow(clippy::too_many_lines)]
 pub fn from_env() -> anyhow::Result<Config> {
     let host = optional("SERVER_HOST", "0.0.0.0");
     let port = optional("SERVER_PORT", "8090");

@@ -68,7 +68,6 @@ pub struct ReportService {
 
 impl ReportService {
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         stats: Arc<dyn ReportStatsRepository>,
         archive: Arc<dyn ReportArchiveRepository>,

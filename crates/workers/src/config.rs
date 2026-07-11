@@ -93,7 +93,6 @@ pub struct SmtpConfig {
 ///
 /// # Errors
 /// Returns an error if a required var is missing or any value fails to parse.
-#[allow(clippy::too_many_lines)]
 pub fn from_env() -> anyhow::Result<Config> {
     let scylla_hosts = optional("SCYLLA_HOSTS", "127.0.0.1:9042")
         .split(',')

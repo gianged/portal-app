@@ -154,7 +154,6 @@ fn org_row(event: &DomainEvent) -> Option<AuditLog> {
 }
 
 /// `project.projects`, `project.project_invites`, and `project.requests` rows.
-#[allow(clippy::too_many_lines)]
 fn project_row(event: &DomainEvent) -> Option<AuditLog> {
     use AuditAction::{Assign, Create, Delete, StatusChange, Update};
 

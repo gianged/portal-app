@@ -157,7 +157,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[allow(clippy::too_many_lines)]
     async fn maps_every_variant_to_its_status_and_code() {
         let cases: Vec<(AppError, StatusCode, ErrorCode)> = vec![
             (

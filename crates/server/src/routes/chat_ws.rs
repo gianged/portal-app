@@ -174,7 +174,6 @@ async fn open_streams(state: &AppState) -> SelectAll<ByteStream> {
 }
 
 /// Handles one client frame. Returns `false` when the connection should close.
-#[allow(clippy::too_many_lines)]
 async fn on_client_frame(
     state: &AppState,
     uid: UserId,

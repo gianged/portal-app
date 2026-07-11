@@ -28,7 +28,6 @@ pub struct MaintenanceService {
 }
 
 impl MaintenanceService {
-    #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         notifications: Arc<dyn NotificationRepository>,

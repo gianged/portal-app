@@ -77,7 +77,6 @@ impl NotificationFanout {
     /// Returns a repository error if resolving recipients (channels, groups,
     /// users, or the originating request) or persisting any notification fails.
     #[tracing::instrument(skip_all)]
-    #[allow(clippy::too_many_lines)]
     pub async fn handle(&self, event: &DomainEvent) -> Result<()> {
         match event {
             DomainEvent::AnnouncementPosted {

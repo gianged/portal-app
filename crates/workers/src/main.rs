@@ -46,7 +46,6 @@ fn main() -> anyhow::Result<()> {
         .expect("workers thread panicked")
 }
 
-#[allow(clippy::too_many_lines)]
 async fn run() -> anyhow::Result<()> {
     // Populate the process env from the repo-root .env before config is parsed.
     dotenvy::dotenv().ok();
