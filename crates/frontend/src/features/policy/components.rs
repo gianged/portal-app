@@ -4,9 +4,10 @@ use leptos::{prelude::*, task};
 
 use shared::dto::policy::{BalanceExpiryPolicy, PolicyDto, UpdatePolicyRequest};
 use shared::dto::user::UserRole;
-use shared::validation::policy::validate_policy;
+use shared::validation::policy;
 
 use crate::features::policy::api;
+use crate::features::ui;
 use crate::primitives::button::{Button, ButtonVariant};
 use crate::primitives::card::{Card, CardBody, CardHeader};
 use crate::primitives::input::{FieldError, FieldLabel, Input};
@@ -14,13 +15,13 @@ use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
-use crate::theme::{self, color, space, typography};
+use crate::theme::{self, color, space};
 use crate::util::load::{self, Loadable};
 
 /// Loads the current policy, then renders the editor seeded from it.
 #[component]
 pub fn PolicyForm() -> impl IntoView {
-    let current: Loadable<PolicyDto> = RwSignal::new(None);
+    let current: Loadable<PolicyDto> = Loadable::new();
     Effect::new(move |_| load::load(current, api::get_policy()));
 
     view! {
@@ -41,25 +42,15 @@ fn field(
 ) -> impl IntoView {
     view! {
         <div>
-            <FieldLabel for_id=id.to_string()>{label}</FieldLabel>
+            <FieldLabel for_id=id>{label}</FieldLabel>
             <Input
                 value=value
                 on_input=Callback::new(move |v| value.set(v))
-                type_=type_.to_string()
+                type_=type_
                 disabled=disabled
             />
         </div>
     }
-}
-
-fn group_title(title: &'static str) -> impl IntoView {
-    let cls = theme::class(format!(
-        "font-size: {fs}; font-weight: {fw}; color: {c}; text-transform: uppercase; letter-spacing: 0.04em;",
-        fs = typography::TEXT_LABEL,
-        fw = typography::WEIGHT_SEMIBOLD,
-        c = color::TEXT_MUTED,
-    ));
-    view! { <div class=cls>{title}</div> }
 }
 
 #[component]
@@ -84,13 +75,7 @@ fn PolicyEditor(policy: PolicyDto) -> impl IntoView {
     let flex_max_per_month = RwSignal::new(policy.flex_max_per_month.to_string());
     let overtime_max = RwSignal::new(policy.overtime_max_hours_per_month.to_string());
     let carry_years = RwSignal::new(policy.balance_carry_years.to_string());
-    let expiry_policy = RwSignal::new(
-        match policy.balance_expiry_policy {
-            BalanceExpiryPolicy::Warn => "warn",
-            BalanceExpiryPolicy::RecordWorkPct => "record_work_pct",
-        }
-        .to_string(),
-    );
+    let expiry_policy = RwSignal::new(policy.balance_expiry_policy.as_str().to_string());
     let warn_days = RwSignal::new(policy.balance_expiry_warn_days.to_string());
 
     let err = RwSignal::new(None::<String>);
@@ -137,11 +122,10 @@ fn PolicyEditor(policy: PolicyDto) -> impl IntoView {
                     "Overtime monthly cap",
                 )?,
                 balance_carry_years: parse_u16(carry_years.get_untracked(), "Balance carry years")?,
-                balance_expiry_policy: if expiry_policy.get_untracked() == "record_work_pct" {
-                    BalanceExpiryPolicy::RecordWorkPct
-                } else {
-                    BalanceExpiryPolicy::Warn
-                },
+                balance_expiry_policy: BalanceExpiryPolicy::from_wire(
+                    &expiry_policy.get_untracked(),
+                )
+                .unwrap_or(BalanceExpiryPolicy::Warn),
                 balance_expiry_warn_days: parse_u16(
                     warn_days.get_untracked(),
                     "Expiry warning days",
@@ -155,7 +139,7 @@ fn PolicyEditor(policy: PolicyDto) -> impl IntoView {
                 return;
             }
         };
-        if let Err(e) = validate_policy(&req) {
+        if let Err(e) = policy::validate_policy(&req) {
             err.set(Some(e.to_string()));
             return;
         }
@@ -187,7 +171,7 @@ fn PolicyEditor(policy: PolicyDto) -> impl IntoView {
                 </div>
             })}
             <Card>
-                <CardHeader>{group_title("General")}</CardHeader>
+                <CardHeader>{ui::eyebrow_title("General")}</CardHeader>
                 <CardBody>
                     <div class=grid()>
                         {field("Workday start", "p-workday", workday_start, "time", read_only)}
@@ -196,7 +180,7 @@ fn PolicyEditor(policy: PolicyDto) -> impl IntoView {
                 </CardBody>
             </Card>
             <Card>
-                <CardHeader>{group_title("Flexible hours")}</CardHeader>
+                <CardHeader>{ui::eyebrow_title("Flexible hours")}</CardHeader>
                 <CardBody>
                     <div class=grid()>
                         {field("Core start", "p-cs", flex_core_start, "time", read_only)}
@@ -211,7 +195,7 @@ fn PolicyEditor(policy: PolicyDto) -> impl IntoView {
                 </CardBody>
             </Card>
             <Card>
-                <CardHeader>{group_title("Overtime")}</CardHeader>
+                <CardHeader>{ui::eyebrow_title("Overtime")}</CardHeader>
                 <CardBody>
                     <div class=grid()>
                         {field("Max overtime hours/month", "p-ot", overtime_max, "number", read_only)}
@@ -219,20 +203,20 @@ fn PolicyEditor(policy: PolicyDto) -> impl IntoView {
                 </CardBody>
             </Card>
             <Card>
-                <CardHeader>{group_title("Leave balance")}</CardHeader>
+                <CardHeader>{ui::eyebrow_title("Leave balance")}</CardHeader>
                 <CardBody>
                     <div class=grid()>
                         {field("Carry years", "p-cy", carry_years, "number", read_only)}
                         {field("Expiry warning (days)", "p-wd", warn_days, "number", read_only)}
                         <div>
-                            <FieldLabel for_id="p-exp".to_string()>"On expiry"</FieldLabel>
+                            <FieldLabel for_id="p-exp">"On expiry"</FieldLabel>
                             <Select
                                 value=expiry_policy
                                 on_change=Callback::new(move |v| expiry_policy.set(v))
                                 disabled=read_only
                             >
-                                <option value="warn">"Warn only"</option>
-                                <option value="record_work_pct">"Record work %"</option>
+                                <option value=BalanceExpiryPolicy::Warn.as_str()>"Warn only"</option>
+                                <option value=BalanceExpiryPolicy::RecordWorkPct.as_str()>"Record work %"</option>
                             </Select>
                         </div>
                     </div>
@@ -240,7 +224,7 @@ fn PolicyEditor(policy: PolicyDto) -> impl IntoView {
             </Card>
             {move || err.get().map(|m| view! { <FieldError message=m /> })}
             {move || (!read_only).then(|| view! {
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || saving.get())>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=saving>
                     {move || if saving.get() { "Saving…" } else { "Save policy" }}
                 </Button>
             })}

@@ -87,14 +87,11 @@ impl Realtime {
     }
 
     /// Subscribes to `topic` through the shared hub, yielding raw payload bytes.
-    /// Never fails: the topic's pump (re)connects in the background, so during a
-    /// broker outage the stream is silent instead of erroring.
-    pub async fn subscribe(
-        &self,
-        topic: &str,
-    ) -> Result<Pin<Box<dyn Stream<Item = Vec<u8>> + Send>>, EventError> {
+    /// The topic's pump (re)connects in the background, so during a broker
+    /// outage the stream is silent instead of erroring.
+    pub async fn subscribe(&self, topic: &str) -> Pin<Box<dyn Stream<Item = Vec<u8>> + Send>> {
         let rx = self.hub.receiver(topic).await;
-        Ok(Box::pin(stream::unfold(rx, |mut rx| async move {
+        Box::pin(stream::unfold(rx, |mut rx| async move {
             loop {
                 match rx.recv().await {
                     Ok(payload) => return Some((payload, rx)),
@@ -107,7 +104,7 @@ impl Realtime {
                     Err(RecvError::Closed) => return None,
                 }
             }
-        })))
+        }))
     }
 }
 

@@ -10,21 +10,6 @@ use shared::dto::{
     },
 };
 use shared::errors::SharedError;
-use shared::validation::policy::parse_hhmm;
-use time::{Date, Time};
-
-use super::{daily_report::fmt_date, flex_hours_id, flex_segment_id};
-
-fn fmt_time(t: Time) -> String {
-    format!("{:02}:{:02}", t.hour(), t.minute())
-}
-
-fn to_time(s: &str, field: &str) -> Result<Time, SharedError> {
-    let (h, m) = parse_hhmm(s)
-        .ok_or_else(|| SharedError::Validation(format!("{field} must be a valid HH:MM time")))?;
-    Time::from_hms(h, m, 0)
-        .map_err(|_| SharedError::Validation(format!("{field} is not a valid time")))
-}
 
 #[must_use]
 pub fn flex_status_dto(status: model::FlexStatus) -> WireStatus {
@@ -39,10 +24,10 @@ pub fn flex_status_dto(status: model::FlexStatus) -> WireStatus {
 #[must_use]
 pub fn flex_segment_dto(seg: &model::FlexSegment) -> FlexSegmentDto {
     FlexSegmentDto {
-        id: flex_segment_id(seg.id),
+        id: super::flex_segment_id(seg.id),
         seq: seg.seq,
-        start: fmt_time(seg.start),
-        end: fmt_time(seg.end),
+        start: super::fmt_time(seg.start),
+        end: super::fmt_time(seg.end),
         hours: seg.hours(),
     }
 }
@@ -59,9 +44,9 @@ pub fn flex_hours_dto(
         .map(model::FlexSegment::hours)
         .sum::<f64>();
     FlexHoursDto {
-        id: flex_hours_id(flex.id),
+        id: super::flex_hours_id(flex.id),
         user,
-        work_date: fmt_date(flex.work_date),
+        work_date: flex.work_date,
         segments: flex.segments.iter().map(flex_segment_dto).collect(),
         daily_hours,
         status: flex_status_dto(flex.status),
@@ -75,18 +60,15 @@ pub fn flex_hours_dto(
 
 /// # Errors
 /// Returns [`SharedError::Validation`] when a block time is malformed.
-pub fn request_flex_command(
-    work_date: Date,
-    req: RequestFlexRequest,
-) -> Result<RequestFlexCommand, SharedError> {
+pub fn request_flex_command(req: &RequestFlexRequest) -> Result<RequestFlexCommand, SharedError> {
     let mut segments = Vec::with_capacity(req.segments.len());
-    for seg in req.segments {
-        let start = to_time(&seg.start, "Block start")?;
-        let end = to_time(&seg.end, "Block end")?;
+    for seg in &req.segments {
+        let start = super::to_time(&seg.start, "Block start")?;
+        let end = super::to_time(&seg.end, "Block end")?;
         segments.push((start, end));
     }
     Ok(RequestFlexCommand {
-        work_date,
+        work_date: req.work_date,
         segments,
     })
 }

@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     commands::group::{AddMembershipCommand, CreateGroupCommand, UpdateGroupMetadataCommand},
-    error::{Error, Result},
+    error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
 };
@@ -122,7 +122,7 @@ impl GroupService {
             )
         });
         if has_active {
-            return Err(Error::Conflict("group_has_active_projects".into()));
+            return Err(Error::Conflict(ConflictCode::GroupHasActiveProjects));
         }
 
         // Row deletion happens in infrastructure on the GroupDeleted event; the
@@ -138,7 +138,8 @@ impl GroupService {
         Ok(())
     }
 
-    /// Adds a user to a group with the requested role.
+    /// Adds a user to a group with the requested role, reactivating a previously
+    /// deactivated membership in place.
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the group does
@@ -158,28 +159,37 @@ impl GroupService {
         if self.groups.find_group(cmd.group_id).await?.is_none() {
             return Err(Error::NotFound("group"));
         }
-        if let Some(existing) = self
+        let existing = self
             .groups
             .find_membership(cmd.group_id, cmd.user_id)
-            .await?
-            && existing.is_active()
+            .await?;
+        if let Some(m) = &existing
+            && m.is_active()
         {
-            return Err(Error::Conflict("user_already_member".into()));
+            return Err(Error::Conflict(ConflictCode::UserAlreadyMember));
         }
 
         if cmd.role == GroupRole::Leader && self.active_leader_exists(cmd.group_id).await? {
-            return Err(Error::Conflict("group_already_has_leader".into()));
+            return Err(Error::Conflict(ConflictCode::GroupAlreadyHasLeader));
         }
 
-        let membership = Membership {
-            id: MembershipId(Uuid::now_v7()),
-            group_id: cmd.group_id,
-            user_id: cmd.user_id,
-            role: cmd.role,
-            joined_at: now,
-            deactivated_at: None,
-            created_at: now,
-            updated_at: now,
+        // A deactivated row is reactivated in place: the (group_id, user_id)
+        // unique constraint forbids inserting a second one.
+        let membership = match existing {
+            Some(mut m) => {
+                m.rejoin(cmd.role, now);
+                m
+            }
+            None => Membership {
+                id: MembershipId(Uuid::now_v7()),
+                group_id: cmd.group_id,
+                user_id: cmd.user_id,
+                role: cmd.role,
+                joined_at: now,
+                deactivated_at: None,
+                created_at: now,
+                updated_at: now,
+            },
         };
         self.groups.save_membership(&membership).await?;
         self.perms.grant_group_membership(&membership).await?;
@@ -228,7 +238,7 @@ impl GroupService {
             .await?
             .ok_or(Error::NotFound("membership"))?;
         if !membership.is_active() {
-            return Err(Error::Conflict("membership_inactive".into()));
+            return Err(Error::Conflict(ConflictCode::MembershipInactive));
         }
         let from_role = membership.role;
         if from_role == new_role {
@@ -236,10 +246,10 @@ impl GroupService {
         }
 
         if from_role == GroupRole::Leader && self.count_active_leaders(group_id).await? <= 1 {
-            return Err(Error::Conflict("cannot_demote_last_leader".into()));
+            return Err(Error::Conflict(ConflictCode::CannotDemoteLastLeader));
         }
         if new_role == GroupRole::Leader && self.active_leader_exists(group_id).await? {
-            return Err(Error::Conflict("group_already_has_leader".into()));
+            return Err(Error::Conflict(ConflictCode::GroupAlreadyHasLeader));
         }
 
         // Update OpenFGA: revoke old role tuple before granting the new one.
@@ -288,7 +298,7 @@ impl GroupService {
             return Ok(());
         }
         if membership.role == GroupRole::Leader && self.count_active_leaders(group_id).await? <= 1 {
-            return Err(Error::Conflict("transfer_leadership_first".into()));
+            return Err(Error::Conflict(ConflictCode::TransferLeadershipFirst));
         }
 
         self.perms.revoke_group_membership(&membership).await?;
@@ -338,7 +348,7 @@ impl GroupService {
             .await?
             .ok_or(Error::NotFound("from_membership"))?;
         if from_membership.role != GroupRole::Leader || !from_membership.is_active() {
-            return Err(Error::Conflict("from_user_not_leader".into()));
+            return Err(Error::Conflict(ConflictCode::FromUserNotLeader));
         }
         let mut to_membership = self
             .groups
@@ -346,21 +356,21 @@ impl GroupService {
             .await?
             .ok_or(Error::NotFound("to_membership"))?;
         if !to_membership.is_active() {
-            return Err(Error::Conflict("to_user_inactive".into()));
+            return Err(Error::Conflict(ConflictCode::ToUserInactive));
         }
 
-        // Demote first so the partial unique index on (group_id WHERE role=leader)
-        // doesn't reject the promotion.
         self.perms.revoke_group_membership(&from_membership).await?;
-        let from_was = from_membership.role;
-        from_membership.change_role(GroupRole::Member, now);
-        self.groups.save_membership(&from_membership).await?;
-        self.perms.grant_group_membership(&from_membership).await?;
-
         self.perms.revoke_group_membership(&to_membership).await?;
+        let from_was = from_membership.role;
         let to_was = to_membership.role;
+        from_membership.change_role(GroupRole::Member, now);
         to_membership.change_role(GroupRole::Leader, now);
-        self.groups.save_membership(&to_membership).await?;
+        // One transaction so the group is never left leaderless; demoted row first
+        // so the partial unique index on (group_id WHERE role=leader) accepts it.
+        self.groups
+            .save_memberships(&[from_membership.clone(), to_membership.clone()])
+            .await?;
+        self.perms.grant_group_membership(&from_membership).await?;
         self.perms.grant_group_membership(&to_membership).await?;
 
         self.events
@@ -426,7 +436,8 @@ impl GroupService {
         Ok(self.groups.list_all().await?)
     }
 
-    /// Updates a group's name and/or description.
+    /// Updates a group's name and/or description; a rename also renames the
+    /// group's chat channel.
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the group does
@@ -455,6 +466,14 @@ impl GroupService {
         }
         group.updated_at = now;
         self.groups.save_group(&group).await?;
+        // The group channel denormalises the name; keep the chat title in sync.
+        if group.name != before.name
+            && let Some(Channel::Group(mut channel)) =
+                self.chats.find_group_channel(group_id).await?
+        {
+            channel.name = group.name.clone();
+            self.chats.save_channel(&Channel::Group(channel)).await?;
+        }
         self.events
             .emit(DomainEvent::GroupMetadataUpdated {
                 group_id: group.id,

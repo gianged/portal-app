@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO attendance.daily_reports\n                 (id, user_id, report_date, status, summary, submitted_at,\n                  reviewed_by_user_id, reviewed_at, review_note, created_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n               ON CONFLICT (id) DO UPDATE SET\n                 user_id             = EXCLUDED.user_id,\n                 report_date         = EXCLUDED.report_date,\n                 status              = EXCLUDED.status,\n                 summary             = EXCLUDED.summary,\n                 submitted_at        = EXCLUDED.submitted_at,\n                 reviewed_by_user_id = EXCLUDED.reviewed_by_user_id,\n                 reviewed_at         = EXCLUDED.reviewed_at,\n                 review_note         = EXCLUDED.review_note",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date",
+        {
+          "Custom": {
+            "name": "attendance.daily_report_status",
+            "kind": {
+              "Enum": [
+                "draft",
+                "submitted",
+                "approved",
+                "returned"
+              ]
+            }
+          }
+        },
+        "Text",
+        "Timestamptz",
+        "Uuid",
+        "Timestamptz",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "144b3aa2b175c7bf3b6f14dcc5a11751510513d6f4e660a0cf9612445058cd1b"
+}

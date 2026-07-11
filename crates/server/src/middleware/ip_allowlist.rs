@@ -6,7 +6,7 @@
 //! client is the rightmost non-trusted `X-Forwarded-For` hop; from any other peer
 //! the header is ignored, since it is trivially spoofable.
 //! Fails closed: no peer address, or a trusted peer with an unusable header, is
-//! rejected — an unverifiable network cannot be trusted.
+//! rejected: an unverifiable network cannot be trusted.
 
 use std::{
     net::{IpAddr, SocketAddr},

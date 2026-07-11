@@ -21,19 +21,36 @@ pub mod routes;
 
 #[cfg(not(unix))]
 use std::future;
-use std::{net::SocketAddr, process, time::Duration};
+use std::{net::SocketAddr, process, sync::LazyLock, time::Duration};
 
 #[cfg(unix)]
 use tokio::signal::unix::{self, SignalKind};
-use tokio::{net::TcpListener, signal, time};
+use tokio::{
+    net::TcpListener,
+    signal,
+    sync::watch::{self, Sender},
+    time,
+};
 
 use infrastructure::telemetry;
 
-/// Grace after the shutdown signal before the watchdog forces exit.
-const FORCE_EXIT_GRACE: Duration = Duration::from_secs(3);
+/// Grace after the shutdown signal before the watchdog forces exit. Must exceed
+/// [`GRPC_DRAIN_GRACE`] plus the chat-ingest tail-flush budget so the watchdog
+/// stays a last resort.
+const FORCE_EXIT_GRACE: Duration = Duration::from_secs(15);
 
 /// Bound on waiting for the internal gRPC plane to drain after HTTP stops.
 const GRPC_DRAIN_GRACE: Duration = Duration::from_secs(5);
+
+/// Process-wide drain flag, flipped to `true` on the first shutdown signal.
+static SHUTDOWN: LazyLock<Sender<bool>> = LazyLock::new(|| watch::channel(false).0);
+
+/// Resolves once process shutdown has begun. WS connection tasks select on it
+/// so axum's graceful drain completes instead of stalling on live sockets.
+pub(crate) async fn shutdown_started() {
+    let mut rx = SHUTDOWN.subscribe();
+    let _ = rx.wait_for(|&draining| draining).await;
+}
 
 /// Loads configuration, builds the router, and serves until a shutdown signal.
 pub async fn run() -> anyhow::Result<()> {
@@ -49,7 +66,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     let listener = TcpListener::bind(cfg.server_addr).await?;
     tracing::info!(addr = %cfg.server_addr, "server listening");
-    // Guarantees Ctrl-C exits even if graceful shutdown stalls (e.g. a live WS).
+    // Last resort: guarantees Ctrl-C exits even if graceful shutdown stalls.
     tokio::spawn(force_exit_watchdog());
     // Internal gRPC plane on its own listener, sharing the shutdown signal. A
     // failure is logged, not fatal: the HTTP surface stays up without it.
@@ -121,4 +138,6 @@ async fn wait_for_shutdown() {
         () = ctrl_c => {}
         () = terminate => {}
     }
+    // Flip the drain flag so WS connections close and HTTP drain can finish.
+    let _ = SHUTDOWN.send(true);
 }

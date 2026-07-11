@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use time::{Date, OffsetDateTime};
 
 use crate::dto::{common::UserSummaryDto, ids::OvertimeId};
 
@@ -33,7 +33,7 @@ impl OvertimeStatus {
 pub struct OvertimeDto {
     pub id: OvertimeId,
     pub requester: UserSummaryDto,
-    pub work_date: String,
+    pub work_date: Date,
     pub hours: f64,
     pub reason: String,
     pub status: OvertimeStatus,
@@ -53,7 +53,7 @@ pub struct OvertimeDto {
 /// Body of `POST /overtime`. Maps to `CreateOvertimeCommand`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateOvertimeRequest {
-    pub work_date: String,
+    pub work_date: Date,
     pub hours: f64,
     #[serde(default)]
     pub reason: String,

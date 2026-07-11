@@ -28,7 +28,7 @@ async fn update_policy(
     auth: AuthUser,
     ValidatedJson(body): ValidatedJson<UpdatePolicyRequest>,
 ) -> Result<Json<PolicyDto>, AppError> {
-    let cmd = dto::update_policy_command(body).map_err(|e| AppError::Validation(e.to_string()))?;
+    let cmd = dto::update_policy_command(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     let policy = state.policy.update(auth.user_id, cmd).await?;
     Ok(Json(dto::policy_dto(&policy)))
 }

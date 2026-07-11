@@ -8,8 +8,10 @@ use shared::dto::{
     ticket::{TicketPriority, TicketStatus},
 };
 use time::{Month, OffsetDateTime};
+use uuid::Uuid;
 
 use crate::primitives::badge::BadgeVariant;
+use crate::theme::color;
 
 /// Compact "time ago" label (`just now`, `5m`, `3h`, `2d`), falling back to a
 /// short absolute date (`Jun 3`) past a week. Reads the clock via JS `Date`
@@ -39,11 +41,31 @@ pub fn relative_time(ts: OffsetDateTime) -> String {
     format!("{} {}", month_abbr(ts.month()), ts.day())
 }
 
-/// Stable 0..6 avatar tone derived from a name, so the same person keeps the
-/// same color. Feeds [`crate::primitives::avatar::Avatar`]'s `tone` prop.
+/// Stable avatar tone derived from a name, so the same person keeps the same
+/// color. Feeds [`crate::primitives::avatar::Avatar`]'s `tone` prop.
 #[must_use]
 pub fn tone_for(name: &str) -> usize {
-    name.bytes().map(usize::from).sum::<usize>() % 6
+    name.bytes().map(usize::from).sum::<usize>() % color::AVATAR_TONES.len()
+}
+
+/// Human-readable byte count: `B` under a KB, whole `KB` under a MB, tenths of `MB` above.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
+pub fn human_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.0} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
+}
+
+/// First UUID block with a leading `#`, for compact ID table cells.
+#[must_use]
+pub fn short_id(id: &Uuid) -> String {
+    let s = id.to_string();
+    format!("#{}", s.get(..8).unwrap_or(&s))
 }
 
 #[must_use]
@@ -124,7 +146,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     fn tone_for_is_stable_and_bounded() {
-        assert!(tone_for("Ada Lovelace") < 6);
+        assert!(tone_for("Ada Lovelace") < color::AVATAR_TONES.len());
         assert_eq!(tone_for("Ada Lovelace"), tone_for("Ada Lovelace"));
     }
 

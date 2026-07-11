@@ -208,7 +208,7 @@ pub fn CommentThread(#[prop(into)] target: Signal<Option<CommentTarget>>) -> imp
                         placeholder="Write a comment…"
                     />
                     <Cluster gap=Gap::Sm justify="flex-end".to_string()>
-                        <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=submit disabled=Signal::derive(move || submitting.get())>
+                        <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=submit disabled=submitting>
                             {move || if submitting.get() { "Posting…" } else { "Comment" }}
                         </Button>
                     </Cluster>
@@ -346,7 +346,7 @@ fn CommentEditDialog(
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting>
                     {move || if submitting.get() { "Saving…" } else { "Save" }}
                 </Button>
             </DialogFooter>

@@ -23,7 +23,7 @@ pub struct EmailNotifier {
 
 impl EmailNotifier {
     #[must_use]
-    pub fn new(users: Arc<dyn UserRepository>, queue: Arc<dyn JobQueue>, base_url: String) -> Self {
+    pub fn new(users: Arc<dyn UserRepository>, queue: Arc<dyn JobQueue>, base_url: &str) -> Self {
         Self {
             users,
             queue,
@@ -230,10 +230,7 @@ mod tests {
         let users = Arc::new(FakeUsers {
             user: user(uid, status),
         });
-        (
-            EmailNotifier::new(users, queue, "http://portal.test/".to_owned()),
-            uid,
-        )
+        (EmailNotifier::new(users, queue, "http://portal.test/"), uid)
     }
 
     #[tokio::test]
@@ -281,7 +278,7 @@ mod tests {
         let mut opted_out = user(uid, UserStatus::Active);
         opted_out.email_notifications = false;
         let users = Arc::new(FakeUsers { user: opted_out });
-        let notifier = EmailNotifier::new(users, queue.clone(), "http://portal.test/".to_owned());
+        let notifier = EmailNotifier::new(users, queue.clone(), "http://portal.test/");
         let payload = NotificationPayload::TicketAssigned {
             ticket_id: TicketId(Uuid::nil()),
         };

@@ -51,7 +51,7 @@ impl Query for QueryService {
             .map_err(app_status)?;
         Ok(tonic::Response::new(ListProjectsResponse {
             projects: page.items.iter().map(project_record).collect(),
-            next_cursor: cursor_string(page.next_cursor),
+            next_cursor: cursor_string(page.next_cursor.map(|id| id.0)),
         }))
     }
 
@@ -84,7 +84,7 @@ impl Query for QueryService {
             .map_err(app_status)?;
         Ok(tonic::Response::new(ListRequestsResponse {
             requests: page.items.iter().map(request_record).collect(),
-            next_cursor: cursor_string(page.next_cursor),
+            next_cursor: cursor_string(page.next_cursor.map(|id| id.0)),
         }))
     }
 

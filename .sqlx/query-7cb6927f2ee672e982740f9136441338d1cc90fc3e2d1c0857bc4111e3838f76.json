@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO attendance.flex_hours\n                 (id, user_id, work_date, status, leader_user_id, decided_at,\n                  decision_note, created_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n               ON CONFLICT (id) DO UPDATE SET\n                 work_date      = EXCLUDED.work_date,\n                 status         = EXCLUDED.status,\n                 leader_user_id = EXCLUDED.leader_user_id,\n                 decided_at     = EXCLUDED.decided_at,\n                 decision_note  = EXCLUDED.decision_note",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date",
+        {
+          "Custom": {
+            "name": "attendance.flex_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "cancelled"
+              ]
+            }
+          }
+        },
+        "Uuid",
+        "Timestamptz",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7cb6927f2ee672e982740f9136441338d1cc90fc3e2d1c0857bc4111e3838f76"
+}

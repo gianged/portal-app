@@ -27,9 +27,15 @@ impl Announcement {
         delta >= Duration::ZERO && delta <= EDIT_GRACE
     }
 
+    /// Replaces the body, only within the edit grace window.
+    ///
+    /// # Errors
+    /// Returns [`TransitionError::EditGraceExpired`] past the window.
     pub fn edit(&mut self, body: String, now: OffsetDateTime) -> Result<(), TransitionError> {
         if !self.within_edit_grace(now) {
-            return Err(TransitionError::invalid("announcement", "edit_after_grace"));
+            return Err(TransitionError::EditGraceExpired {
+                entity: "announcement",
+            });
         }
         self.body = body;
         self.edited_at = Some(now);

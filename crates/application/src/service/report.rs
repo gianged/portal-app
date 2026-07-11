@@ -49,8 +49,10 @@ enum Attribution {
 
 /// Aggregates report data, renders PDFs, and archives the artifacts.
 ///
-/// System-level: it performs no authorization. The Director/HR gate lives at the
-/// call site; `generated_by` on the generate methods records attribution only.
+/// The actor-taking read/generate methods gate authorization internally
+/// (Director/HR, or self / leader / admin for `staff_monthly`). The worker
+/// entries (`generate_and_store_*`, `archive_*`) and the `*_unscoped` reads
+/// behind the token-gated read plane run in system context with no actor.
 pub struct ReportService {
     stats: Arc<dyn ReportStatsRepository>,
     archive: Arc<dyn ReportArchiveRepository>,
@@ -89,21 +91,52 @@ impl ReportService {
         }
     }
 
-    /// Aggregated monthly statistics for the dashboard.
+    /// Aggregated monthly statistics for the dashboard. Director/HR only.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not Director/HR, `Validation` for an
+    /// invalid month, or a repository error.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
+    pub async fn monthly_stats(
+        &self,
+        actor: UserId,
+        year: i32,
+        month: u8,
+    ) -> Result<MonthlyReportData> {
+        self.perms.require_admin(actor).await?;
+        self.monthly_stats_unscoped(year, month).await
+    }
+
+    /// System-level entry for the token-gated read plane; no actor gate.
     ///
     /// # Errors
     /// Returns `Validation` for an invalid month, or a repository error.
     #[tracing::instrument(skip_all)]
-    pub async fn monthly_stats(&self, year: i32, month: u8) -> Result<MonthlyReportData> {
+    pub(crate) async fn monthly_stats_unscoped(
+        &self,
+        year: i32,
+        month: u8,
+    ) -> Result<MonthlyReportData> {
         self.assemble_monthly(month_period(year, month)?).await
     }
 
-    /// Aggregated yearly growth for the dashboard.
+    /// Aggregated yearly growth for the dashboard. Director/HR only.
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor is not Director/HR, `Validation` for an
+    /// invalid year, or a repository error.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
+    pub async fn yearly_stats(&self, actor: UserId, year: i32) -> Result<YearlyReportData> {
+        self.perms.require_admin(actor).await?;
+        self.yearly_stats_unscoped(year).await
+    }
+
+    /// System-level entry for the token-gated read plane; no actor gate.
     ///
     /// # Errors
     /// Returns `Validation` for an invalid year, or a repository error.
     #[tracing::instrument(skip_all)]
-    pub async fn yearly_stats(&self, year: i32) -> Result<YearlyReportData> {
+    pub(crate) async fn yearly_stats_unscoped(&self, year: i32) -> Result<YearlyReportData> {
         self.assemble_yearly(year).await
     }
 
@@ -119,7 +152,7 @@ impl ReportService {
         actor: UserId,
         subject: UserId,
         year: i32,
-        month: u32,
+        month: u8,
     ) -> Result<StaffMonthlyReport> {
         if actor != subject {
             match self.perms.require_leader_of_member(actor, subject).await {
@@ -129,38 +162,35 @@ impl ReportService {
             }
         }
 
-        let month_u8 =
-            u8::try_from(month).map_err(|_| Error::Validation("month must be 1-12".into()))?;
-        self.assemble_staff_monthly(subject, month_period(year, month_u8)?)
+        self.assemble_staff_monthly(subject, month_period(year, month)?)
             .await
     }
 
-    /// Generates (or returns the existing) monthly PDF, storing the artifact.
-    /// `generated_by` is `Some(actor)` on demand, `None` for the scheduler.
+    /// Generates (or returns the existing) monthly PDF, storing the artifact
+    /// credited to the actor. Director/HR only; the scheduler goes through
+    /// [`Self::generate_and_store_monthly`] instead.
     ///
     /// # Errors
-    /// Returns `Validation` for an invalid month, or a repository, storage, or
-    /// render error.
-    #[tracing::instrument(skip_all)]
-    pub async fn generate_monthly(
-        &self,
-        year: i32,
-        month: u8,
-        generated_by: Option<UserId>,
-    ) -> Result<Report> {
+    /// Returns `Forbidden` if the actor is not Director/HR, `Validation` for an
+    /// invalid month, or a repository, storage, or render error.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
+    pub async fn generate_monthly(&self, actor: UserId, year: i32, month: u8) -> Result<Report> {
+        self.perms.require_admin(actor).await?;
         let period = month_period(year, month)?;
-        Ok(self.store_monthly(period, generated_by).await?.report)
+        Ok(self.store_monthly(period, Some(actor)).await?.report)
     }
 
-    /// Generates (or returns the existing) yearly PDF, storing the artifact.
+    /// Generates (or returns the existing) yearly PDF, storing the artifact
+    /// credited to the actor. Director/HR only.
     ///
     /// # Errors
-    /// Returns `Validation` for an invalid year, or a repository, storage, or
-    /// render error.
-    #[tracing::instrument(skip_all)]
-    pub async fn generate_yearly(&self, year: i32, generated_by: Option<UserId>) -> Result<Report> {
+    /// Returns `Forbidden` if the actor is not Director/HR, `Validation` for an
+    /// invalid year, or a repository, storage, or render error.
+    #[tracing::instrument(skip_all, fields(actor = ?actor))]
+    pub async fn generate_yearly(&self, actor: UserId, year: i32) -> Result<Report> {
+        self.perms.require_admin(actor).await?;
         let period = year_period(year)?;
-        Ok(self.store_yearly(period, year, generated_by).await?.report)
+        Ok(self.store_yearly(period, year, Some(actor)).await?.report)
     }
 
     /// Worker entry: idempotently generate and store the company monthly report.
@@ -238,13 +268,16 @@ impl ReportService {
         Ok(outcome)
     }
 
-    /// Lists archived company/group reports, newest first. Staff-scoped
-    /// artifacts are excluded; they are private to the subject's report path.
+    /// Lists archived company/group reports, newest first. Director/HR only.
+    /// Staff-scoped artifacts are excluded; they are private to the subject's
+    /// report path.
     ///
     /// # Errors
-    /// Returns a repository error if the datastore is unavailable.
-    #[tracing::instrument(skip_all, fields(limit = ?limit))]
-    pub async fn list_reports(&self, limit: u32) -> Result<Vec<Report>> {
+    /// Returns `Forbidden` if the actor is not Director/HR, or a repository
+    /// error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, limit = ?limit))]
+    pub async fn list_reports(&self, actor: UserId, limit: u32) -> Result<Vec<Report>> {
+        self.perms.require_admin(actor).await?;
         Ok(self.archive.list(limit).await?)
     }
 
@@ -411,7 +444,7 @@ impl ReportService {
         period: Period,
     ) -> Result<StaffMonthlyReport> {
         let year = period.start.year();
-        let month = u32::from(u8::from(period.start.month()));
+        let month = u8::from(period.start.month());
         // Balance as of the last day of the report month.
         let asof = period
             .end
@@ -427,20 +460,10 @@ impl ReportService {
         Ok(StaffMonthlyReport {
             user_id: subject,
             period,
-            days_reported: stats.days_reported,
-            hours_request_work: stats.hours_request_work,
-            hours_learning: stats.hours_learning,
-            hours_other: stats.hours_other,
-            leave_days_by_kind: stats.leave_days_by_kind,
-            overtime_hours: stats.overtime_hours,
-            flex_days: stats.flex_days,
+            stats,
             flex_month_delta,
             work_percentage,
             balance_remaining,
-            balance_expiring_soon: stats.balance_expiring_soon,
-            requests_completed: stats.requests_completed,
-            requests_open: stats.requests_open,
-            avg_request_progress: stats.avg_request_progress,
         })
     }
 
@@ -466,7 +489,7 @@ impl ReportService {
             let requests_completed = r.map_or(0, |r| r.completed);
             let requests_open = r.map_or(0, |r| r.open);
             let request_completion_pct = if requests_total > 0 {
-                ((f64::from(requests_completed) / f64::from(requests_total)) * 100.0).round() as u8
+                pct(f64::from(requests_completed) / f64::from(requests_total) * 100.0)
             } else {
                 0
             };
@@ -565,15 +588,9 @@ impl ReportService {
 }
 
 /// Round and clamp a percentage value into the 0-100 range.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn pct(v: f64) -> u8 {
-    let r = v.round();
-    if r <= 0.0 {
-        0
-    } else if r >= 100.0 {
-        100
-    } else {
-        r as u8
-    }
+    v.clamp(0.0, 100.0).round() as u8
 }
 
 fn month_enum(month: u8) -> Result<Month> {

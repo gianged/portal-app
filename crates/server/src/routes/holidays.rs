@@ -18,7 +18,6 @@ use crate::{
     dto,
     error::AppError,
     extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
-    routes,
 };
 
 pub fn router() -> Router<AppState> {
@@ -48,10 +47,9 @@ async fn list(
 async fn set(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(date): Path<String>,
+    Path(date): Path<Date>,
     ValidatedJson(body): ValidatedJson<SetHolidayRequest>,
 ) -> Result<Json<HolidayDto>, AppError> {
-    let date = routes::parse_date(&date)?;
     state
         .holiday
         .set(auth.user_id, date, body.name.clone())
@@ -65,9 +63,8 @@ async fn set(
 async fn remove(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(date): Path<String>,
+    Path(date): Path<Date>,
 ) -> Result<StatusCode, AppError> {
-    let date = routes::parse_date(&date)?;
     state.holiday.remove(auth.user_id, date).await?;
     Ok(StatusCode::NO_CONTENT)
 }

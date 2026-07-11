@@ -1,12 +1,12 @@
 //! Message composer: sends over the WebSocket when connected, else falls back to a REST post; emits typing signals and attaches files by storage key on send.
 
 use gloo::timers::future::TimeoutFuture;
-use leptos::{ev::SubmitEvent, html::Input as HtmlInputEl, prelude::*, task};
+use leptos::{ev::SubmitEvent, prelude::*, task};
 use web_sys::{Blob, FormData};
 
 use shared::dto::chat::{ChatAttachmentDto, MessageDto, SendMessageRequest};
 use shared::dto::ids::ChannelId;
-use shared::dto::ws::{ClientFrame, ServerFrame};
+use shared::dto::ws::{ClientFrame, ServerFrame, WsErrorCode};
 
 use crate::api::ws::WsClient;
 use crate::features::chat::api;
@@ -31,8 +31,8 @@ pub fn Composer(
     let text = RwSignal::new(String::new());
     let pending = RwSignal::new(Vec::<ChatAttachmentDto>::new());
     let sending = RwSignal::new(false);
-    let file_ref: NodeRef<HtmlInputEl> = NodeRef::new();
-    let last_sent = StoredValue::new(None::<String>);
+    let file_ref: NodeRef<leptos::html::Input> = NodeRef::new();
+    let last_sent = StoredValue::new(None::<(String, Vec<ChatAttachmentDto>)>);
 
     // Channel switch drops pending uploads; keys are channel-bound.
     Effect::new(move |_| {
@@ -40,14 +40,16 @@ pub fn Composer(
         pending.set(Vec::new());
     });
 
-    // The composer clears on send; a failed WS send would lose the text silently.
+    // The composer clears on send; a failed WS send would lose the draft silently.
     let restore_handler = ws.on_frame(move |frame| {
         if let ServerFrame::Error { code, .. } = frame
-            && matches!(code.as_str(), "send_failed" | "rate_limited")
-            && let Some(prev) = last_sent.try_update_value(Option::take).flatten()
+            && matches!(code, WsErrorCode::SendFailed | WsErrorCode::RateLimited)
+            && let Some((prev_body, prev_attachments)) =
+                last_sent.try_update_value(Option::take).flatten()
             && text.get_untracked().is_empty()
         {
-            text.set(prev);
+            text.set(prev_body);
+            pending.set(prev_attachments);
         }
     });
     on_cleanup(move || ws.off_frame(restore_handler));
@@ -63,15 +65,13 @@ pub fn Composer(
         if body.trim().is_empty() {
             return;
         }
-        let attachment_keys: Vec<String> = pending
-            .get_untracked()
-            .iter()
-            .map(|a| a.storage_key.clone())
-            .collect();
+        let attachments = pending.get_untracked();
+        let attachment_keys: Vec<String> =
+            attachments.iter().map(|a| a.storage_key.clone()).collect();
         text.set(String::new());
         pending.set(Vec::new());
         if ws.connected.get_untracked() {
-            last_sent.set_value(Some(body.clone()));
+            last_sent.set_value(Some((body.clone(), attachments)));
             ws.send(ClientFrame::SendMessage {
                 channel_id: cid,
                 body,
@@ -80,7 +80,7 @@ pub fn Composer(
             });
         } else {
             sending.set(true);
-            let restore = body.clone();
+            let restore = (body.clone(), attachments);
             task::spawn_local(async move {
                 let req = SendMessageRequest {
                     body,
@@ -91,9 +91,11 @@ pub fn Composer(
                     Ok(msg) => ws::push_message(messages, msg),
                     Err(e) => {
                         toast.error_from(&e);
-                        // Give the typed text back unless a new draft was started.
+                        // Give the typed draft back unless a new one was started.
                         if text.get_untracked().is_empty() {
-                            text.set(restore);
+                            let (prev_body, prev_attachments) = restore;
+                            text.set(prev_body);
+                            pending.set(prev_attachments);
                         }
                     }
                 }
@@ -117,6 +119,7 @@ pub fn Composer(
         };
         let form = FormData::new().expect("FormData is constructible in the browser");
         let blob: &Blob = file.as_ref();
+        // append on a fresh FormData cannot fail
         let _ = form.append_with_blob_and_filename("file", blob, &file.name());
         task::spawn_local(async move {
             match api::upload_attachment(cid, form).await {

@@ -1,6 +1,6 @@
 use leptos::{ev::Event, prelude::*};
 
-use crate::theme::{self, color, radius, space, typography};
+use crate::theme::{self, color, effect, radius, space, typography};
 
 /// Multi-line text input (request/ticket descriptions, message composer).
 /// Vertically resizable; `on_input` yields the current value on every keystroke.
@@ -10,7 +10,7 @@ pub fn Textarea(
     #[prop(optional)] on_input: Option<Callback<String>>,
     #[prop(optional, into)] placeholder: Option<String>,
     #[prop(optional)] rows: Option<u32>,
-    #[prop(optional)] disabled: bool,
+    #[prop(optional, into)] disabled: Signal<bool>,
 ) -> impl IntoView {
     let placeholder = placeholder.unwrap_or_default();
     let cls = theme::class(format!(
@@ -29,11 +29,11 @@ pub fn Textarea(
         r = radius::MD,
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
-        s = typography::SHADOW_XS,
+        s = effect::SHADOW_XS,
         phc = color::TEXT_FAINT,
         bsc = color::BORDER_STRONG,
         bfc = color::BORDER_FOCUS,
-        ring = typography::RING,
+        ring = effect::RING,
         bgd = color::BG_SUNKEN,
     ));
     let handle = move |ev: Event| {
@@ -46,7 +46,7 @@ pub fn Textarea(
             class=cls
             placeholder=placeholder
             rows=rows.unwrap_or(4)
-            disabled=disabled
+            disabled=move || disabled.get()
             prop:value=move || value.get()
             on:input=handle
         ></textarea>

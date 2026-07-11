@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use time::{Date, OffsetDateTime};
 
 use crate::dto::{
     common::UserSummaryDto,
@@ -45,7 +45,7 @@ pub struct FlexSegmentDto {
 pub struct FlexHoursDto {
     pub id: FlexHoursId,
     pub user: UserSummaryDto,
-    pub work_date: String,
+    pub work_date: Date,
     pub segments: Vec<FlexSegmentDto>,
     pub daily_hours: f64,
     pub status: FlexStatus,
@@ -69,7 +69,7 @@ pub struct FlexSegmentInput {
 /// Body of `POST /flex-hours`. Maps to `RequestFlexCommand`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestFlexRequest {
-    pub work_date: String,
+    pub work_date: Date,
     pub segments: Vec<FlexSegmentInput>,
 }
 

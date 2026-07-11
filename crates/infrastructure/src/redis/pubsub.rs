@@ -1,5 +1,4 @@
-use std::fmt::Display;
-use std::pin::Pin;
+use std::{fmt::Display, pin::Pin};
 
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
@@ -13,7 +12,7 @@ use domain::{
     },
 };
 
-use crate::redis::connect_manager;
+use super::connect;
 
 /// Namespaced key for a domain-event topic, shared so publishers and subscribers stay aligned.
 fn event_topic_key(topic: &str) -> String {
@@ -30,7 +29,7 @@ pub struct RedisEventPublisher {
 
 impl RedisEventPublisher {
     pub async fn new(url: &str) -> Result<Self, EventError> {
-        let conn = connect_manager(url).await.map_err(backend)?;
+        let conn = connect::connect_manager(url).await.map_err(backend)?;
         Ok(Self { conn })
     }
 }

@@ -10,10 +10,8 @@ use shared::dto::project::ProjectDto;
 use shared::dto::request::{CreateRequestRequest, RequestDto, RequestPriority, RequestStatus};
 use shared::validation::request;
 
-use crate::features::groups::api as groups_api;
-use crate::features::projects::api as projects_api;
 use crate::features::requests::api;
-use crate::features::requests::components::{heading, subtle};
+use crate::features::ui;
 use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::primitives::badge::Badge;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
@@ -33,59 +31,10 @@ use crate::util::debounce;
 use crate::util::format;
 use crate::util::load::{self, Loadable};
 
-const ALL_STATUSES: [RequestStatus; 7] = [
-    RequestStatus::Draft,
-    RequestStatus::Submitted,
-    RequestStatus::Assigned,
-    RequestStatus::InProgress,
-    RequestStatus::Review,
-    RequestStatus::Completed,
-    RequestStatus::Cancelled,
-];
-
-fn status_wire(s: RequestStatus) -> &'static str {
-    match s {
-        RequestStatus::Draft => "draft",
-        RequestStatus::Submitted => "submitted",
-        RequestStatus::Assigned => "assigned",
-        RequestStatus::InProgress => "in_progress",
-        RequestStatus::Review => "review",
-        RequestStatus::Completed => "completed",
-        RequestStatus::Cancelled => "cancelled",
-    }
-}
-
-fn status_from_wire(s: &str) -> Option<RequestStatus> {
-    ALL_STATUSES.into_iter().find(|st| status_wire(*st) == s)
-}
-
-fn priority_wire(p: RequestPriority) -> &'static str {
-    match p {
-        RequestPriority::Low => "low",
-        RequestPriority::Normal => "normal",
-        RequestPriority::High => "high",
-        RequestPriority::Urgent => "urgent",
-    }
-}
-
-fn priority_from_wire(s: &str) -> RequestPriority {
-    match s {
-        "low" => RequestPriority::Low,
-        "high" => RequestPriority::High,
-        "urgent" => RequestPriority::Urgent,
-        _ => RequestPriority::Normal,
-    }
-}
-
-fn short_id(id: &Uuid) -> String {
-    let s = id.to_string();
-    format!("#{}", s.get(..8).unwrap_or(&s))
-}
-
 #[component]
 pub fn RequestsIndex() -> impl IntoView {
     let status = RwSignal::new(None::<RequestStatus>);
-    let items: Loadable<Vec<RequestDto>> = RwSignal::new(None);
+    let items: Loadable<Vec<RequestDto>> = Loadable::new();
     let reload = RwSignal::new(0u32);
     let create_open = RwSignal::new(false);
     let search = RwSignal::new(String::new());
@@ -100,9 +49,14 @@ pub fn RequestsIndex() -> impl IntoView {
         );
     });
 
-    let on_status = Callback::new(move |v: String| status.set(status_from_wire(&v)));
-    let status_value =
-        Signal::derive(move || status.get().map(status_wire).unwrap_or_default().to_owned());
+    let on_status = Callback::new(move |v: String| status.set(RequestStatus::from_wire(&v)));
+    let status_value = Signal::derive(move || {
+        status
+            .get()
+            .map(RequestStatus::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    });
     let open_create = Callback::new(move |_| create_open.set(true));
     let created = Callback::new(move |()| reload.update(|n| *n += 1));
     let select_wrap = theme::class("width: 170px;");
@@ -113,8 +67,8 @@ pub fn RequestsIndex() -> impl IntoView {
             <TableWrap>
                 <TableToolbar>
                     <Stack gap=Gap::Xs>
-                        {heading("Requests assigned to you")}
-                        {subtle("Work requests where you're the assignee")}
+                        {ui::section_heading("Requests assigned to you")}
+                        {ui::subtle("Work requests where you're the assignee")}
                     </Stack>
                     <Cluster gap=Gap::Sm>
                         <div class=search_wrap>
@@ -123,8 +77,8 @@ pub fn RequestsIndex() -> impl IntoView {
                         <div class=select_wrap>
                             <Select value=status_value on_change=on_status>
                                 <option value="">"All statuses"</option>
-                                {ALL_STATUSES.into_iter().map(|s| view! {
-                                    <option value=status_wire(s)>{s.label()}</option>
+                                {RequestStatus::ALL.into_iter().map(|s| view! {
+                                    <option value=s.as_str()>{s.label()}</option>
                                 }).collect_view()}
                             </Select>
                         </div>
@@ -175,7 +129,7 @@ fn requests_table(items: Vec<RequestDto>) -> AnyView {
 
 fn request_row(r: RequestDto) -> impl IntoView {
     let href = format!("/requests/{}", r.id.0);
-    let id_label = short_id(&r.id.0);
+    let id_label = format::short_id(&r.id.0);
     let title = r.title.clone();
     let status = r.status;
     let priority = r.priority;
@@ -248,8 +202,10 @@ fn CreateRequestDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl I
 
     let on_close = Callback::new(move |()| open.set(false));
     let cancel = Callback::new(move |_| open.set(false));
-    let on_priority = Callback::new(move |v: String| priority.set(priority_from_wire(&v)));
-    let priority_value = Signal::derive(move || priority_wire(priority.get()).to_owned());
+    let on_priority = Callback::new(move |v: String| {
+        priority.set(RequestPriority::from_wire(&v).unwrap_or(RequestPriority::Normal));
+    });
+    let priority_value = Signal::derive(move || priority.get().as_str().to_owned());
 
     let submit = Callback::new(move |_| {
         if submitting.get_untracked() {
@@ -330,10 +286,9 @@ fn CreateRequestDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl I
                     <div>
                         <FieldLabel for_id="req-priority">"Priority"</FieldLabel>
                         <Select value=priority_value on_change=on_priority>
-                            <option value="low">"Low"</option>
-                            <option value="normal">"Normal"</option>
-                            <option value="high">"High"</option>
-                            <option value="urgent">"Urgent"</option>
+                            {RequestPriority::ALL.into_iter().map(|p| view! {
+                                <option value=p.as_str()>{p.label()}</option>
+                            }).collect_view()}
                         </Select>
                     </div>
                 </Stack>
@@ -351,15 +306,18 @@ fn CreateRequestDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl I
 /// Group to project cascade; writes the chosen project into `selected`.
 #[component]
 fn ProjectPicker(selected: RwSignal<Option<ProjectId>>) -> impl IntoView {
-    let groups: Loadable<Vec<GroupDto>> = RwSignal::new(None);
-    load::load(groups, groups_api::list());
+    let groups: Loadable<Vec<GroupDto>> = Loadable::new();
+    load::load(groups, crate::features::groups::api::list());
     let group = RwSignal::new(None::<GroupId>);
-    let projects: Loadable<Vec<ProjectDto>> = RwSignal::new(None);
+    let projects: Loadable<Vec<ProjectDto>> = Loadable::new();
 
     Effect::new(move |_| {
         if let Some(g) = group.get() {
             selected.set(None);
-            load::load(projects, projects_api::list_for_owner_group(g, None));
+            load::load(
+                projects,
+                crate::features::projects::api::list_for_owner_group(g, None),
+            );
         }
     });
 

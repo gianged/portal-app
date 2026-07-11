@@ -1,5 +1,6 @@
 use domain::ids::GroupId;
 
+/// Input to create a project under an owner group.
 #[derive(Debug, Clone)]
 pub struct CreateProjectCommand {
     pub owner_group_id: GroupId,

@@ -125,6 +125,7 @@ impl Project {
     /// Set the manual completion percentage. Range is enforced at the
     /// `shared`/DB boundary; here we only record the value and bump `updated_at`.
     pub fn set_progress(&mut self, progress: u8, now: OffsetDateTime) {
+        debug_assert!(progress <= 100);
         self.progress = progress;
         self.updated_at = now;
     }

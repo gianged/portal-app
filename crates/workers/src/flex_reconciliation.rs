@@ -17,7 +17,7 @@ pub async fn run(flex: Arc<FlexHoursService>, interval: std::time::Duration) {
             continue;
         }
         let year = today.year();
-        let month = u32::from(u8::from(today.month()));
+        let month = u8::from(today.month());
         match flex.emit_unreconciled(year, month).await {
             Ok(()) => tracing::info!("flex reconciliation sweep complete"),
             Err(e) => tracing::error!(error = %e, "flex reconciliation sweep failed"),

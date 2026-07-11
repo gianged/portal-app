@@ -14,8 +14,6 @@ use shared::dto::{
     },
 };
 
-use super::{project_id, request_attachment_id, request_id};
-
 #[must_use]
 pub fn request_status_dto(status: model::RequestStatus) -> WireRequestStatus {
     match status {
@@ -69,8 +67,8 @@ pub fn request_dto(
     assignee: Option<UserSummaryDto>,
 ) -> RequestDto {
     RequestDto {
-        id: request_id(request.id),
-        project_id: project_id(request.project_id),
+        id: super::request_id(request.id),
+        project_id: super::project_id(request.project_id),
         creator,
         assignee,
         title: request.title.clone(),
@@ -91,7 +89,7 @@ pub fn request_attachment_dto(
     download_url: String,
 ) -> RequestAttachmentDto {
     RequestAttachmentDto {
-        id: request_attachment_id(attachment.id),
+        id: super::request_attachment_id(attachment.id),
         filename: attachment.filename.clone(),
         content_type: attachment.content_type.clone(),
         size_bytes: attachment.size_bytes,

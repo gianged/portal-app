@@ -10,17 +10,19 @@ use shared::validation::holiday;
 use web_sys::js_sys::Date;
 
 use crate::features::holidays::api;
+use crate::features::ui;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
 use crate::primitives::input::{FieldError, FieldLabel, Input};
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
-use crate::theme::{self, color, space, typography};
+use crate::theme::{self, space};
+use crate::util::date;
 use crate::util::load::{self, Loadable};
 
 fn current_year() -> i32 {
-    Date::new_0().get_full_year() as i32
+    Date::new_0().get_full_year().cast_signed()
 }
 
 #[component]
@@ -32,7 +34,7 @@ pub fn HolidayCalendar() -> impl IntoView {
         .with(|u| u.as_ref().is_some_and(|x| matches!(x.role, UserRole::Hr)));
 
     let year = RwSignal::new(current_year());
-    let holidays: Loadable<Vec<HolidayDto>> = RwSignal::new(None);
+    let holidays: Loadable<Vec<HolidayDto>> = Loadable::new();
     let tick = RwSignal::new(0u32);
 
     Effect::new(move |_| {
@@ -102,30 +104,20 @@ pub fn HolidayCalendar() -> impl IntoView {
         "display: flex; align-items: center; justify-content: space-between; gap: {g};",
         g = space::D3,
     ));
-    let muted = theme::class(format!(
-        "font-family: {ff}; font-size: {fs}; color: {c};",
-        ff = typography::FONT_SANS,
-        fs = typography::TEXT_SMALL,
-        c = color::TEXT_MUTED,
-    ));
-    let strong = theme::class(format!(
-        "font-family: {ff}; font-weight: {fw}; color: {c};",
-        ff = typography::FONT_SANS,
-        fw = typography::WEIGHT_SEMIBOLD,
-        c = color::TEXT_STRONG,
-    ));
+    let muted = ui::muted_class();
+    let strong = ui::strong_class();
 
     view! {
         <Stack gap=Gap::Lg>
             <div class=head>
                 <div class=small.clone()>
-                    <FieldLabel for_id="hol-year".to_string()>"Year"</FieldLabel>
+                    <FieldLabel for_id="hol-year">"Year"</FieldLabel>
                     <Input
                         value=Signal::derive(move || year.get().to_string())
                         on_input=Callback::new(move |v: String| {
                             if let Ok(y) = v.trim().parse::<i32>() { year.set(y); }
                         })
-                        type_="number".to_string()
+                        type_="number"
                     />
                 </div>
             </div>
@@ -143,14 +135,14 @@ pub fn HolidayCalendar() -> impl IntoView {
                                 g = space::D3,
                             ))>
                                 <div>
-                                    <FieldLabel for_id="hol-date".to_string()>"Date"</FieldLabel>
-                                    <Input value=new_date on_input=Callback::new(move |v| new_date.set(v)) type_="date".to_string() />
+                                    <FieldLabel for_id="hol-date">"Date"</FieldLabel>
+                                    <Input value=new_date on_input=Callback::new(move |v| new_date.set(v)) type_="date" />
                                 </div>
                                 <div>
-                                    <FieldLabel for_id="hol-name".to_string()>"Name"</FieldLabel>
-                                    <Input value=new_name on_input=Callback::new(move |v| new_name.set(v)) placeholder="New Year's Day".to_string() />
+                                    <FieldLabel for_id="hol-name">"Name"</FieldLabel>
+                                    <Input value=new_name on_input=Callback::new(move |v| new_name.set(v)) placeholder="New Year's Day" />
                                 </div>
-                                <Button variant=ButtonVariant::Primary on_click=add disabled=Signal::derive(move || saving.get())>
+                                <Button variant=ButtonVariant::Primary on_click=add disabled=saving>
                                     "Add"
                                 </Button>
                             </div>
@@ -171,7 +163,7 @@ pub fn HolidayCalendar() -> impl IntoView {
                     view! {
                         <Stack gap=Gap::Sm>
                             {list.into_iter().map(|h| {
-                                let date = h.date.clone();
+                                let date = date::to_iso(h.date);
                                 let row = row.clone();
                                 let muted = muted.clone();
                                 let strong = strong.clone();
@@ -180,7 +172,7 @@ pub fn HolidayCalendar() -> impl IntoView {
                                         <div class=row>
                                             <div>
                                                 <span class=strong>{h.name}</span>
-                                                <span class=muted>{format!("  ·  {}", h.date)}</span>
+                                                <span class=muted>{format!("  ·  {date}")}</span>
                                             </div>
                                             {editable.then(|| {
                                                 let date = date.clone();

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE attendance.leave_grants g\n                   SET days_remaining = g.days_remaining + u.delta::numeric\n                   FROM UNNEST($1::uuid[], $2::float8[]) AS u(id, delta)\n                   WHERE g.id = u.id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Float8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d103b64ead76645bb1fab1f682da63a874571fdf0d6b371c76b88ff171cf7586"
+}

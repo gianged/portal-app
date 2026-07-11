@@ -44,7 +44,7 @@ impl JobSpoolDrainer {
     /// Drain-replay-ack loop. Runs forever; spawn under `supervise`.
     pub async fn run(self) {
         loop {
-            let entries = match self.spool.drain(BATCH).await {
+            let entries = match self.spool.peek(BATCH).await {
                 Ok(entries) => entries,
                 Err(e) => {
                     tracing::warn!(error = %e, "job spool drain failed");
@@ -133,10 +133,11 @@ impl JobSpoolDrainer {
     }
 }
 
-async fn push<E: Envelope>(mut storage: RedisStorage<E>, envelope: E) -> Result<(), String> {
-    storage
-        .push(envelope)
-        .await
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+/// Pushes one envelope into its apalis storage; callers map the native error
+/// at their own boundary.
+pub(crate) async fn push<E: Envelope>(
+    mut storage: RedisStorage<E>,
+    envelope: E,
+) -> Result<(), <RedisStorage<E> as Storage>::Error> {
+    storage.push(envelope).await.map(|_| ())
 }

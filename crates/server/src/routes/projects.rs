@@ -16,17 +16,20 @@ use domain::{
     ids::{GroupId, ProjectId, ProjectInviteId, UserId},
     model::{Project, ProjectInvite, ProjectStatus},
 };
-use shared::dto::project::{
-    ChangeProjectStatusRequest, CreateProjectRequest, InviteGroupRequest, ProjectDetailDto,
-    ProjectDto, ProjectInviteDto, ProjectStatus as WireProjectStatus, RespondInviteRequest,
-    SetProjectProgressRequest, UpdateProjectMetadataRequest,
+use shared::dto::{
+    ids as wire,
+    project::{
+        ChangeProjectStatusRequest, CreateProjectRequest, InviteGroupRequest, ProjectDetailDto,
+        ProjectDto, ProjectInviteDto, ProjectStatus as WireProjectStatus, RespondInviteRequest,
+        SetProjectProgressRequest, UpdateProjectMetadataRequest,
+    },
 };
 
 use crate::{
     app::AppState,
     dto,
     error::AppError,
-    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    extractors::{app_json::AppJson, auth_user::AuthUser, validated_json::ValidatedJson},
     resolve, routes,
 };
 
@@ -94,9 +97,9 @@ async fn list(
 async fn detail(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::ProjectId>,
 ) -> Result<Json<ProjectDetailDto>, AppError> {
-    let pid = ProjectId(id);
+    let pid = ProjectId(id.0);
     let project = state.project.find(auth.user_id, pid).await?;
     let collaborators = state.project.list_collaborators(auth.user_id, pid).await?;
 
@@ -111,29 +114,25 @@ async fn detail(
         .project
         .list_pending_invites_for_project(auth.user_id, pid)
         .await?;
-    let mut pending_invites = Vec::with_capacity(invites.len());
-    for invite in &invites {
-        pending_invites.push(invite_dto(&state, invite).await?);
-    }
 
     Ok(Json(ProjectDetailDto {
         project: project_dto(&state, &project).await?,
         collaborators: collaborator_dtos,
-        pending_invites,
+        pending_invites: invite_many(&state, invites).await?,
     }))
 }
 
 async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::ProjectId>,
     ValidatedJson(body): ValidatedJson<UpdateProjectMetadataRequest>,
 ) -> Result<Json<ProjectDto>, AppError> {
     let project = state
         .project
         .update_metadata(
             auth.user_id,
-            ProjectId(id),
+            ProjectId(id.0),
             dto::update_project_metadata_command(body),
         )
         .await?;
@@ -143,10 +142,10 @@ async fn update(
 async fn change_status(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
-    Json(body): Json<ChangeProjectStatusRequest>,
+    Path(id): Path<wire::ProjectId>,
+    AppJson(body): AppJson<ChangeProjectStatusRequest>,
 ) -> Result<Json<ProjectDto>, AppError> {
-    let pid = ProjectId(id);
+    let pid = ProjectId(id.0);
     let project = match body.status {
         // `Active` is reachable from Planning (activate) and OnHold (resume); pick by current state.
         WireProjectStatus::Active => {
@@ -172,12 +171,12 @@ async fn change_status(
 async fn set_progress(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::ProjectId>,
     ValidatedJson(body): ValidatedJson<SetProjectProgressRequest>,
 ) -> Result<Json<ProjectDto>, AppError> {
     let project = state
         .project
-        .set_progress(auth.user_id, ProjectId(id), body.progress)
+        .set_progress(auth.user_id, ProjectId(id.0), body.progress)
         .await?;
     Ok(Json(project_dto(&state, &project).await?))
 }
@@ -185,12 +184,12 @@ async fn set_progress(
 async fn invite(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
-    Json(body): Json<InviteGroupRequest>,
+    Path(id): Path<wire::ProjectId>,
+    AppJson(body): AppJson<InviteGroupRequest>,
 ) -> Result<Json<ProjectInviteDto>, AppError> {
     let invite = state
         .project
-        .invite_group(auth.user_id, ProjectId(id), GroupId(body.group_id.0))
+        .invite_group(auth.user_id, ProjectId(id.0), GroupId(body.group_id.0))
         .await?;
     Ok(Json(invite_dto(&state, &invite).await?))
 }
@@ -198,11 +197,11 @@ async fn invite(
 async fn remove_collaborator(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path((id, group_id)): Path<(Uuid, Uuid)>,
+    Path((id, group_id)): Path<(wire::ProjectId, wire::GroupId)>,
 ) -> Result<StatusCode, AppError> {
     state
         .project
-        .remove_collaborator(auth.user_id, ProjectId(id), GroupId(group_id))
+        .remove_collaborator(auth.user_id, ProjectId(id.0), GroupId(group_id.0))
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -216,28 +215,24 @@ async fn list_invites(
         .project
         .list_pending_invites_for_group(auth.user_id, GroupId(q.group))
         .await?;
-    let mut out = Vec::with_capacity(invites.len());
-    for invite in &invites {
-        out.push(invite_dto(&state, invite).await?);
-    }
-    Ok(Json(out))
+    Ok(Json(invite_many(&state, invites).await?))
 }
 
 async fn respond(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(invite_id): Path<Uuid>,
-    Json(body): Json<RespondInviteRequest>,
+    Path(invite_id): Path<wire::ProjectInviteId>,
+    AppJson(body): AppJson<RespondInviteRequest>,
 ) -> Result<Json<ProjectInviteDto>, AppError> {
     let invite = if body.accept {
         state
             .project
-            .accept_invite(auth.user_id, ProjectInviteId(invite_id))
+            .accept_invite(auth.user_id, ProjectInviteId(invite_id.0))
             .await?
     } else {
         state
             .project
-            .decline_invite(auth.user_id, ProjectInviteId(invite_id))
+            .decline_invite(auth.user_id, ProjectInviteId(invite_id.0))
             .await?
     };
     Ok(Json(invite_dto(&state, &invite).await?))
@@ -246,11 +241,11 @@ async fn respond(
 async fn revoke(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(invite_id): Path<Uuid>,
+    Path(invite_id): Path<wire::ProjectInviteId>,
 ) -> Result<Json<ProjectInviteDto>, AppError> {
     let invite = state
         .project
-        .revoke_invite(auth.user_id, ProjectInviteId(invite_id))
+        .revoke_invite(auth.user_id, ProjectInviteId(invite_id.0))
         .await?;
     Ok(Json(invite_dto(&state, &invite).await?))
 }
@@ -283,6 +278,36 @@ async fn project_many(
                 p,
                 resolve::group_summary_from(&groups, p.owner_group_id),
                 resolve::summary_from(&users, p.created_by_user_id),
+            )
+        })
+        .collect())
+}
+
+/// Resolves a batch of invites, deduplicating group + user lookups.
+async fn invite_many(
+    state: &AppState,
+    invites: Vec<ProjectInvite>,
+) -> Result<Vec<ProjectInviteDto>, AppError> {
+    let mut gids: Vec<GroupId> = Vec::with_capacity(invites.len());
+    let mut uids: Vec<UserId> = Vec::with_capacity(invites.len() * 2);
+    for i in &invites {
+        gids.push(i.invited_group_id);
+        uids.push(i.invited_by_user_id);
+        if let Some(responder) = i.responded_by_user_id {
+            uids.push(responder);
+        }
+    }
+    let groups = resolve::group_map(&state.group, gids).await?;
+    let users = resolve::user_map(&state.user, &state.group, uids).await?;
+    Ok(invites
+        .iter()
+        .map(|i| {
+            dto::project_invite_dto(
+                i,
+                resolve::summary_from(&users, i.invited_by_user_id),
+                resolve::group_summary_from(&groups, i.invited_group_id),
+                i.responded_by_user_id
+                    .map(|r| resolve::summary_from(&users, r)),
             )
         })
         .collect())

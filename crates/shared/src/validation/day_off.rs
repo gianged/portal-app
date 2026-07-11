@@ -7,22 +7,20 @@ use crate::{
     },
 };
 
-/// Validates a leave request: well-formed dates with `end >= start`, sensible
-/// half-day flags, and a bounded reason. The past-date rule (allowed only for
-/// backdatable kinds) is enforced server-side against the real clock.
+/// Validates a leave request: `end >= start`, sensible half-day flags, and a
+/// bounded reason. The past-date rule (allowed only for backdatable kinds) is
+/// enforced server-side against the real clock.
 ///
 /// # Errors
-/// Returns [`SharedError::Validation`] on a malformed date, an end before the
-/// start, both half flags on a single-day request, or an over-long reason.
+/// Returns [`SharedError::Validation`] on an end before the start, both half
+/// flags on a single-day request, or an over-long reason.
 pub fn validate_day_off(req: &CreateDayOffRequest) -> Result<(), SharedError> {
-    let start = common::iso_date("Start date", &req.start_date)?;
-    let end = common::iso_date("End date", &req.end_date)?;
-    if end < start {
+    if req.end_date < req.start_date {
         return Err(SharedError::Validation(
             "End date must not be before the start date".into(),
         ));
     }
-    if start == end && req.start_half && req.end_half {
+    if req.start_date == req.end_date && req.start_half && req.end_half {
         return Err(SharedError::Validation(
             "Use a single half-day flag for a one-day request".into(),
         ));

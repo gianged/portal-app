@@ -1,12 +1,12 @@
-use std::{fmt::Display, sync::LazyLock};
+use std::{fmt::Display, sync::LazyLock, time::Duration};
 
 use async_trait::async_trait;
 use redis::{AsyncCommands, Script, aio::ConnectionManager};
 use uuid::Uuid;
 
-use domain::{error::RepositoryError, ids::UserId, ports::token_revocation::TokenRevocation};
+use domain::{error::TokenRevocationError, ids::UserId, ports::token_revocation::TokenRevocation};
 
-use crate::redis::connect_manager;
+use super::connect;
 
 /// Redis-backed: per-token denylist entries that expire with the token, plus a
 /// per-user version counter whose TTL refreshes on every read/bump.
@@ -36,8 +36,8 @@ static GET_WITH_TTL: LazyLock<Script> = LazyLock::new(|| {
 });
 
 impl RedisTokenRevocation {
-    pub async fn new(url: &str, version_ttl_secs: u64) -> Result<Self, RepositoryError> {
-        let conn = connect_manager(url).await.map_err(backend)?;
+    pub async fn new(url: &str, version_ttl_secs: u64) -> Result<Self, TokenRevocationError> {
+        let conn = connect::connect_manager(url).await.map_err(backend)?;
         Ok(Self {
             conn,
             version_ttl_secs: i64::try_from(version_ttl_secs).unwrap_or(i64::MAX),
@@ -47,9 +47,10 @@ impl RedisTokenRevocation {
 
 #[async_trait]
 impl TokenRevocation for RedisTokenRevocation {
-    #[tracing::instrument(skip_all, fields(ttl_secs = ?ttl_secs))]
-    async fn revoke(&self, jti: Uuid, ttl_secs: u64) -> Result<(), RepositoryError> {
+    #[tracing::instrument(skip_all, fields(ttl = ?ttl))]
+    async fn revoke(&self, jti: Uuid, ttl: Duration) -> Result<(), TokenRevocationError> {
         // Past-expiry tokens need no entry, and Redis rejects SET EX 0.
+        let ttl_secs = ttl.as_secs();
         if ttl_secs == 0 {
             return Ok(());
         }
@@ -62,13 +63,13 @@ impl TokenRevocation for RedisTokenRevocation {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn is_revoked(&self, jti: Uuid) -> Result<bool, RepositoryError> {
+    async fn is_revoked(&self, jti: Uuid) -> Result<bool, TokenRevocationError> {
         let mut conn = self.conn.clone();
         conn.exists(denylist_key(jti)).await.map_err(backend)
     }
 
     #[tracing::instrument(skip_all, fields(user = ?user))]
-    async fn version(&self, user: UserId) -> Result<u64, RepositoryError> {
+    async fn version(&self, user: UserId) -> Result<u64, TokenRevocationError> {
         let mut conn = self.conn.clone();
         GET_WITH_TTL
             .key(version_key(user))
@@ -79,7 +80,7 @@ impl TokenRevocation for RedisTokenRevocation {
     }
 
     #[tracing::instrument(skip_all, fields(user = ?user))]
-    async fn bump_version(&self, user: UserId) -> Result<u64, RepositoryError> {
+    async fn bump_version(&self, user: UserId) -> Result<u64, TokenRevocationError> {
         let mut conn = self.conn.clone();
         INCR_WITH_TTL
             .key(version_key(user))
@@ -98,6 +99,6 @@ fn version_key(user: UserId) -> String {
     format!("portal:auth:tokenver:{}", user.0)
 }
 
-fn backend<E: Display>(e: E) -> RepositoryError {
-    RepositoryError::Backend(e.to_string())
+fn backend<E: Display>(e: E) -> TokenRevocationError {
+    TokenRevocationError::Backend(e.to_string())
 }

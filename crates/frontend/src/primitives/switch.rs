@@ -2,7 +2,7 @@
 
 use leptos::prelude::*;
 
-use crate::theme::{self, color, radius, typography};
+use crate::theme::{self, color, effect, radius};
 
 /// A controlled on/off toggle. The parent owns the `on` signal; `on_change`
 /// yields the toggled value.
@@ -21,7 +21,7 @@ pub fn Switch(
         pill = radius::PILL,
         bs = color::BORDER_STRONG,
         knob = color::TEXT_ON_ACCENT,
-        sh = typography::SHADOW_XS,
+        sh = effect::SHADOW_XS,
     ));
     let on_cls = theme::class(format!(
         "background: {a} !important; &::after {{ transform: translateX(14px); }}",

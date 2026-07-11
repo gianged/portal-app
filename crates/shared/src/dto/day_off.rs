@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use time::{Date, OffsetDateTime};
 
 use crate::dto::{common::UserSummaryDto, ids::DayOffId};
 
@@ -15,6 +15,15 @@ pub enum DayOffKind {
 }
 
 impl DayOffKind {
+    /// Every variant, for building select options.
+    pub const ALL: [Self; 5] = [
+        Self::AnnualLeave,
+        Self::SickLeave,
+        Self::UnpaidLeave,
+        Self::Remote,
+        Self::Other,
+    ];
+
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -24,6 +33,24 @@ impl DayOffKind {
             Self::Remote => "Remote",
             Self::Other => "Other",
         }
+    }
+
+    /// Canonical wire string (the serde `snake_case` tag).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::AnnualLeave => "annual_leave",
+            Self::SickLeave => "sick_leave",
+            Self::UnpaidLeave => "unpaid_leave",
+            Self::Remote => "remote",
+            Self::Other => "other",
+        }
+    }
+
+    /// Parses a wire string produced by [`Self::as_str`].
+    #[must_use]
+    pub fn from_wire(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|v| v.as_str() == s)
     }
 
     /// Annual leave needs leader then HR; everything else is leader-only.
@@ -76,8 +103,8 @@ pub struct DayOffDto {
     pub id: DayOffId,
     pub requester: UserSummaryDto,
     pub kind: DayOffKind,
-    pub start_date: String,
-    pub end_date: String,
+    pub start_date: Date,
+    pub end_date: Date,
     pub start_half: bool,
     pub end_half: bool,
     pub days: f64,
@@ -100,8 +127,8 @@ pub struct DayOffDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateDayOffRequest {
     pub kind: DayOffKind,
-    pub start_date: String,
-    pub end_date: String,
+    pub start_date: Date,
+    pub end_date: Date,
     #[serde(default)]
     pub start_half: bool,
     #[serde(default)]
@@ -116,4 +143,20 @@ pub struct DecideDayOffRequest {
     pub approve: bool,
     #[serde(default)]
     pub note: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DayOffKind;
+
+    #[test]
+    fn wire_helpers_match_serde() {
+        for k in DayOffKind::ALL {
+            assert_eq!(
+                serde_json::to_string(&k).unwrap(),
+                format!("\"{}\"", k.as_str())
+            );
+            assert_eq!(DayOffKind::from_wire(k.as_str()), Some(k));
+        }
+    }
 }

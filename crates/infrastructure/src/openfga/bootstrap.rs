@@ -1,4 +1,6 @@
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+use std::time::Duration;
+
+use percent_encoding::NON_ALPHANUMERIC;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -16,8 +18,11 @@ pub async fn resolve_config(
     bearer_token: Option<String>,
 ) -> Result<OpenFgaConfig, AuthzError> {
     let endpoint = endpoint.trim_end_matches('/').to_string();
+    // Bounded like every other backend client so a stalled OpenFGA cannot hang boot.
     let http = Client::builder()
         .tls_backend_rustls()
+        .connect_timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(10))
         .build()
         .map_err(|e| AuthzError::Backend(e.to_string()))?;
 
@@ -56,7 +61,7 @@ async fn ensure_store(
         }
         match list.continuation_token.filter(|t| !t.is_empty()) {
             Some(token) => {
-                let token = utf8_percent_encode(&token, NON_ALPHANUMERIC);
+                let token = percent_encoding::utf8_percent_encode(&token, NON_ALPHANUMERIC);
                 url = format!("{endpoint}/stores?page_size=100&continuation_token={token}");
             }
             None => break,

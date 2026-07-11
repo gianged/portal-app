@@ -19,7 +19,6 @@ const HOURS_SANITY_MAX: f64 = 1_000.0;
 /// Returns [`SharedError::Validation`] when `hours` is not positive (or absurdly
 /// large) or the reason is over-long.
 pub fn validate_overtime(req: &CreateOvertimeRequest) -> Result<(), SharedError> {
-    common::iso_date("Work date", &req.work_date)?;
     if req.hours <= 0.0 {
         return Err(SharedError::Validation(
             "Hours must be greater than 0".into(),

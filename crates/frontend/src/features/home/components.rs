@@ -1,10 +1,8 @@
-#![allow(dead_code)] // TODO: UserCard unused, I will see it
-
 use leptos::{prelude::*, task};
 use leptos_router::{NavigateOptions, components::A, hooks};
 
 use crate::api::ws::WsClient;
-use crate::features::auth::api as auth_api;
+use crate::features::auth::api;
 use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::primitives::button::{Button, ButtonVariant};
 use crate::primitives::cluster::Cluster;
@@ -568,7 +566,7 @@ fn UserMenu() -> impl IntoView {
             // Stop the socket first: revoking the session mid-connection would
             // otherwise race the reconnect loop while logout is in flight.
             ws.stop();
-            if let Err(e) = auth_api::logout().await {
+            if let Err(e) = api::logout().await {
                 toast.error_from(&e);
             }
             auth.clear();
@@ -587,7 +585,7 @@ fn UserMenu() -> impl IntoView {
         <div class=trigger_cls>
             {move || {
                 let (name, role) = auth.user.with(|u| match u {
-                    Some(user) => (user.name.clone(), user.role.label().to_owned()),
+                    Some(user) => (user.full_name.clone(), user.role.label().to_owned()),
                     None => ("Account".to_owned(), String::new()),
                 });
                 let tone = format::tone_for(&name);
@@ -610,7 +608,7 @@ fn UserMenu() -> impl IntoView {
         <Dropdown trigger=trigger>
             <div class=meta_cls.clone()>
                 <div class=menu_name_cls.clone()>
-                    {move || auth.user.with(|u| u.as_ref().map_or_else(String::new, |x| x.name.clone()))}
+                    {move || auth.user.with(|u| u.as_ref().map_or_else(String::new, |x| x.full_name.clone()))}
                 </div>
                 <div class=email_cls.clone()>
                     {move || auth.user.with(|u| u.as_ref().map_or_else(String::new, |x| x.email.clone()))}
@@ -669,32 +667,5 @@ pub fn Hero(#[prop(into)] greeting: String, #[prop(into)] subtitle: String) -> i
                 <p class=p>{subtitle}</p>
             </div>
         </div>
-    }
-}
-
-#[component]
-pub fn UserCard(#[prop(into)] name: String, #[prop(into)] role: String) -> impl IntoView {
-    let name_cls = theme::class(format!(
-        "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c};",
-        ff = typography::FONT_SANS,
-        fs = typography::TEXT_SMALL,
-        fw = typography::WEIGHT_SEMIBOLD,
-        c = color::TEXT_STRONG,
-    ));
-    let role_cls = theme::class(format!(
-        "font-family: {ff}; font-size: {fs}; color: {c};",
-        ff = typography::FONT_SANS,
-        fs = typography::TEXT_CAPTION,
-        c = color::TEXT_MUTED,
-    ));
-
-    view! {
-        <Cluster gap=Gap::Sm>
-            <Avatar name=name.clone() size=AvatarSize::Md tone=format::tone_for(&name) />
-            <div>
-                <div class=name_cls>{name}</div>
-                <div class=role_cls>{role}</div>
-            </div>
-        </Cluster>
     }
 }

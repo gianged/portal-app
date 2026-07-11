@@ -11,17 +11,17 @@ use axum::{
     routing,
 };
 use serde::Deserialize;
-use time::OffsetDateTime;
 use uuid::Uuid;
 
 use application::commands::request::AddAttachmentCommand;
 use domain::{
     ids::{CommentId, ProjectId, RequestId, UserId},
-    model::{Comment, CommentEntity, Request},
+    model::{CommentEntity, Request},
     ports::file_storage::FileStorage,
 };
 use shared::dto::{
     comment::{CommentDto, CreateCommentRequest, UpdateCommentRequest},
+    ids as wire,
     request::{
         AssignRequestRequest, CreateRequestRequest, RequestAttachmentDto, RequestDetailDto,
         RequestDto, RequestStatus, SetRequestProgressRequest, UpdateRequestRequest,
@@ -32,8 +32,12 @@ use crate::{
     app::AppState,
     dto,
     error::AppError,
-    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
-    resolve, routes,
+    extractors::{app_json::AppJson, auth_user::AuthUser, validated_json::ValidatedJson},
+    resolve,
+    routes::{
+        self,
+        comments::{self, CommentsQuery},
+    },
 };
 
 /// Upload cap for a single attachment (the default axum body limit is 2 MiB).
@@ -68,108 +72,59 @@ pub fn router() -> Router<AppState> {
         )
 }
 
-#[derive(Deserialize)]
-struct CommentsQuery {
-    /// Exclusive newest-first cursor (a comment id).
-    before: Option<Uuid>,
-    limit: Option<u32>,
+fn entity(id: wire::RequestId) -> CommentEntity {
+    CommentEntity::Request {
+        request_id: RequestId(id.0),
+    }
 }
 
 async fn list_comments(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::RequestId>,
     Query(q): Query<CommentsQuery>,
 ) -> Result<Json<Vec<CommentDto>>, AppError> {
-    let entity = CommentEntity::Request {
-        request_id: RequestId(id),
-    };
-    let before = q.before.map(CommentId);
-    let limit = q.limit.unwrap_or(50).clamp(1, 200);
-    let comments = state
-        .comment
-        .list(auth.user_id, entity, before, limit)
-        .await?;
-    comments_to_dtos(&state, auth.user_id, comments).await
+    Ok(Json(
+        comments::list(&state, auth.user_id, entity(id), &q).await?,
+    ))
 }
 
 async fn add_comment(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::RequestId>,
     ValidatedJson(body): ValidatedJson<CreateCommentRequest>,
 ) -> Result<Json<CommentDto>, AppError> {
-    let entity = CommentEntity::Request {
-        request_id: RequestId(id),
-    };
-    let comment = state.comment.add(auth.user_id, entity, body.body).await?;
-    comment_to_dto(&state, auth.user_id, &comment).await
+    Ok(Json(
+        comments::add(&state, auth.user_id, entity(id), body.body).await?,
+    ))
 }
 
 async fn edit_comment(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path((id, comment_id)): Path<(Uuid, Uuid)>,
+    Path((id, comment_id)): Path<(wire::RequestId, wire::CommentId)>,
     ValidatedJson(body): ValidatedJson<UpdateCommentRequest>,
 ) -> Result<Json<CommentDto>, AppError> {
-    let entity = CommentEntity::Request {
-        request_id: RequestId(id),
-    };
-    let comment = state
-        .comment
-        .edit(auth.user_id, entity, CommentId(comment_id), body.body)
-        .await?;
-    comment_to_dto(&state, auth.user_id, &comment).await
+    Ok(Json(
+        comments::edit(
+            &state,
+            auth.user_id,
+            entity(id),
+            CommentId(comment_id.0),
+            body.body,
+        )
+        .await?,
+    ))
 }
 
 async fn delete_comment(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path((id, comment_id)): Path<(Uuid, Uuid)>,
+    Path((id, comment_id)): Path<(wire::RequestId, wire::CommentId)>,
 ) -> Result<StatusCode, AppError> {
-    let entity = CommentEntity::Request {
-        request_id: RequestId(id),
-    };
-    state
-        .comment
-        .remove(auth.user_id, entity, CommentId(comment_id))
-        .await?;
+    comments::remove(&state, auth.user_id, entity(id), CommentId(comment_id.0)).await?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-/// Resolves one comment's author summary.
-async fn comment_to_dto(
-    state: &AppState,
-    viewer: UserId,
-    comment: &Comment,
-) -> Result<Json<CommentDto>, AppError> {
-    let author = resolve::user_summary(&state.user, &state.group, comment.author_user_id).await?;
-    let now = OffsetDateTime::now_utc();
-    Ok(Json(dto::comment_dto(comment, author, viewer, now)))
-}
-
-/// Resolves a page of comments with one deduped author lookup.
-async fn comments_to_dtos(
-    state: &AppState,
-    viewer: UserId,
-    comments: Vec<Comment>,
-) -> Result<Json<Vec<CommentDto>>, AppError> {
-    let authors = resolve::user_map(
-        &state.user,
-        &state.group,
-        comments.iter().map(|c| c.author_user_id),
-    )
-    .await?;
-    let now = OffsetDateTime::now_utc();
-    Ok(Json(
-        comments
-            .iter()
-            .map(|c| {
-                let author = resolve::summary_from(&authors, c.author_user_id);
-                dto::comment_dto(c, author, viewer, now)
-            })
-            .collect(),
-    ))
 }
 
 #[derive(Deserialize)]
@@ -226,9 +181,9 @@ async fn list(
 async fn detail(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::RequestId>,
 ) -> Result<Json<RequestDetailDto>, AppError> {
-    let rid = RequestId(id);
+    let rid = RequestId(id.0);
     let request = state.request.find(auth.user_id, rid).await?;
     let project = state.project.find(auth.user_id, request.project_id).await?;
     let owner_group = resolve::group_summary(&state.group, project.owner_group_id).await?;
@@ -260,14 +215,14 @@ async fn detail(
 async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::RequestId>,
     ValidatedJson(body): ValidatedJson<UpdateRequestRequest>,
 ) -> Result<Json<RequestDto>, AppError> {
     let request = state
         .request
         .update_metadata(
             auth.user_id,
-            RequestId(id),
+            RequestId(id.0),
             dto::update_request_command(body),
         )
         .await?;
@@ -277,21 +232,25 @@ async fn update(
 async fn submit(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::RequestId>,
 ) -> Result<Json<RequestDto>, AppError> {
-    let request = state.request.submit(auth.user_id, RequestId(id)).await?;
+    let request = state.request.submit(auth.user_id, RequestId(id.0)).await?;
     Ok(Json(single(&state, &request).await?))
 }
 
 async fn assign(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
-    Json(body): Json<AssignRequestRequest>,
+    Path(id): Path<wire::RequestId>,
+    AppJson(body): AppJson<AssignRequestRequest>,
 ) -> Result<Json<RequestDto>, AppError> {
     let request = state
         .request
-        .assign(auth.user_id, RequestId(id), UserId(body.assignee_user_id.0))
+        .assign(
+            auth.user_id,
+            RequestId(id.0),
+            UserId(body.assignee_user_id.0),
+        )
         .await?;
     Ok(Json(single(&state, &request).await?))
 }
@@ -299,20 +258,20 @@ async fn assign(
 async fn start(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::RequestId>,
 ) -> Result<Json<RequestDto>, AppError> {
-    let request = state.request.start(auth.user_id, RequestId(id)).await?;
+    let request = state.request.start(auth.user_id, RequestId(id.0)).await?;
     Ok(Json(single(&state, &request).await?))
 }
 
 async fn review(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::RequestId>,
 ) -> Result<Json<RequestDto>, AppError> {
     let request = state
         .request
-        .send_for_review(auth.user_id, RequestId(id))
+        .send_for_review(auth.user_id, RequestId(id.0))
         .await?;
     Ok(Json(single(&state, &request).await?))
 }
@@ -320,39 +279,39 @@ async fn review(
 async fn approve(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::RequestId>,
 ) -> Result<Json<RequestDto>, AppError> {
-    let request = state.request.approve(auth.user_id, RequestId(id)).await?;
+    let request = state.request.approve(auth.user_id, RequestId(id.0)).await?;
     Ok(Json(single(&state, &request).await?))
 }
 
 async fn reject(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::RequestId>,
 ) -> Result<Json<RequestDto>, AppError> {
-    let request = state.request.reject(auth.user_id, RequestId(id)).await?;
+    let request = state.request.reject(auth.user_id, RequestId(id.0)).await?;
     Ok(Json(single(&state, &request).await?))
 }
 
 async fn cancel(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::RequestId>,
 ) -> Result<Json<RequestDto>, AppError> {
-    let request = state.request.cancel(auth.user_id, RequestId(id)).await?;
+    let request = state.request.cancel(auth.user_id, RequestId(id.0)).await?;
     Ok(Json(single(&state, &request).await?))
 }
 
 async fn set_progress(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::RequestId>,
     ValidatedJson(body): ValidatedJson<SetRequestProgressRequest>,
 ) -> Result<Json<RequestDto>, AppError> {
     let request = state
         .request
-        .set_progress(auth.user_id, RequestId(id), body.progress)
+        .set_progress(auth.user_id, RequestId(id.0), body.progress)
         .await?;
     Ok(Json(single(&state, &request).await?))
 }
@@ -360,7 +319,7 @@ async fn set_progress(
 async fn add_attachment(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::RequestId>,
     mut multipart: Multipart,
 ) -> Result<Json<RequestAttachmentDto>, AppError> {
     let (filename, content_type, bytes) = routes::read_upload_field(&mut multipart).await?;
@@ -369,7 +328,7 @@ async fn add_attachment(
         .request
         .add_attachment(
             auth.user_id,
-            RequestId(id),
+            RequestId(id.0),
             AddAttachmentCommand {
                 filename,
                 content_type,

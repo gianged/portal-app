@@ -11,8 +11,6 @@ use shared::dto::{
     },
 };
 
-use super::{project_collaborator_id, project_id, project_invite_id};
-
 #[must_use]
 pub fn project_status_dto(status: model::ProjectStatus) -> WireProjectStatus {
     match status {
@@ -41,7 +39,7 @@ pub fn project_dto(
     created_by: UserSummaryDto,
 ) -> ProjectDto {
     ProjectDto {
-        id: project_id(project.id),
+        id: super::project_id(project.id),
         owner_group,
         created_by,
         name: project.name.clone(),
@@ -59,7 +57,7 @@ pub fn project_collaborator_dto(
     group: GroupSummaryDto,
 ) -> ProjectCollaboratorDto {
     ProjectCollaboratorDto {
-        id: project_collaborator_id(collaborator.id),
+        id: super::project_collaborator_id(collaborator.id),
         group,
         created_at: collaborator.created_at,
     }
@@ -73,8 +71,8 @@ pub fn project_invite_dto(
     responded_by: Option<UserSummaryDto>,
 ) -> ProjectInviteDto {
     ProjectInviteDto {
-        id: project_invite_id(invite.id),
-        project_id: project_id(invite.project_id),
+        id: super::project_invite_id(invite.id),
+        project_id: super::project_id(invite.project_id),
         invited_by,
         invited_group,
         responded_by,

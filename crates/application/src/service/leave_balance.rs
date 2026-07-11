@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::{
     commands::leave_balance::{AdjustBalanceCommand, SetLeaveGrantCommand},
-    error::{Error, Result},
+    error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
     service::policy::PolicyProvider,
@@ -72,7 +72,7 @@ impl LeaveBalanceService {
         let (grant, prev_granted) = match existing {
             Some(g) => {
                 let consumed = (g.days_granted - g.days_remaining).max(0.0);
-                let remaining = (cmd.days_granted - consumed).clamp(0.0, cmd.days_granted);
+                let remaining = (cmd.days_granted - consumed).max(0.0);
                 (
                     LeaveGrant {
                         days_granted: cmd.days_granted,
@@ -144,8 +144,9 @@ impl LeaveBalanceService {
             .await?
             .into_iter()
             .next()
-            .ok_or(Error::Conflict("no_leave_grant".into()))?;
+            .ok_or(Error::Conflict(ConflictCode::NoLeaveGrant))?;
 
+        let prev_remaining = grant.days_remaining;
         grant.days_remaining = (grant.days_remaining + cmd.delta).max(0.0);
         if grant.days_remaining > grant.days_granted {
             grant.days_granted = grant.days_remaining;
@@ -153,12 +154,13 @@ impl LeaveBalanceService {
         grant.updated_at = now;
         self.leave.upsert_grant(&grant).await?;
 
+        // Ledger the delta actually applied; the zero clamp may shrink it.
         let txn = LeaveTransaction {
             id: LeaveTransactionId(Uuid::now_v7()),
             user_id: cmd.user_id,
             grant_id: grant.id,
             kind: LeaveTxnKind::Adjust,
-            delta: cmd.delta,
+            delta: grant.days_remaining - prev_remaining,
             dayoff_id: None,
             work_pct: None,
             reason: cmd.reason,
@@ -187,13 +189,25 @@ impl LeaveBalanceService {
         Ok(self.leave.available(user, asof).await?)
     }
 
-    /// The user's grants, newest year first. Ungated; callers authorize first.
+    /// Days available to `target` as of `asof`, gated to self, a leader of the
+    /// member, or HR.
     ///
     /// # Errors
-    /// Returns a repository error if the datastore is unavailable.
-    #[tracing::instrument(skip_all, fields(user = ?user))]
-    pub async fn grants(&self, user: UserId) -> Result<Vec<LeaveGrant>> {
-        Ok(self.leave.list_grants(user).await?)
+    /// Returns `Forbidden` if the actor may not view the target's balance, or a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, target = ?target))]
+    pub async fn balance_of(&self, actor: UserId, target: UserId, asof: Date) -> Result<f64> {
+        self.require_can_view(actor, target).await?;
+        Ok(self.leave.available(target, asof).await?)
+    }
+
+    /// `target`'s grants, newest year first, gated like [`Self::balance_of`].
+    ///
+    /// # Errors
+    /// Returns `Forbidden` if the actor may not view the target's balance, or a repository error if the datastore is unavailable.
+    #[tracing::instrument(skip_all, fields(actor = ?actor, target = ?target))]
+    pub async fn grants_of(&self, actor: UserId, target: UserId) -> Result<Vec<LeaveGrant>> {
+        self.require_can_view(actor, target).await?;
+        Ok(self.leave.list_grants(target).await?)
     }
 
     /// Grants plus the ledger entries in `[from, to]`. Ungated; callers authorize.
@@ -219,10 +233,8 @@ impl LeaveBalanceService {
     /// # Errors
     /// Returns `Validation` if `month` is out of range, or a repository error if a backend is unavailable.
     #[tracing::instrument(skip_all, fields(user = ?user, year, month))]
-    pub async fn work_percentage(&self, user: UserId, year: i32, month: u32) -> Result<f64> {
-        let month_u8 =
-            u8::try_from(month).map_err(|_| Error::Validation("invalid month".into()))?;
-        let m = Month::try_from(month_u8).map_err(|_| Error::Validation("invalid month".into()))?;
+    pub async fn work_percentage(&self, user: UserId, year: i32, month: u8) -> Result<f64> {
+        let m = Month::try_from(month).map_err(|_| Error::Validation("invalid month".into()))?;
         let first = Date::from_calendar_date(year, m, 1)
             .map_err(|_| Error::Validation("invalid month".into()))?;
         let last = Date::from_calendar_date(year, m, m.length(year))
@@ -262,7 +274,7 @@ impl LeaveBalanceService {
         }
         let grants = self.leave.list_grants(user).await?;
         let deltas = model::allocate_fifo(&grants, days, now.date())
-            .map_err(|_| Error::Conflict("insufficient_leave_balance".into()))?;
+            .map_err(|_| Error::Conflict(ConflictCode::InsufficientLeaveBalance))?;
         if deltas.is_empty() {
             return Ok(());
         }
@@ -349,7 +361,7 @@ impl LeaveBalanceService {
             if g.expires_on <= asof {
                 let work_pct = if record_pct {
                     let year = g.expires_on.year();
-                    let month = u32::from(u8::from(g.expires_on.month()));
+                    let month = u8::from(g.expires_on.month());
                     Some(self.work_percentage(g.user_id, year, month).await?)
                 } else {
                     None
@@ -381,5 +393,16 @@ impl LeaveBalanceService {
             self.leave.apply(&deltas, &txns).await?;
         }
         Ok(())
+    }
+
+    /// Self always; otherwise a leader of the member or HR.
+    async fn require_can_view(&self, actor: UserId, target: UserId) -> Result<()> {
+        if actor == target {
+            return Ok(());
+        }
+        if self.perms.is_leader_of_member(actor, target).await? || self.perms.is_hr(actor).await? {
+            return Ok(());
+        }
+        Err(Error::Forbidden)
     }
 }

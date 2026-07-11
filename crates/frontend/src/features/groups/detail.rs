@@ -25,26 +25,10 @@ use crate::theme::{self, color, space, typography};
 use crate::util::format;
 use crate::util::load::{self, Loadable};
 
-fn role_wire(r: GroupRole) -> &'static str {
-    match r {
-        GroupRole::Leader => "leader",
-        GroupRole::SubLeader => "sub_leader",
-        GroupRole::Member => "member",
-    }
-}
-
-fn role_from_wire(s: &str) -> GroupRole {
-    match s {
-        "leader" => GroupRole::Leader,
-        "sub_leader" => GroupRole::SubLeader,
-        _ => GroupRole::Member,
-    }
-}
-
 #[component]
 pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
-    let detail: Loadable<GroupDetailDto> = RwSignal::new(None);
+    let detail: Loadable<GroupDetailDto> = Loadable::new();
     let reload = RwSignal::new(0u32);
     let add_open = RwSignal::new(false);
     let transfer_open = RwSignal::new(false);
@@ -152,10 +136,11 @@ fn roster_card(
     open_add: Callback<MouseEvent>,
     open_transfer: Callback<MouseEvent>,
 ) -> AnyView {
-    let mut rows: Vec<AnyView> = Vec::new();
-    for m in &detail.members {
-        rows.push(member_row(m, change_role, remove));
-    }
+    let rows = detail
+        .members
+        .iter()
+        .map(|m| member_row(m, change_role, remove))
+        .collect_view();
     view! {
         <Card>
             <Stack gap=Gap::Md>
@@ -205,13 +190,15 @@ fn member_row(
         view! { <Badge variant=BadgeVariant::Accent><Icon name=IconName::Crown size=10 /> "Leader"</Badge> }
             .into_any()
     } else {
-        let on_role = Callback::new(move |v: String| change_role(uid, role_from_wire(&v)));
-        let role_value = Signal::derive(move || role_wire(role).to_owned());
+        let on_role = Callback::new(move |v: String| {
+            change_role(uid, GroupRole::from_wire(&v).unwrap_or(GroupRole::Member));
+        });
+        let role_value = Signal::derive(move || role.as_str().to_owned());
         view! {
             <div class=select_wrap.clone()>
                 <Select value=role_value on_change=on_role>
-                    <option value="sub_leader">"Sub-leader"</option>
-                    <option value="member">"Member"</option>
+                    <option value=GroupRole::SubLeader.as_str()>"Sub-leader"</option>
+                    <option value=GroupRole::Member.as_str()>"Member"</option>
                 </Select>
             </div>
             <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm on_click=remove_cb>"Remove"</Button>
@@ -238,14 +225,20 @@ fn AddMemberDialog(
     let toast = use_context::<ToastState>().expect("ToastState context");
     let target = RwSignal::new(None::<UserId>);
     let role = RwSignal::new(GroupRole::Member);
+    let submitting = RwSignal::new(false);
 
     let on_close = Callback::new(move |()| open.set(false));
     let cancel = Callback::new(move |_| open.set(false));
     let on_select = Callback::new(move |u: UserId| target.set(Some(u)));
-    let on_role = Callback::new(move |v: String| role.set(role_from_wire(&v)));
-    let role_value = Signal::derive(move || role_wire(role.get()).to_owned());
+    let on_role = Callback::new(move |v: String| {
+        role.set(GroupRole::from_wire(&v).unwrap_or(GroupRole::Member));
+    });
+    let role_value = Signal::derive(move || role.get().as_str().to_owned());
 
     let confirm = Callback::new(move |_| {
+        if submitting.get_untracked() {
+            return;
+        }
         let Some(uid) = target.get_untracked() else {
             toast.error("Pick a person to add.");
             return;
@@ -253,20 +246,22 @@ fn AddMemberDialog(
         let Some(gid) = id.get_untracked() else {
             return;
         };
-        open.set(false);
         let req = AddMemberRequest {
             user_id: uid,
             role: role.get_untracked(),
         };
+        submitting.set(true);
         task::spawn_local(async move {
             match api::add_member(gid, &req).await {
                 Ok(_) => {
                     toast.success("Member added");
                     target.set(None);
+                    open.set(false);
                     on_added.run(());
                 }
                 Err(e) => toast.error_from(&e),
             }
+            submitting.set(false);
         });
     });
 
@@ -282,15 +277,15 @@ fn AddMemberDialog(
                     <div>
                         <FieldLabel for_id="add-role">"Role"</FieldLabel>
                         <Select value=role_value on_change=on_role>
-                            <option value="member">"Member"</option>
-                            <option value="sub_leader">"Sub-leader"</option>
+                            <option value=GroupRole::Member.as_str()>"Member"</option>
+                            <option value=GroupRole::SubLeader.as_str()>"Sub-leader"</option>
                         </Select>
                     </div>
                 </Stack>
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=confirm>"Add member"</Button>
+                <Button variant=ButtonVariant::Primary on_click=confirm disabled=submitting>"Add member"</Button>
             </DialogFooter>
         </Dialog>
     }
@@ -305,12 +300,16 @@ fn TransferDialog(
 ) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
     let target = RwSignal::new(None::<UserId>);
+    let submitting = RwSignal::new(false);
 
     let on_close = Callback::new(move |()| open.set(false));
     let cancel = Callback::new(move |_| open.set(false));
     let on_select = Callback::new(move |u: UserId| target.set(Some(u)));
 
     let confirm = Callback::new(move |_| {
+        if submitting.get_untracked() {
+            return;
+        }
         let Some(to) = target.get_untracked() else {
             toast.error("Pick the new leader.");
             return;
@@ -322,16 +321,18 @@ fn TransferDialog(
         let Some(gid) = id.get_untracked() else {
             return;
         };
-        open.set(false);
+        submitting.set(true);
         task::spawn_local(async move {
             match api::transfer_leadership(gid, from, to).await {
                 Ok(()) => {
                     toast.success("Leadership transferred");
                     target.set(None);
+                    open.set(false);
                     on_transferred.run(());
                 }
                 Err(e) => toast.error_from(&e),
             }
+            submitting.set(false);
         });
     });
 
@@ -343,7 +344,7 @@ fn TransferDialog(
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=confirm>"Transfer"</Button>
+                <Button variant=ButtonVariant::Primary on_click=confirm disabled=submitting>"Transfer"</Button>
             </DialogFooter>
         </Dialog>
     }

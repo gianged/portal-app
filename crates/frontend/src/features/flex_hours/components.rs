@@ -14,13 +14,13 @@ use shared::dto::flex_hours::{
 use shared::dto::group::GroupDto;
 use shared::dto::ids::GroupId;
 use shared::dto::policy::PolicyDto;
-use shared::dto::user::UserRole;
 use shared::validation::flex_hours;
 use shared::validation::policy;
 
 use crate::features::flex_hours::api;
 use crate::features::groups::api as groups_api;
 use crate::features::policy::api as policy_api;
+use crate::features::ui;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
 use crate::primitives::input::{FieldError, FieldLabel, Input};
@@ -28,45 +28,29 @@ use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
-use crate::theme::{self, color, space, typography};
-use crate::util::date::{days_ago_iso, today_iso};
+use crate::theme::{self, space};
+use crate::util::date;
 use crate::util::load::{self, Loadable};
 
 // --- date + time helpers ---
 
 /// Current `(year, month)` from the browser clock.
-fn current_year_month() -> (i32, u32) {
+fn current_year_month() -> (i32, u8) {
     let d = Date::new_0();
-    (d.get_full_year() as i32, d.get_month() + 1)
+    (
+        d.get_full_year().cast_signed(),
+        u8::try_from(d.get_month() + 1).unwrap_or(1),
+    )
 }
 
-fn current_month_prefix() -> String {
-    let (y, m) = current_year_month();
-    format!("{y:04}-{m:02}")
+fn in_month(date: time::Date, year: i32, month: u8) -> bool {
+    date.year() == year && u8::from(date.month()) == month
 }
 
 /// Minutes-since-midnight of a `"HH:MM"` string, or `None` if malformed.
 fn hhmm_min(s: &str) -> Option<u16> {
     let (h, m) = policy::parse_hhmm(s)?;
     Some(u16::from(h) * 60 + u16::from(m))
-}
-
-fn muted_cls() -> String {
-    theme::class(format!(
-        "font-family: {ff}; font-size: {fs}; color: {c};",
-        ff = typography::FONT_SANS,
-        fs = typography::TEXT_SMALL,
-        c = color::TEXT_MUTED,
-    ))
-}
-
-fn strong_cls() -> String {
-    theme::class(format!(
-        "font-family: {ff}; font-weight: {fw}; color: {c};",
-        ff = typography::FONT_SANS,
-        fw = typography::WEIGHT_SEMIBOLD,
-        c = color::TEXT_STRONG,
-    ))
 }
 
 fn segs_summary(f: &FlexHoursDto) -> String {
@@ -99,27 +83,26 @@ fn make_row(key: usize, start: &str, end: &str) -> SegRow {
 pub fn FlexHours() -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
 
-    let work_date = RwSignal::new(today_iso());
+    let work_date = RwSignal::new(date::today_iso());
     let rows = RwSignal::new(vec![make_row(0, "08:00", "17:00")]);
     let next_key = RwSignal::new(1usize);
     let err = RwSignal::new(None::<String>);
     let saving = RwSignal::new(false);
 
-    let mine: Loadable<Vec<FlexHoursDto>> = RwSignal::new(None);
+    let mine: Loadable<Vec<FlexHoursDto>> = Loadable::new();
     let tick = RwSignal::new(0u32);
     Effect::new(move |_| {
         let _ = tick.get();
-        let from = days_ago_iso(120.0);
-        let to = days_ago_iso(-365.0);
+        let (from, to) = date::attendance_window();
         load::load(mine, async move { api::list_mine(&from, &to).await });
     });
 
     // Policy supplies the segment cap, core window and daily band for the hints.
-    let policy: Loadable<PolicyDto> = RwSignal::new(None);
+    let policy: Loadable<PolicyDto> = Loadable::new();
     Effect::new(move |_| load::load(policy, policy_api::get_policy()));
 
     // Running monthly settlement delta for the current month.
-    let delta: Loadable<FlexMonthDeltaDto> = RwSignal::new(None);
+    let delta: Loadable<FlexMonthDeltaDto> = Loadable::new();
     Effect::new(move |_| {
         let _ = tick.get();
         let (year, month) = current_year_month();
@@ -153,8 +136,12 @@ pub fn FlexHours() -> impl IntoView {
                 end: r.end.get_untracked(),
             })
             .collect();
+        let Some(wd) = date::from_iso(&work_date.get_untracked()) else {
+            err.set(Some("Pick a valid work date".into()));
+            return;
+        };
         let req = RequestFlexRequest {
-            work_date: work_date.get_untracked(),
+            work_date: wd,
             segments,
         };
         // Client check against the loaded policy, if available.
@@ -194,8 +181,8 @@ pub fn FlexHours() -> impl IntoView {
             .sum()
     };
 
-    let muted_hint = muted_cls();
-    let muted_quota = muted_cls();
+    let muted_hint = ui::muted_class();
+    let muted_quota = ui::muted_class();
     let row_layout = theme::class(format!(
         "display: grid; grid-template-columns: 1fr 1fr auto; gap: {g}; align-items: end;",
         g = space::D3,
@@ -238,8 +225,8 @@ pub fn FlexHours() -> impl IntoView {
                     }
 
                     <div>
-                        <FieldLabel for_id="flex-date".to_string()>"Work date"</FieldLabel>
-                        <Input value=work_date on_input=Callback::new(move |v| work_date.set(v)) type_="date".to_string() />
+                        <FieldLabel for_id="flex-date">"Work date"</FieldLabel>
+                        <Input value=work_date on_input=Callback::new(move |v| work_date.set(v)) type_="date" />
                     </div>
 
                     {
@@ -254,12 +241,12 @@ pub fn FlexHours() -> impl IntoView {
                                 view! {
                                     <div class=row_layout.clone()>
                                         <div>
-                                            <FieldLabel for_id="flex-start".to_string()>"Start"</FieldLabel>
-                                            <Input value=r.start on_input=Callback::new(move |v| r.start.set(v)) type_="time".to_string() />
+                                            <FieldLabel for_id="flex-start">"Start"</FieldLabel>
+                                            <Input value=r.start on_input=Callback::new(move |v| r.start.set(v)) type_="time" />
                                         </div>
                                         <div>
-                                            <FieldLabel for_id="flex-end".to_string()>"End"</FieldLabel>
-                                            <Input value=r.end on_input=Callback::new(move |v| r.end.set(v)) type_="time".to_string() />
+                                            <FieldLabel for_id="flex-end">"End"</FieldLabel>
+                                            <Input value=r.end on_input=Callback::new(move |v| r.end.set(v)) type_="time" />
                                         </div>
                                         {allow_remove.then(|| view! {
                                             <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm on_click=Callback::new(remove)>
@@ -280,7 +267,7 @@ pub fn FlexHours() -> impl IntoView {
 
                     {move || err.get().map(|m| view! { <FieldError message=m /> })}
                     <div>
-                        <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || saving.get())>
+                        <Button variant=ButtonVariant::Primary on_click=submit disabled=saving>
                             {move || if saving.get() { "Requesting..." } else { "Request flex hours" }}
                         </Button>
                     </div>
@@ -294,9 +281,9 @@ pub fn FlexHours() -> impl IntoView {
                         let muted = muted.clone();
                         let quota = match (policy.get(), mine.get()) {
                             (Some(Ok(p)), Some(Ok(list))) => {
-                                let prefix = current_month_prefix();
+                                let (y, m) = current_year_month();
                                 let used = list.iter().filter(|f| {
-                                    matches!(f.status, FlexStatus::Approved) && f.work_date.starts_with(&prefix)
+                                    matches!(f.status, FlexStatus::Approved) && in_month(f.work_date, y, m)
                                 }).count();
                                 let left = usize::from(p.flex_max_per_month).saturating_sub(used);
                                 Some(format!("Flex days left this month: {left} of {}", p.flex_max_per_month))
@@ -318,7 +305,7 @@ pub fn FlexHours() -> impl IntoView {
             </Card>
 
             <Stack gap=Gap::Sm>
-                <SectionTitle title="My flexible hours" />
+                {ui::eyebrow_title("My flexible hours")}
                 {move || match mine.get() {
                     None => load::note("Loading..."),
                     Some(Err(e)) => load::load_error(&e),
@@ -397,11 +384,11 @@ fn MyRow(flex: FlexHoursDto, on_changed: Callback<()>) -> impl IntoView {
         "display: flex; align-items: center; justify-content: space-between; gap: {g};",
         g = space::D3,
     ));
-    let muted = muted_cls();
-    let strong = strong_cls();
+    let muted = ui::muted_class();
+    let strong = ui::strong_class();
     let line = format!(
         "{} · {:.2}h · {}",
-        flex.work_date,
+        date::to_iso(flex.work_date),
         flex.daily_hours,
         segs_summary(&flex)
     );
@@ -415,7 +402,7 @@ fn MyRow(flex: FlexHoursDto, on_changed: Callback<()>) -> impl IntoView {
                 </div>
                 {cancellable.then(|| view! {
                     <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm
-                        on_click=Callback::new(cancel) disabled=Signal::derive(move || busy.get())>
+                        on_click=Callback::new(cancel) disabled=busy>
                         "Cancel"
                     </Button>
                 })}
@@ -429,14 +416,8 @@ fn MyRow(flex: FlexHoursDto, on_changed: Callback<()>) -> impl IntoView {
 #[component]
 pub fn Approvals() -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");
-    let show_leader = auth.user.with(|u| {
-        u.as_ref().is_some_and(|x| {
-            matches!(
-                x.role,
-                UserRole::GroupLeader | UserRole::Director | UserRole::Hr
-            )
-        })
-    });
+    // Leader queue is per-group membership on the server; the flattened role stays display-only.
+    let show_leader = auth.leads_any_group();
 
     view! {
         <Stack gap=Gap::Lg>
@@ -460,7 +441,7 @@ fn LeaderQueue() -> impl IntoView {
     });
 
     let group = RwSignal::new(String::new());
-    let queue: Loadable<Vec<FlexHoursDto>> = RwSignal::new(None);
+    let queue: Loadable<Vec<FlexHoursDto>> = Loadable::new();
     let tick = RwSignal::new(0u32);
     Effect::new(move |_| {
         let _ = tick.get();
@@ -474,9 +455,9 @@ fn LeaderQueue() -> impl IntoView {
 
     view! {
         <Stack gap=Gap::Sm>
-            <SectionTitle title="Leader queue" />
+            {ui::eyebrow_title("Leader queue")}
             <div class=theme::class("min-width: 220px; max-width: 320px;")>
-                <FieldLabel for_id="flex-grp".to_string()>"Group"</FieldLabel>
+                <FieldLabel for_id="flex-grp">"Group"</FieldLabel>
                 <Select value=group on_change=Callback::new(move |v| group.set(v))>
                     <option value="">"- select group -"</option>
                     {move || groups.get().into_iter().map(|g| {
@@ -533,11 +514,11 @@ fn DecideCard(flex: FlexHoursDto, on_done: Callback<()>) -> impl IntoView {
         });
     };
 
-    let muted = muted_cls();
-    let strong = strong_cls();
+    let muted = ui::muted_class();
+    let strong = ui::strong_class();
     let line = format!(
         "{} · {:.2}h · {}",
-        flex.work_date,
+        date::to_iso(flex.work_date),
         flex.daily_hours,
         segs_summary(&flex)
     );
@@ -549,29 +530,18 @@ fn DecideCard(flex: FlexHoursDto, on_done: Callback<()>) -> impl IntoView {
                     <span class=strong>{flex.user.full_name.clone()}</span>
                     <span class=muted.clone()>{format!("  ·  {line}")}</span>
                 </div>
-                <Input value=note on_input=Callback::new(move |v| note.set(v)) placeholder="Decision note (optional)".to_string() />
+                <Input value=note on_input=Callback::new(move |v| note.set(v)) placeholder="Decision note (optional)" />
                 <div class=theme::class(format!("display: flex; gap: {g};", g = space::D2))>
                     <Button variant=ButtonVariant::Primary size=ButtonSize::Sm
-                        on_click=Callback::new(move |_| decide(true)) disabled=Signal::derive(move || busy.get())>
+                        on_click=Callback::new(move |_| decide(true)) disabled=busy>
                         "Approve"
                     </Button>
                     <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm
-                        on_click=Callback::new(move |_| decide(false)) disabled=Signal::derive(move || busy.get())>
+                        on_click=Callback::new(move |_| decide(false)) disabled=busy>
                         "Reject"
                     </Button>
                 </div>
             </Stack>
         </Card>
     }
-}
-
-#[component]
-fn SectionTitle(title: &'static str) -> impl IntoView {
-    let cls = theme::class(format!(
-        "font-size: {fs}; font-weight: {fw}; color: {c}; text-transform: uppercase; letter-spacing: 0.04em;",
-        fs = typography::TEXT_LABEL,
-        fw = typography::WEIGHT_SEMIBOLD,
-        c = color::TEXT_MUTED,
-    ));
-    view! { <div class=cls>{title}</div> }
 }

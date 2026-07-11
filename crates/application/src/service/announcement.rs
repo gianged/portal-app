@@ -120,6 +120,11 @@ impl AnnouncementService {
         let now = OffsetDateTime::now_utc();
         announcement.edit(body, now)?;
         self.chats.save_announcement(&announcement).await?;
+        // Keep the dual-written chat timeline copy in sync with the rail.
+        if let Some(mut message) = self.chats.find_message(channel_id, announcement_id).await? {
+            message.edit(announcement.body.clone(), now);
+            self.chats.save_message(&message).await?;
+        }
         self.events
             .emit(DomainEvent::AnnouncementEdited {
                 announcement_id,
@@ -132,13 +137,14 @@ impl AnnouncementService {
         Ok(announcement)
     }
 
-    /// Deletes an announcement. The author or any HR user may delete it.
+    /// Deletes an announcement. The author may delete it within the edit grace
+    /// period; HR may delete it at any time as moderation.
     ///
     /// # Errors
-    /// Returns `Forbidden` if the actor is not active or is neither the author
-    /// nor HR, `NotFound` if the announcement does not exist, a repository error
-    /// if the datastore or authz backend is unavailable, or an event error if the
-    /// event bus fails.
+    /// Returns `Forbidden` if the actor is not active, is not the author within
+    /// the grace period, and is not HR, `NotFound` if the announcement does not
+    /// exist, a repository error if the datastore or authz backend is
+    /// unavailable, or an event error if the event bus fails.
     #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id, announcement_id = ?announcement_id))]
     pub async fn delete(
         &self,
@@ -152,10 +158,12 @@ impl AnnouncementService {
             .find_announcement(channel_id, announcement_id)
             .await?
             .ok_or(Error::NotFound("announcement"))?;
-        if announcement.sender_user_id != actor && !self.perms.is_hr(actor).await? {
+        let now = OffsetDateTime::now_utc();
+        let author_within_grace =
+            announcement.sender_user_id == actor && announcement.within_edit_grace(now);
+        if !author_within_grace && !self.perms.is_hr(actor).await? {
             return Err(Error::Forbidden);
         }
-        let now = OffsetDateTime::now_utc();
         self.chats
             .delete_announcement(channel_id, announcement_id)
             .await?;

@@ -11,7 +11,6 @@ use shared::dto::project::{
 };
 use shared::validation::project;
 
-use crate::features::groups::api as groups_api;
 use crate::features::projects::api;
 use crate::features::ui;
 use crate::primitives::badge::Badge;
@@ -36,11 +35,11 @@ use crate::util::load::{self, Loadable};
 #[component]
 pub fn ProjectsIndex() -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");
-    let groups: Loadable<Vec<GroupDto>> = RwSignal::new(None);
-    load::load(groups, groups_api::list());
+    let groups: Loadable<Vec<GroupDto>> = Loadable::new();
+    load::load(groups, crate::features::groups::api::list());
     let group = RwSignal::new(None::<GroupId>);
-    let projects: Loadable<Vec<ProjectDto>> = RwSignal::new(None);
-    let invites: Loadable<Vec<ProjectInviteDto>> = RwSignal::new(None);
+    let projects: Loadable<Vec<ProjectDto>> = Loadable::new();
+    let invites: Loadable<Vec<ProjectInviteDto>> = Loadable::new();
     let reload = RwSignal::new(0u32);
     let create_open = RwSignal::new(false);
     let search = RwSignal::new(String::new());

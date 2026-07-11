@@ -8,19 +8,21 @@ use axum::{
     http::StatusCode,
     routing,
 };
-use uuid::Uuid;
 
 use domain::ids::{GroupId, UserId};
-use shared::dto::group::{
-    AddMemberRequest, ChangeMemberRoleRequest, CreateGroupRequest, GroupDetailDto, GroupDto,
-    MembershipDto, TransferLeadershipRequest, UpdateGroupRequest,
+use shared::dto::{
+    group::{
+        AddMemberRequest, ChangeMemberRoleRequest, CreateGroupRequest, GroupDetailDto, GroupDto,
+        MembershipDto, TransferLeadershipRequest, UpdateGroupRequest,
+    },
+    ids as wire,
 };
 
 use crate::{
     app::AppState,
     dto,
     error::AppError,
-    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    extractors::{app_json::AppJson, auth_user::AuthUser, validated_json::ValidatedJson},
     resolve,
 };
 
@@ -68,14 +70,14 @@ async fn list(
 async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::GroupId>,
     ValidatedJson(body): ValidatedJson<UpdateGroupRequest>,
 ) -> Result<Json<GroupDto>, AppError> {
     let group = state
         .group
         .update_metadata(
             auth.user_id,
-            GroupId(id),
+            GroupId(id.0),
             dto::update_group_metadata_command(body),
         )
         .await?;
@@ -86,9 +88,9 @@ async fn update(
 async fn detail(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::GroupId>,
 ) -> Result<Json<GroupDetailDto>, AppError> {
-    let gid = GroupId(id);
+    let gid = GroupId(id.0);
     let group = state
         .group
         .find(gid)
@@ -118,14 +120,14 @@ async fn detail(
 async fn add_member(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
-    Json(body): Json<AddMemberRequest>,
+    Path(id): Path<wire::GroupId>,
+    AppJson(body): AppJson<AddMemberRequest>,
 ) -> Result<Json<MembershipDto>, AppError> {
     let membership = state
         .group
         .add_membership(
             auth.user_id,
-            dto::add_membership_command(GroupId(id), &body),
+            dto::add_membership_command(GroupId(id.0), &body),
         )
         .await?;
     let user = resolve::user_summary(&state.user, &state.group, membership.user_id).await?;
@@ -135,15 +137,15 @@ async fn add_member(
 async fn change_role(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path((id, user_id)): Path<(Uuid, Uuid)>,
-    Json(body): Json<ChangeMemberRoleRequest>,
+    Path((id, user_id)): Path<(wire::GroupId, wire::UserId)>,
+    AppJson(body): AppJson<ChangeMemberRoleRequest>,
 ) -> Result<Json<MembershipDto>, AppError> {
     let membership = state
         .group
         .change_role(
             auth.user_id,
-            GroupId(id),
-            UserId(user_id),
+            GroupId(id.0),
+            UserId(user_id.0),
             dto::group_role_domain(body.role),
         )
         .await?;
@@ -154,11 +156,11 @@ async fn change_role(
 async fn remove_member(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path((id, user_id)): Path<(Uuid, Uuid)>,
+    Path((id, user_id)): Path<(wire::GroupId, wire::UserId)>,
 ) -> Result<StatusCode, AppError> {
     state
         .group
-        .deactivate_membership(auth.user_id, GroupId(id), UserId(user_id))
+        .deactivate_membership(auth.user_id, GroupId(id.0), UserId(user_id.0))
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -166,8 +168,8 @@ async fn remove_member(
 async fn transfer_leadership(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
-    Json(body): Json<TransferLeadershipRequest>,
+    Path(id): Path<wire::GroupId>,
+    AppJson(body): AppJson<TransferLeadershipRequest>,
 ) -> Result<StatusCode, AppError> {
     if body.from_user_id == body.to_user_id {
         return Err(AppError::Validation(
@@ -178,7 +180,7 @@ async fn transfer_leadership(
         .group
         .transfer_leadership(
             auth.user_id,
-            GroupId(id),
+            GroupId(id.0),
             UserId(body.from_user_id.0),
             UserId(body.to_user_id.0),
         )

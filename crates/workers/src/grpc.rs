@@ -4,7 +4,6 @@
 
 use std::net::SocketAddr;
 
-use apalis::prelude::Storage;
 use apalis_redis::RedisStorage;
 
 use domain::ports::job_queue::{QUEUE_AUDIT, QUEUE_EMAILS, QUEUE_NOTIFICATIONS};
@@ -15,10 +14,13 @@ use proto::{
         EnqueueRequest, EnqueueResponse,
         jobs_server::{Jobs, JobsServer},
     },
-    tonic::{Request, Response, Status, transport::Server},
-    tonic_health::server as health_server,
+    tonic::{self, Request, Response, Status, transport::Server},
+    tonic_health::server,
 };
 
+use crate::job_spool;
+
+/// Jobs service backed by the three local apalis storages.
 pub struct GrpcJobs {
     notifications: RedisStorage<NotificationEnvelope>,
     audit: RedisStorage<AuditEnvelope>,
@@ -26,6 +28,7 @@ pub struct GrpcJobs {
 }
 
 impl GrpcJobs {
+    /// Wraps the storages the enqueue handler pushes into.
     pub fn new(
         notifications: RedisStorage<NotificationEnvelope>,
         audit: RedisStorage<AuditEnvelope>,
@@ -39,7 +42,7 @@ impl GrpcJobs {
     }
 }
 
-#[proto::tonic::async_trait]
+#[tonic::async_trait]
 impl Jobs for GrpcJobs {
     async fn enqueue(
         &self,
@@ -60,7 +63,7 @@ impl Jobs for GrpcJobs {
                 .await?;
             }
             QUEUE_AUDIT => {
-                push(self.audit.clone(), AuditEnvelope::new(payload, traceparent)).await?
+                push(self.audit.clone(), AuditEnvelope::new(payload, traceparent)).await?;
             }
             QUEUE_EMAILS => {
                 push(
@@ -75,18 +78,16 @@ impl Jobs for GrpcJobs {
     }
 }
 
-async fn push<E: Envelope>(mut storage: RedisStorage<E>, envelope: E) -> Result<(), Status> {
-    storage
-        .push(envelope)
+async fn push<E: Envelope>(storage: RedisStorage<E>, envelope: E) -> Result<(), Status> {
+    job_spool::push(storage, envelope)
         .await
-        .map(|_| ())
         .map_err(|e| Status::unavailable(e.to_string()))
 }
 
 /// Serves `Jobs` (token-gated) plus the standard gRPC health service (open, so
 /// the server's probe needs no credentials). Resolves on the shutdown signal.
 pub async fn serve(jobs: GrpcJobs, addr: SocketAddr, token: &str) -> anyhow::Result<()> {
-    let (health_reporter, health_service) = health_server::health_reporter();
+    let (health_reporter, health_service) = server::health_reporter();
     health_reporter.set_serving::<JobsServer<GrpcJobs>>().await;
     tracing::info!(%addr, "workers grpc listening");
     Server::builder()

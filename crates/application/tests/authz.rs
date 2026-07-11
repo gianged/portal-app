@@ -10,25 +10,27 @@
 use std::sync::{Arc, Mutex};
 
 use application::{
-    ChatService, Error, EventBus, GroupService, Permissions, ProjectService, TicketService,
+    ChatService, Error, EventBus, GroupService, LeaveBalanceService, Permissions, PolicyProvider,
+    ProjectService, TicketService,
     commands::{
         group::{AddMembershipCommand, CreateGroupCommand},
         project::CreateProjectCommand,
         ticket::RaiseTicketCommand,
     },
+    error::ConflictCode,
 };
 use async_trait::async_trait;
 use domain::{
-    error::{AuthzError, EventError, JobError, RepositoryError, StorageError},
+    error::{AuthzError, EventError, JobError, RepositoryError, StorageError, TransitionError},
     ids::{
-        ChannelId, GroupId, MembershipId, MessageId, ProjectCollaboratorId, ProjectId,
-        ProjectInviteId, RequestId, TicketId, UserId,
+        ChannelId, DayOffId, GroupId, LeaveGrantId, MembershipId, MessageId, ProjectCollaboratorId,
+        ProjectId, ProjectInviteId, RequestId, TicketId, UserId,
     },
     model::{
-        Announcement, Channel, ChannelKind, ChannelMembership, ChatAttachment, Group, GroupKind,
-        GroupRole, Membership, Message, Project, ProjectCollaborator, ProjectInvite, Request,
-        RequestAttachment, RequestStatus, SystemRole, Ticket, TicketCategory, TicketStatus, User,
-        UserStatus,
+        Announcement, AttendancePolicy, Channel, ChannelKind, ChannelMembership, ChatAttachment,
+        DayOff, Group, GroupKind, GroupRole, Holiday, LeaveGrant, LeaveTransaction, Membership,
+        Message, Project, ProjectCollaborator, ProjectInvite, Request, RequestAttachment,
+        RequestStatus, SystemRole, Ticket, TicketCategory, TicketStatus, User, UserStatus,
     },
     ports::{
         authz_client::{AuthzClient, RelationTuple},
@@ -37,11 +39,12 @@ use domain::{
         job_queue::JobQueue,
     },
     repository::{
-        ChatAttachmentRepository, ChatRepository, GroupRepository, ProjectRepository,
-        RequestRepository, TicketRepository, UserRepository,
+        ChatAttachmentRepository, ChatRepository, DayOffRepository, GroupRepository,
+        HolidayRepository, LeaveBalanceRepository, ProjectRepository, RequestRepository,
+        TicketRepository, UserRepository,
     },
 };
-use time::{Duration, OffsetDateTime};
+use time::{Date, Duration, OffsetDateTime};
 use uuid::Uuid;
 
 // --- recording fake authz client ----------------------------------------------
@@ -235,9 +238,16 @@ impl GroupRepository for FakeGroups {
     }
     async fn list_active_memberships_for_user(
         &self,
-        _user_id: UserId,
+        user_id: UserId,
     ) -> Result<Vec<Membership>, RepositoryError> {
-        Ok(Vec::new())
+        Ok(self
+            .memberships
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|m| m.deactivated_at.is_none() && m.user_id == user_id)
+            .cloned()
+            .collect())
     }
     async fn list_active_memberships_for_users(
         &self,
@@ -653,6 +663,101 @@ fn events() -> Arc<EventBus> {
     ))
 }
 
+struct FakeLeave;
+
+#[async_trait]
+impl LeaveBalanceRepository for FakeLeave {
+    async fn list_grants(&self, _user: UserId) -> Result<Vec<LeaveGrant>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn available(&self, _user: UserId, _asof: Date) -> Result<f64, RepositoryError> {
+        Ok(5.0)
+    }
+    async fn upsert_grant(&self, _grant: &LeaveGrant) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+    async fn apply(
+        &self,
+        _grant_deltas: &[(LeaveGrantId, f64)],
+        _txns: &[LeaveTransaction],
+    ) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+    async fn list_expiring(
+        &self,
+        _asof: Date,
+        _within_days: i64,
+    ) -> Result<Vec<LeaveGrant>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn list_transactions(
+        &self,
+        _user: UserId,
+        _from: Date,
+        _to: Date,
+    ) -> Result<Vec<LeaveTransaction>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn transactions_for_dayoff(
+        &self,
+        _dayoff_id: DayOffId,
+    ) -> Result<Vec<LeaveTransaction>, RepositoryError> {
+        Ok(Vec::new())
+    }
+}
+
+struct FakeHolidays;
+
+#[async_trait]
+impl HolidayRepository for FakeHolidays {
+    async fn list(&self, _from: Date, _to: Date) -> Result<Vec<Holiday>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn upsert(&self, _date: Date, _name: &str) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+    async fn delete(&self, _date: Date) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+}
+
+struct FakeDayOffs;
+
+#[async_trait]
+impl DayOffRepository for FakeDayOffs {
+    async fn find_by_id(&self, _id: DayOffId) -> Result<Option<DayOff>, RepositoryError> {
+        Ok(None)
+    }
+    async fn list_for_user(
+        &self,
+        _user: UserId,
+        _from: Date,
+        _to: Date,
+    ) -> Result<Vec<DayOff>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn approved_days_in_month(
+        &self,
+        _user: UserId,
+        _year: i32,
+        _month: u8,
+    ) -> Result<f64, RepositoryError> {
+        Ok(0.0)
+    }
+    async fn list_pending_for_leader(
+        &self,
+        _group: GroupId,
+    ) -> Result<Vec<DayOff>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn list_pending_for_hr(&self) -> Result<Vec<DayOff>, RepositoryError> {
+        Ok(Vec::new())
+    }
+    async fn save(&self, _day_off: &DayOff) -> Result<(), RepositoryError> {
+        Ok(())
+    }
+}
+
 fn has(writes: &[Tuple], subject: &str, relation: &str, object: &str) -> bool {
     writes
         .iter()
@@ -931,7 +1036,7 @@ async fn invariant_group_has_one_leader() {
         .await
         .unwrap_err();
     assert!(
-        matches!(err, Error::Conflict(ref m) if m == "group_already_has_leader"),
+        matches!(err, Error::Conflict(ConflictCode::GroupAlreadyHasLeader)),
         "a second leader must be rejected, got {err:?}"
     );
 }
@@ -975,7 +1080,7 @@ async fn invariant_one_membership_per_user_per_group() {
         .await
         .unwrap_err();
     assert!(
-        matches!(err, Error::Conflict(ref m) if m == "user_already_member"),
+        matches!(err, Error::Conflict(ConflictCode::UserAlreadyMember)),
         "a duplicate membership must be rejected, got {err:?}"
     );
 }
@@ -1057,7 +1162,10 @@ async fn direct_message_validation() {
         .await
         .unwrap_err();
     assert!(
-        matches!(inactive_err, Error::Conflict(ref m) if m == "recipient_not_active"),
+        matches!(
+            inactive_err,
+            Error::Conflict(ConflictCode::RecipientNotActive)
+        ),
         "got {inactive_err:?}"
     );
 }
@@ -1099,7 +1207,62 @@ async fn invariant_ticket_reopen_window() {
     }
     let err = svc.reopen(requester.id, ticket_id).await.unwrap_err();
     assert!(
-        matches!(err, Error::Conflict(ref m) if m == "reopen_window_expired"),
+        matches!(err, Error::Transition(TransitionError::ReopenWindowExpired)),
         "an expired reopen window must be rejected, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn leave_balance_views_gated_to_self_leader_or_hr() {
+    let target = user(None);
+    let leader = user(None);
+    let hr = user(Some(SystemRole::Hr));
+    let outsider = user(None);
+
+    let users = Arc::new(FakeUsers::default());
+    for u in [&target, &leader, &hr, &outsider] {
+        users.users.lock().unwrap().push((*u).clone());
+    }
+    let g = group(GroupKind::Standard);
+    let groups = Arc::new(FakeGroups::default());
+    groups.groups.lock().unwrap().push(g.clone());
+    {
+        let mut m = groups.memberships.lock().unwrap();
+        m.push(membership(g.id, target.id, GroupRole::Member));
+        m.push(membership(g.id, leader.id, GroupRole::Leader));
+    }
+
+    let perms = Arc::new(Permissions::new(
+        users,
+        groups,
+        Arc::new(FakeAuthz::default()),
+    ));
+    let svc = LeaveBalanceService::new(
+        Arc::new(FakeLeave),
+        Arc::new(FakeHolidays),
+        Arc::new(FakeDayOffs),
+        Arc::new(PolicyProvider::new(AttendancePolicy::default())),
+        perms,
+        events(),
+    );
+
+    let asof = OffsetDateTime::now_utc().date();
+    assert!(svc.balance_of(target.id, target.id, asof).await.is_ok());
+    assert!(svc.balance_of(leader.id, target.id, asof).await.is_ok());
+    assert!(svc.balance_of(hr.id, target.id, asof).await.is_ok());
+    assert!(svc.grants_of(hr.id, target.id).await.is_ok());
+
+    let err = svc
+        .balance_of(outsider.id, target.id, asof)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Forbidden),
+        "an unrelated member must not view another user's balance, got {err:?}"
+    );
+    let err = svc.grants_of(outsider.id, target.id).await.unwrap_err();
+    assert!(
+        matches!(err, Error::Forbidden),
+        "an unrelated member must not view another user's grants, got {err:?}"
     );
 }

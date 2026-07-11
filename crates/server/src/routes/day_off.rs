@@ -7,20 +7,24 @@ use axum::{
     routing,
 };
 use serde::Deserialize;
+use time::Date;
 use uuid::Uuid;
 
 use domain::{
     ids::{DayOffId, GroupId, UserId},
     model::DayOff,
 };
-use shared::dto::day_off::{CreateDayOffRequest, DayOffDto, DecideDayOffRequest};
+use shared::dto::{
+    day_off::{CreateDayOffRequest, DayOffDto, DecideDayOffRequest},
+    ids as wire,
+};
 
 use crate::{
     app::AppState,
     dto,
     error::AppError,
     extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
-    resolve, routes,
+    resolve,
 };
 
 pub fn router() -> Router<AppState> {
@@ -38,8 +42,8 @@ pub fn router() -> Router<AppState> {
 
 #[derive(Deserialize)]
 struct RangeQuery {
-    from: String,
-    to: String,
+    from: Date,
+    to: Date,
 }
 
 #[derive(Deserialize)]
@@ -52,9 +56,7 @@ async fn create(
     auth: AuthUser,
     ValidatedJson(body): ValidatedJson<CreateDayOffRequest>,
 ) -> Result<Json<DayOffDto>, AppError> {
-    let start = routes::parse_date(&body.start_date)?;
-    let end = routes::parse_date(&body.end_date)?;
-    let cmd = dto::create_day_off_command(start, end, body);
+    let cmd = dto::create_day_off_command(body);
     let day_off = state.day_off.create(auth.user_id, cmd).await?;
     Ok(Json(single(&state, &day_off).await?))
 }
@@ -64,9 +66,7 @@ async fn list_mine(
     auth: AuthUser,
     Query(q): Query<RangeQuery>,
 ) -> Result<Json<Vec<DayOffDto>>, AppError> {
-    let from = routes::parse_date(&q.from)?;
-    let to = routes::parse_date(&q.to)?;
-    let list = state.day_off.list_mine(auth.user_id, from, to).await?;
+    let list = state.day_off.list_mine(auth.user_id, q.from, q.to).await?;
     Ok(Json(many(&state, list).await?))
 }
 
@@ -93,22 +93,22 @@ async fn hr_queue(
 async fn cancel(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::DayOffId>,
 ) -> Result<Json<DayOffDto>, AppError> {
-    let day_off = state.day_off.cancel(auth.user_id, DayOffId(id)).await?;
+    let day_off = state.day_off.cancel(auth.user_id, DayOffId(id.0)).await?;
     Ok(Json(single(&state, &day_off).await?))
 }
 
 async fn leader_decision(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::DayOffId>,
     ValidatedJson(body): ValidatedJson<DecideDayOffRequest>,
 ) -> Result<Json<DayOffDto>, AppError> {
     let cmd = dto::decide_day_off_command(body);
     let day_off = state
         .day_off
-        .leader_decide(auth.user_id, DayOffId(id), cmd)
+        .leader_decide(auth.user_id, DayOffId(id.0), cmd)
         .await?;
     Ok(Json(single(&state, &day_off).await?))
 }
@@ -116,13 +116,13 @@ async fn leader_decision(
 async fn hr_decision(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::DayOffId>,
     ValidatedJson(body): ValidatedJson<DecideDayOffRequest>,
 ) -> Result<Json<DayOffDto>, AppError> {
     let cmd = dto::decide_day_off_command(body);
     let day_off = state
         .day_off
-        .hr_decide(auth.user_id, DayOffId(id), cmd)
+        .hr_decide(auth.user_id, DayOffId(id.0), cmd)
         .await?;
     Ok(Json(single(&state, &day_off).await?))
 }

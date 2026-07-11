@@ -12,11 +12,12 @@ use shared::dto::overtime::{
 };
 use shared::dto::policy::PolicyDto;
 use shared::dto::user::UserRole;
-use shared::validation::overtime::validate_overtime;
+use shared::validation::overtime;
 
 use crate::features::groups::api as groups_api;
 use crate::features::overtime::api;
 use crate::features::policy::api as policy_api;
+use crate::features::ui;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
 use crate::primitives::input::{FieldError, FieldLabel, Input};
@@ -24,27 +25,9 @@ use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
-use crate::theme::{self, color, space, typography};
-use crate::util::date::{days_ago_iso, today_iso};
+use crate::theme::{self, space};
+use crate::util::date;
 use crate::util::load::{self, Loadable};
-
-fn muted_cls() -> String {
-    theme::class(format!(
-        "font-family: {ff}; font-size: {fs}; color: {c};",
-        ff = typography::FONT_SANS,
-        fs = typography::TEXT_SMALL,
-        c = color::TEXT_MUTED,
-    ))
-}
-
-fn strong_cls() -> String {
-    theme::class(format!(
-        "font-family: {ff}; font-weight: {fw}; color: {c};",
-        ff = typography::FONT_SANS,
-        fw = typography::WEIGHT_SEMIBOLD,
-        c = color::TEXT_STRONG,
-    ))
-}
 
 // --- request + my list ---
 
@@ -52,23 +35,22 @@ fn strong_cls() -> String {
 pub fn Overtime() -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
 
-    let work_date = RwSignal::new(today_iso());
+    let work_date = RwSignal::new(date::today_iso());
     let hours = RwSignal::new("1".to_string());
     let reason = RwSignal::new(String::new());
     let err = RwSignal::new(None::<String>);
     let saving = RwSignal::new(false);
 
-    let mine: Loadable<Vec<OvertimeDto>> = RwSignal::new(None);
+    let mine: Loadable<Vec<OvertimeDto>> = Loadable::new();
     let tick = RwSignal::new(0u32);
     Effect::new(move |_| {
         let _ = tick.get();
-        let from = days_ago_iso(120.0);
-        let to = days_ago_iso(-365.0);
+        let (from, to) = date::attendance_window();
         load::load(mine, async move { api::list_mine(&from, &to).await });
     });
 
     // Monthly legal cap, surfaced from the attendance policy.
-    let policy: Loadable<PolicyDto> = RwSignal::new(None);
+    let policy: Loadable<PolicyDto> = Loadable::new();
     Effect::new(move |_| load::load(policy, policy_api::get_policy()));
 
     let submit = Callback::new(move |_| {
@@ -76,13 +58,20 @@ pub fn Overtime() -> impl IntoView {
             return;
         }
         err.set(None);
-        let parsed = hours.get_untracked().trim().parse::<f64>().unwrap_or(0.0);
+        let Ok(parsed) = hours.get_untracked().trim().parse::<f64>() else {
+            err.set(Some("Hours must be a number".into()));
+            return;
+        };
+        let Some(wd) = date::from_iso(&work_date.get_untracked()) else {
+            err.set(Some("Pick a valid work date".into()));
+            return;
+        };
         let req = CreateOvertimeRequest {
-            work_date: work_date.get_untracked(),
+            work_date: wd,
             hours: parsed,
             reason: reason.get_untracked(),
         };
-        if let Err(e) = validate_overtime(&req) {
+        if let Err(e) = overtime::validate_overtime(&req) {
             err.set(Some(e.to_string()));
             return;
         }
@@ -109,7 +98,7 @@ pub fn Overtime() -> impl IntoView {
         "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: {g};",
         g = space::D4,
     ));
-    let muted = muted_cls();
+    let muted = ui::muted_class();
 
     view! {
         <Stack gap=Gap::Lg>
@@ -128,21 +117,21 @@ pub fn Overtime() -> impl IntoView {
                     }}
                     <div class=grid.clone()>
                         <div>
-                            <FieldLabel for_id="ot-date".to_string()>"Work date"</FieldLabel>
-                            <Input value=work_date on_input=Callback::new(move |v| work_date.set(v)) type_="date".to_string() />
+                            <FieldLabel for_id="ot-date">"Work date"</FieldLabel>
+                            <Input value=work_date on_input=Callback::new(move |v| work_date.set(v)) type_="date" />
                         </div>
                         <div>
-                            <FieldLabel for_id="ot-hours".to_string()>"Hours"</FieldLabel>
-                            <Input value=hours on_input=Callback::new(move |v| hours.set(v)) type_="number".to_string() />
+                            <FieldLabel for_id="ot-hours">"Hours"</FieldLabel>
+                            <Input value=hours on_input=Callback::new(move |v| hours.set(v)) type_="number" />
                         </div>
                     </div>
                     <div>
-                        <FieldLabel for_id="ot-reason".to_string()>"Reason"</FieldLabel>
-                        <Input value=reason on_input=Callback::new(move |v| reason.set(v)) placeholder="Optional".to_string() />
+                        <FieldLabel for_id="ot-reason">"Reason"</FieldLabel>
+                        <Input value=reason on_input=Callback::new(move |v| reason.set(v)) placeholder="Optional" />
                     </div>
                     {move || err.get().map(|m| view! { <FieldError message=m /> })}
                     <div>
-                        <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || saving.get())>
+                        <Button variant=ButtonVariant::Primary on_click=submit disabled=saving>
                             {move || if saving.get() { "Requesting…" } else { "Request overtime" }}
                         </Button>
                     </div>
@@ -150,7 +139,7 @@ pub fn Overtime() -> impl IntoView {
             </Card>
 
             <Stack gap=Gap::Sm>
-                <SectionTitle title="My overtime" />
+                {ui::eyebrow_title("My overtime")}
                 {move || match mine.get() {
                     None => load::note("Loading…"),
                     Some(Err(e)) => load::load_error(&e),
@@ -199,9 +188,13 @@ fn MyRow(overtime: OvertimeDto, on_changed: Callback<()>) -> impl IntoView {
         "display: flex; align-items: center; justify-content: space-between; gap: {g};",
         g = space::D3,
     ));
-    let muted = muted_cls();
-    let strong = strong_cls();
-    let line = format!("{} · {} hour(s)", overtime.work_date, overtime.hours);
+    let muted = ui::muted_class();
+    let strong = ui::strong_class();
+    let line = format!(
+        "{} · {} hour(s)",
+        date::to_iso(overtime.work_date),
+        overtime.hours
+    );
 
     view! {
         <Card>
@@ -212,7 +205,7 @@ fn MyRow(overtime: OvertimeDto, on_changed: Callback<()>) -> impl IntoView {
                 </div>
                 {cancellable.then(|| view! {
                     <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm
-                        on_click=Callback::new(cancel) disabled=Signal::derive(move || busy.get())>
+                        on_click=Callback::new(cancel) disabled=busy>
                         "Cancel"
                     </Button>
                 })}
@@ -226,17 +219,11 @@ fn MyRow(overtime: OvertimeDto, on_changed: Callback<()>) -> impl IntoView {
 #[component]
 pub fn Approvals() -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");
-    let (show_leader, is_hr) = auth.user.with(|u| {
-        u.as_ref().map_or((false, false), |x| {
-            (
-                matches!(
-                    x.role,
-                    UserRole::GroupLeader | UserRole::Director | UserRole::Hr
-                ),
-                matches!(x.role, UserRole::Hr),
-            )
-        })
-    });
+    // Leader queue is per-group membership on the server; the flattened role stays display-only.
+    let show_leader = auth.leads_any_group();
+    let is_hr = auth
+        .user
+        .with(|u| u.as_ref().is_some_and(|x| matches!(x.role, UserRole::Hr)));
 
     view! {
         <Stack gap=Gap::Lg>
@@ -261,7 +248,7 @@ fn LeaderQueue() -> impl IntoView {
     });
 
     let group = RwSignal::new(String::new());
-    let queue: Loadable<Vec<OvertimeDto>> = RwSignal::new(None);
+    let queue: Loadable<Vec<OvertimeDto>> = Loadable::new();
     let tick = RwSignal::new(0u32);
     Effect::new(move |_| {
         let _ = tick.get();
@@ -275,9 +262,9 @@ fn LeaderQueue() -> impl IntoView {
 
     view! {
         <Stack gap=Gap::Sm>
-            <SectionTitle title="Leader queue" />
+            {ui::eyebrow_title("Leader queue")}
             <div class=theme::class("min-width: 220px; max-width: 320px;")>
-                <FieldLabel for_id="ot-grp".to_string()>"Group"</FieldLabel>
+                <FieldLabel for_id="ot-grp">"Group"</FieldLabel>
                 <Select value=group on_change=Callback::new(move |v| group.set(v))>
                     <option value="">"— select group —"</option>
                     {move || groups.get().into_iter().map(|g| {
@@ -308,7 +295,7 @@ fn LeaderQueue() -> impl IntoView {
 
 #[component]
 fn HrQueue() -> impl IntoView {
-    let queue: Loadable<Vec<OvertimeDto>> = RwSignal::new(None);
+    let queue: Loadable<Vec<OvertimeDto>> = Loadable::new();
     let tick = RwSignal::new(0u32);
     Effect::new(move |_| {
         let _ = tick.get();
@@ -318,7 +305,7 @@ fn HrQueue() -> impl IntoView {
 
     view! {
         <Stack gap=Gap::Sm>
-            <SectionTitle title="HR queue" />
+            {ui::eyebrow_title("HR queue")}
             {move || match queue.get() {
                 None => load::note("Loading…"),
                 Some(Err(e)) => load::load_error(&e),
@@ -368,9 +355,13 @@ fn DecideCard(overtime: OvertimeDto, is_hr: bool, on_done: Callback<()>) -> impl
         });
     };
 
-    let muted = muted_cls();
-    let strong = strong_cls();
-    let line = format!("{} · {} hour(s)", overtime.work_date, overtime.hours);
+    let muted = ui::muted_class();
+    let strong = ui::strong_class();
+    let line = format!(
+        "{} · {} hour(s)",
+        date::to_iso(overtime.work_date),
+        overtime.hours
+    );
     let reason = overtime.reason.clone();
 
     view! {
@@ -381,29 +372,18 @@ fn DecideCard(overtime: OvertimeDto, is_hr: bool, on_done: Callback<()>) -> impl
                     <span class=muted.clone()>{format!("  ·  {line}")}</span>
                 </div>
                 {(!reason.is_empty()).then(|| view! { <div class=muted.clone()>{reason}</div> })}
-                <Input value=note on_input=Callback::new(move |v| note.set(v)) placeholder="Decision note (optional)".to_string() />
+                <Input value=note on_input=Callback::new(move |v| note.set(v)) placeholder="Decision note (optional)" />
                 <div class=theme::class(format!("display: flex; gap: {g};", g = space::D2))>
                     <Button variant=ButtonVariant::Primary size=ButtonSize::Sm
-                        on_click=Callback::new(move |_| decide(true)) disabled=Signal::derive(move || busy.get())>
+                        on_click=Callback::new(move |_| decide(true)) disabled=busy>
                         "Approve"
                     </Button>
                     <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm
-                        on_click=Callback::new(move |_| decide(false)) disabled=Signal::derive(move || busy.get())>
+                        on_click=Callback::new(move |_| decide(false)) disabled=busy>
                         "Reject"
                     </Button>
                 </div>
             </Stack>
         </Card>
     }
-}
-
-#[component]
-fn SectionTitle(title: &'static str) -> impl IntoView {
-    let cls = theme::class(format!(
-        "font-size: {fs}; font-weight: {fw}; color: {c}; text-transform: uppercase; letter-spacing: 0.04em;",
-        fs = typography::TEXT_LABEL,
-        fw = typography::WEIGHT_SEMIBOLD,
-        c = color::TEXT_MUTED,
-    ));
-    view! { <div class=cls>{title}</div> }
 }

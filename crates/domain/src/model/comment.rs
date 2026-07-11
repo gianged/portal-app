@@ -35,10 +35,25 @@ impl Comment {
         delta >= Duration::ZERO && delta <= EDIT_GRACE
     }
 
-    pub fn edit(&mut self, body: String, now: OffsetDateTime) -> Result<(), TransitionError> {
-        if !self.within_edit_grace(now) {
-            return Err(TransitionError::invalid("comment", "edit_after_grace"));
+    /// Gate shared by edit and delete: both are author actions allowed only
+    /// within the grace window.
+    ///
+    /// # Errors
+    /// Returns [`TransitionError::EditGraceExpired`] past the window.
+    pub fn require_within_edit_grace(&self, now: OffsetDateTime) -> Result<(), TransitionError> {
+        if self.within_edit_grace(now) {
+            Ok(())
+        } else {
+            Err(TransitionError::EditGraceExpired { entity: "comment" })
         }
+    }
+
+    /// Replaces the body, only within the edit grace window.
+    ///
+    /// # Errors
+    /// Returns [`TransitionError::EditGraceExpired`] past the window.
+    pub fn edit(&mut self, body: String, now: OffsetDateTime) -> Result<(), TransitionError> {
+        self.require_within_edit_grace(now)?;
         self.body = body;
         self.edited_at = Some(now);
         Ok(())

@@ -6,7 +6,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC};
 use time::OffsetDateTime;
 use tokio::fs;
 use uuid::Uuid;
@@ -148,7 +148,7 @@ impl FileStorage for LocalStorage {
         // raw key, which the route sees again after axum percent-decodes.
         let encoded = key
             .split('/')
-            .map(|seg| utf8_percent_encode(seg, PATH_SEGMENT).to_string())
+            .map(|seg| percent_encoding::utf8_percent_encode(seg, PATH_SEGMENT).to_string())
             .collect::<Vec<_>>()
             .join("/");
         Ok(format!(
@@ -185,11 +185,20 @@ impl FileStorage for LocalStorage {
                 if meta.is_dir() {
                     stack.push(entry.path());
                 } else if meta.is_file() {
+                    let path = entry.path();
+                    // Skip `put`'s write-then-rename temporaries left by a crash.
+                    if path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .is_some_and(|e| e.starts_with("tmp-"))
+                    {
+                        continue;
+                    }
                     let modified = meta
                         .modified()
                         .map_err(|e| StorageError::Backend(e.to_string()))?;
                     objects.push(StorageObject {
-                        key: self.key_for(&entry.path())?,
+                        key: self.key_for(&path)?,
                         modified_at: OffsetDateTime::from(modified),
                         size: meta.len(),
                     });

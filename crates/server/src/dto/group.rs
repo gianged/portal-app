@@ -12,8 +12,6 @@ use shared::dto::{
     },
 };
 
-use super::{group_id, membership_id};
-
 #[must_use]
 pub fn group_kind_dto(kind: model::GroupKind) -> WireGroupKind {
     match kind {
@@ -51,7 +49,7 @@ pub fn group_role_domain(role: WireGroupRole) -> model::GroupRole {
 #[must_use]
 pub fn group_dto(group: &model::Group, member_count: u32) -> GroupDto {
     GroupDto {
-        id: group_id(group.id),
+        id: super::group_id(group.id),
         name: group.name.clone(),
         description: group.description.clone(),
         kind: group_kind_dto(group.kind),
@@ -63,7 +61,7 @@ pub fn group_dto(group: &model::Group, member_count: u32) -> GroupDto {
 #[must_use]
 pub fn membership_dto(membership: &model::Membership, user: UserSummaryDto) -> MembershipDto {
     MembershipDto {
-        id: membership_id(membership.id),
+        id: super::membership_id(membership.id),
         user,
         role: group_role_dto(membership.role),
         joined_at: membership.joined_at,
@@ -74,7 +72,7 @@ pub fn membership_dto(membership: &model::Membership, user: UserSummaryDto) -> M
 #[must_use]
 pub fn group_summary_dto(group: &model::Group) -> GroupSummaryDto {
     GroupSummaryDto {
-        id: group_id(group.id),
+        id: super::group_id(group.id),
         name: group.name.clone(),
         kind: group_kind_dto(group.kind),
     }
@@ -83,7 +81,7 @@ pub fn group_summary_dto(group: &model::Group) -> GroupSummaryDto {
 #[must_use]
 pub fn unknown_group_summary(id: ids::GroupId) -> GroupSummaryDto {
     GroupSummaryDto {
-        id: group_id(id),
+        id: super::group_id(id),
         name: "Unknown group".to_owned(),
         kind: WireGroupKind::Standard,
     }

@@ -33,10 +33,12 @@ fn rgb(r: f32, g: f32, b: f32) -> Rgb {
 }
 
 // printpdf's `Mm`/`Pt` wrap `f32`; our layout math is `f64`, so convert at the edge.
+#[allow(clippy::cast_possible_truncation)]
 fn mm(v: f64) -> Mm {
     Mm(v as f32)
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn pt(v: f64) -> Pt {
     Pt(v as f32)
 }
@@ -262,7 +264,8 @@ impl Canvas {
     }
 
     /// A simple bar chart inside a fixed box; bars scaled to the max value.
-    fn bar_chart(&mut self, data: &[(String, f64)], color: Rgb, box_w: f64, box_h: f64) {
+    #[allow(clippy::cast_precision_loss)]
+    fn bar_chart(&mut self, data: &[(String, f64)], color: &Rgb, box_w: f64, box_h: f64) {
         self.ensure(box_h + 8.0);
         let x0 = MARGIN;
         let base = self.y - box_h;
@@ -292,6 +295,7 @@ impl Canvas {
     }
 
     /// Multi-series line chart inside a fixed box. `series` is (label, points, color).
+    #[allow(clippy::cast_precision_loss)]
     fn line_chart(
         &mut self,
         series: &[(&str, Vec<f64>, Rgb)],
@@ -335,6 +339,7 @@ impl Canvas {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn fmt_int(v: f64) -> String {
     format!("{}", v.round() as i64)
 }
@@ -443,7 +448,7 @@ fn tickets_section(c: &mut Canvas, t: &TicketStats) {
         .iter()
         .map(|(cat, n)| (ticket_category_label(*cat).to_owned(), f64::from(*n)))
         .collect();
-    c.bar_chart(&by_cat, accent(), CONTENT_W, 38.0);
+    c.bar_chart(&by_cat, &accent(), CONTENT_W, 38.0);
 
     let status_line = t
         .by_status
@@ -479,6 +484,7 @@ impl ReportRenderer for PrintPdfReportRenderer {
         Ok(c.finish("Monthly Report"))
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn render_yearly(&self, data: &YearlyReportData) -> Result<Vec<u8>, RenderError> {
         let mut c = Canvas::new();
         c.heading(&format!("Yearly Report — {}", data.year));
@@ -562,18 +568,19 @@ impl ReportRenderer for PrintPdfReportRenderer {
         c.subheading("Attendance");
         c.caption(&format!(
             "Days reported: {}    Work percentage: {}%    Overtime: {:.1}h",
-            data.days_reported, data.work_percentage, data.overtime_hours
+            data.stats.days_reported, data.work_percentage, data.stats.overtime_hours
         ));
         c.caption(&format!(
             "Hours — request work: {:.1}    Learning: {:.1}    Other: {:.1}",
-            data.hours_request_work, data.hours_learning, data.hours_other
+            data.stats.hours_request_work, data.stats.hours_learning, data.stats.hours_other
         ));
 
         c.subheading("Leave");
-        if data.leave_days_by_kind.is_empty() {
+        if data.stats.leave_days_by_kind.is_empty() {
             c.caption("No leave taken this month");
         } else {
             let by_kind = data
+                .stats
                 .leave_days_by_kind
                 .iter()
                 .map(|(kind, days)| format!("{}: {days:.1}", leave_kind_label(*kind)))
@@ -583,19 +590,21 @@ impl ReportRenderer for PrintPdfReportRenderer {
         }
         c.caption(&format!(
             "Balance remaining: {:.1}    Expiring soon: {:.1}",
-            data.balance_remaining, data.balance_expiring_soon
+            data.balance_remaining, data.stats.balance_expiring_soon
         ));
 
         c.subheading("Flexible hours");
         c.caption(&format!(
             "Flex days: {}    Month delta: {:+.1}h",
-            data.flex_days, data.flex_month_delta
+            data.stats.flex_days, data.flex_month_delta
         ));
 
         c.subheading("Requests");
         c.caption(&format!(
             "Completed: {}    Open: {}    Avg progress: {}%",
-            data.requests_completed, data.requests_open, data.avg_request_progress
+            data.stats.requests_completed,
+            data.stats.requests_open,
+            data.stats.avg_request_progress
         ));
 
         Ok(c.finish("Staff Monthly Report"))

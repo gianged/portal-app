@@ -1,7 +1,7 @@
 use leptos::ev::Event;
 use leptos::prelude::*;
 
-use crate::theme::{self, color, radius, space, typography};
+use crate::theme::{self, color, effect, radius, space, typography};
 
 /// Native `<select>` styled to match the design system (custom chevron, focus
 /// ring). Pass `<option>` elements as children; `on_change` yields the new value.
@@ -9,7 +9,7 @@ use crate::theme::{self, color, radius, space, typography};
 pub fn Select(
     #[prop(into)] value: Signal<String>,
     #[prop(optional)] on_change: Option<Callback<String>>,
-    #[prop(optional)] disabled: bool,
+    #[prop(optional, into)] disabled: Signal<bool>,
     children: Children,
 ) -> impl IntoView {
     let cls = theme::class(format!(
@@ -30,10 +30,10 @@ pub fn Select(
         r = radius::MD,
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
-        s = typography::SHADOW_XS,
+        s = effect::SHADOW_XS,
         bsc = color::BORDER_STRONG,
         bfc = color::BORDER_FOCUS,
-        ring = typography::RING,
+        ring = effect::RING,
         bgd = color::BG_SUNKEN,
     ));
     let handle = move |ev: Event| {
@@ -42,7 +42,7 @@ pub fn Select(
         }
     };
     view! {
-        <select class=cls disabled=disabled prop:value=move || value.get() on:change=handle>
+        <select class=cls disabled=move || disabled.get() prop:value=move || value.get() on:change=handle>
             {children()}
         </select>
     }

@@ -67,6 +67,8 @@ pub struct TelemetryConfig {
     /// Service name attached to OTLP spans (`server` / `workers`).
     pub service_name: String,
     pub format: LogFormat,
+    /// `RUST_LOG` filter directives; `None` falls back to `info,portal=debug`.
+    pub filter: Option<String>,
     /// OTLP/HTTP collector base URL (e.g. `http://localhost:4318`). `None` disables export.
     pub otlp_endpoint: Option<String>,
 }
@@ -122,8 +124,10 @@ pub fn install_panic_hook() {
 /// trace id can ride along to background jobs. Returns the [`TelemetryGuard`] the
 /// caller must hold for the process lifetime.
 pub fn init(cfg: &TelemetryConfig) -> TelemetryGuard {
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,portal=debug"));
+    let filter = cfg
+        .filter
+        .as_deref()
+        .map_or_else(|| EnvFilter::new("info,portal=debug"), EnvFilter::new);
 
     // Best-effort: a missing dir would otherwise just drop file logs silently.
     let _ = fs::create_dir_all(&cfg.log_dir);

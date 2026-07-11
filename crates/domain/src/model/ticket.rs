@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 
 use crate::{
     error::TransitionError,
@@ -136,7 +136,7 @@ impl TicketStatus {
         }
     }
 
-    /// 7-day reopen window is enforced in `application`, not here.
+    /// Status-only check; the reopen window is enforced by [`Ticket::reopen`].
     pub const fn try_reopen(self) -> Result<Self, TransitionError> {
         match self {
             Self::Closed => Ok(Self::Reopened),
@@ -151,6 +151,10 @@ impl TicketStatus {
 }
 
 impl Ticket {
+    /// A closed ticket can be reopened within this window. Past it, the
+    /// requester must raise a new ticket.
+    pub const REOPEN_WINDOW: Duration = Duration::days(7);
+
     /// Triage requires a priority; encodes the schema CHECK
     /// "priority IS NOT NULL once status != 'open'".
     pub fn triage(
@@ -201,8 +205,16 @@ impl Ticket {
         Ok(())
     }
 
+    /// Reopens within [`Self::REOPEN_WINDOW`] of closing; past it the closure is final.
     pub fn reopen(&mut self, now: OffsetDateTime) -> Result<(), TransitionError> {
-        self.status = self.status.try_reopen()?;
+        let reopened = self.status.try_reopen()?;
+        if self
+            .closed_at
+            .is_some_and(|closed| now - closed > Self::REOPEN_WINDOW)
+        {
+            return Err(TransitionError::ReopenWindowExpired);
+        }
+        self.status = reopened;
         self.closed_at = None;
         self.resolved_at = None;
         self.updated_at = now;
@@ -326,6 +338,18 @@ mod tests {
         t.reject_resolution(t1 + Duration::minutes(5)).unwrap();
         assert_eq!(t.status, TicketStatus::InProgress);
         assert_eq!(t.resolved_at, None);
+    }
+
+    #[test]
+    fn reopen_rejected_past_window() {
+        let closed = OffsetDateTime::UNIX_EPOCH;
+        let mut t = ticket(TicketStatus::Closed);
+        t.closed_at = Some(closed);
+        assert!(
+            t.reopen(closed + Ticket::REOPEN_WINDOW + Duration::seconds(1))
+                .is_err()
+        );
+        assert!(t.reopen(closed + Ticket::REOPEN_WINDOW).is_ok());
     }
 
     #[test]

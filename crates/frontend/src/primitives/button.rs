@@ -1,7 +1,7 @@
 use leptos::ev::MouseEvent;
 use leptos::prelude::*;
 
-use crate::theme::{self, color, radius, space, typography};
+use crate::theme::{self, color, effect, radius, space, typography};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum ButtonVariant {
@@ -59,7 +59,7 @@ fn variant_css(v: ButtonVariant) -> String {
             fg = color::TEXT_ON_ACCENT,
             ah = color::ACCENT_HOVER,
             aa = color::ACCENT_ACTIVE,
-            s = typography::SHADOW_XS,
+            s = effect::SHADOW_XS,
         ),
         ButtonVariant::Secondary => format!(
             "background: {bg}; color: {fg}; border-color: {b}; box-shadow: {s}; \
@@ -71,7 +71,7 @@ fn variant_css(v: ButtonVariant) -> String {
             bh = color::BG_HOVER,
             bs = color::BORDER_STRONG,
             ba = color::BG_ACTIVE,
-            s = typography::SHADOW_XS,
+            s = effect::SHADOW_XS,
         ),
         ButtonVariant::Ghost => format!(
             "background: transparent; color: {fg}; \
@@ -87,7 +87,7 @@ fn variant_css(v: ButtonVariant) -> String {
             d = color::DANGER,
             fg = color::TEXT_ON_ACCENT,
             dh = color::DANGER_HOVER,
-            s = typography::SHADOW_XS,
+            s = effect::SHADOW_XS,
         ),
         ButtonVariant::Link => format!(
             "background: transparent; color: {a}; padding: 0; height: auto; \
@@ -142,7 +142,7 @@ pub fn Button(
         g = space::D2,
         ff = typography::FONT_SANS,
         fw = typography::WEIGHT_MEDIUM,
-        ring = typography::RING,
+        ring = effect::RING,
     );
 
     let cls = theme::class(format!("{base} {}", variant_css(variant)));

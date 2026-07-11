@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 project_id,\n                 invited_by_user_id,\n                 invited_group_id,\n                 responded_by_user_id,\n                 status AS \"status: SqlInviteStatus\",\n                 responded_at,\n                 created_at,\n                 updated_at\n               FROM project.project_invites\n               WHERE invited_group_id = $1 AND status = $2\n               ORDER BY created_at DESC",
+  "query": "SELECT\n                 id,\n                 project_id,\n                 invited_by_user_id,\n                 invited_group_id,\n                 responded_by_user_id,\n                 status AS \"status: SqlInviteStatus\",\n                 responded_at,\n                 created_at,\n                 updated_at\n               FROM project.project_invites\n               WHERE invited_group_id = $1 AND status = 'pending'\n               ORDER BY created_at DESC",
   "describe": {
     "columns": [
       {
@@ -117,20 +117,7 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        {
-          "Custom": {
-            "name": "project.invite_status",
-            "kind": {
-              "Enum": [
-                "pending",
-                "accepted",
-                "declined",
-                "revoked"
-              ]
-            }
-          }
-        }
+        "Uuid"
       ]
     },
     "nullable": [
@@ -145,5 +132,5 @@
       false
     ]
   },
-  "hash": "daadd298d49be9dac925c9f769b19b0475ccb09576e327bb10cf64f9c3630009"
+  "hash": "100a6eb578e2c45cb74b40af9a8bedb7ce4c143f93027c9122784ed81c464721"
 }

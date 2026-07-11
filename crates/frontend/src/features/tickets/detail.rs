@@ -25,27 +25,8 @@ use crate::primitives::input::FieldLabel;
 use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::toast::ToastState;
-use crate::theme::{self, color, typography};
 use crate::util::format;
 use crate::util::load::{self, Loadable};
-
-fn priority_wire(p: TicketPriority) -> &'static str {
-    match p {
-        TicketPriority::Low => "low",
-        TicketPriority::Normal => "normal",
-        TicketPriority::High => "high",
-        TicketPriority::Urgent => "urgent",
-    }
-}
-
-fn priority_from_wire(s: &str) -> TicketPriority {
-    match s {
-        "low" => TicketPriority::Low,
-        "high" => TicketPriority::High,
-        "urgent" => TicketPriority::Urgent,
-        _ => TicketPriority::Normal,
-    }
-}
 
 #[derive(Clone, Copy)]
 enum TicketAction {
@@ -72,12 +53,15 @@ fn action_future(
 #[component]
 pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
-    let detail: Loadable<TicketDto> = RwSignal::new(None);
+    let detail: Loadable<TicketDto> = Loadable::new();
     let reload = RwSignal::new(0u32);
     let triage_open = RwSignal::new(false);
     let assign_open = RwSignal::new(false);
     let assign_target = RwSignal::new(None::<UserId>);
     let triage_priority = RwSignal::new(TicketPriority::Normal);
+    let busy = RwSignal::new(false);
+    let triage_busy = RwSignal::new(false);
+    let assign_busy = RwSignal::new(false);
 
     Effect::new(move |_| {
         let _ = reload.get();
@@ -86,10 +70,15 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
         }
     });
 
+    // Run a lifecycle action: resolve the future, toast, re-fetch. One at a time.
     let run = move |action: TicketAction| {
         let Some(tid) = id.get_untracked() else {
             return;
         };
+        if busy.get_untracked() {
+            return;
+        }
+        busy.set(true);
         task::spawn_local(async move {
             match action_future(action, tid).await {
                 Ok(_) => {
@@ -98,14 +87,18 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
                 }
                 Err(e) => toast.error_from(&e),
             }
+            busy.set(false);
         });
     };
 
     let confirm_triage = Callback::new(move |()| {
+        if triage_busy.get_untracked() {
+            return;
+        }
         let Some(tid) = id.get_untracked() else {
             return;
         };
-        triage_open.set(false);
+        triage_busy.set(true);
         let req = TriageTicketRequest {
             priority: triage_priority.get_untracked(),
         };
@@ -113,14 +106,19 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
             match api::triage(tid, &req).await {
                 Ok(_) => {
                     toast.success("Ticket triaged");
+                    triage_open.set(false);
                     reload.update(|n| *n += 1);
                 }
                 Err(e) => toast.error_from(&e),
             }
+            triage_busy.set(false);
         });
     });
 
     let confirm_assign = Callback::new(move |()| {
+        if assign_busy.get_untracked() {
+            return;
+        }
         let Some(uid) = assign_target.get_untracked() else {
             toast.error("Pick someone to assign.");
             return;
@@ -128,7 +126,7 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
         let Some(tid) = id.get_untracked() else {
             return;
         };
-        assign_open.set(false);
+        assign_busy.set(true);
         task::spawn_local(async move {
             let req = AssignTicketRequest {
                 assignee_user_id: uid,
@@ -136,10 +134,12 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
             match api::assign(tid, &req).await {
                 Ok(_) => {
                     toast.success("Ticket assigned");
+                    assign_open.set(false);
                     reload.update(|n| *n += 1);
                 }
                 Err(e) => toast.error_from(&e),
             }
+            assign_busy.set(false);
         });
     });
 
@@ -157,8 +157,8 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
                     let priority = t.priority;
                     let title_v = ui::page_title(&t.title);
                     let meta_v = meta_line(&t);
-                    let desc_v = desc_block(&t.description);
-                    let actions_v = lifecycle_bar(status, run, open_triage, open_assign);
+                    let desc_v = ui::desc_block(&t.description);
+                    let actions_v = lifecycle_bar(status, run, open_triage, open_assign, busy.into());
                     view! {
                         <Stack gap=Gap::Lg>
                             <Card>
@@ -188,8 +188,8 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
                 kind=TrailKind::Ticket
                 refresh=reload
             />
-            <TriageDialog open=triage_open priority=triage_priority on_confirm=confirm_triage />
-            <AssignDialog open=assign_open target=assign_target on_confirm=confirm_assign />
+            <TriageDialog open=triage_open priority=triage_priority on_confirm=confirm_triage busy=triage_busy />
+            <AssignDialog open=assign_open target=assign_target on_confirm=confirm_assign busy=assign_busy />
         </Stack>
     }
 }
@@ -199,20 +199,21 @@ fn lifecycle_bar(
     run: impl Fn(TicketAction) + Copy + Send + Sync + 'static,
     open_triage: Callback<MouseEvent>,
     open_assign: Callback<MouseEvent>,
+    busy: Signal<bool>,
 ) -> AnyView {
     let btn = move |label: &'static str, variant: ButtonVariant, action: TicketAction| {
         let cb = Callback::new(move |_| run(action));
-        view! { <Button variant=variant size=ButtonSize::Sm on_click=cb>{label}</Button> }
+        view! { <Button variant=variant size=ButtonSize::Sm on_click=cb disabled=busy>{label}</Button> }
             .into_any()
     };
     let triage_btn = move || {
         view! {
-        <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_triage>"Triage"</Button>
+        <Button variant=ButtonVariant::Primary size=ButtonSize::Sm on_click=open_triage disabled=busy>"Triage"</Button>
     }.into_any()
     };
     let assign_btn = move || {
         view! {
-            <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_assign>
+            <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=open_assign disabled=busy>
                 <Icon name=IconName::Users size=14 /> "Assign"
             </Button>
         }
@@ -257,12 +258,15 @@ fn TriageDialog(
     open: RwSignal<bool>,
     priority: RwSignal<TicketPriority>,
     on_confirm: Callback<()>,
+    #[prop(into)] busy: Signal<bool>,
 ) -> impl IntoView {
     let on_close = Callback::new(move |()| open.set(false));
     let cancel = Callback::new(move |_| open.set(false));
     let confirm = Callback::new(move |_| on_confirm.run(()));
-    let on_priority = Callback::new(move |v: String| priority.set(priority_from_wire(&v)));
-    let priority_value = Signal::derive(move || priority_wire(priority.get()).to_owned());
+    let on_priority = Callback::new(move |v: String| {
+        priority.set(TicketPriority::from_wire(&v).unwrap_or(TicketPriority::Normal));
+    });
+    let priority_value = Signal::derive(move || priority.get().as_str().to_owned());
     view! {
         <Dialog open=open on_close=on_close>
             <DialogHeader title="Triage ticket" subtitle="Set a priority to move it into the queue." />
@@ -270,16 +274,17 @@ fn TriageDialog(
                 <div>
                     <FieldLabel for_id="tk-priority">"Priority"</FieldLabel>
                     <Select value=priority_value on_change=on_priority>
-                        <option value="low">"Low"</option>
-                        <option value="normal">"Normal"</option>
-                        <option value="high">"High"</option>
-                        <option value="urgent">"Urgent"</option>
+                        {TicketPriority::ALL.into_iter().map(|p| view! {
+                            <option value=p.as_str()>{p.label()}</option>
+                        }).collect_view()}
                     </Select>
                 </div>
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=confirm>"Triage"</Button>
+                <Button variant=ButtonVariant::Primary on_click=confirm disabled=busy>
+                    {move || if busy.get() { "Triaging…" } else { "Triage" }}
+                </Button>
             </DialogFooter>
         </Dialog>
     }
@@ -290,6 +295,7 @@ fn AssignDialog(
     open: RwSignal<bool>,
     target: RwSignal<Option<UserId>>,
     on_confirm: Callback<()>,
+    #[prop(into)] busy: Signal<bool>,
 ) -> impl IntoView {
     let on_close = Callback::new(move |()| open.set(false));
     let cancel = Callback::new(move |_| open.set(false));
@@ -303,7 +309,9 @@ fn AssignDialog(
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=confirm>"Assign"</Button>
+                <Button variant=ButtonVariant::Primary on_click=confirm disabled=busy>
+                    {move || if busy.get() { "Assigning…" } else { "Assign" }}
+                </Button>
             </DialogFooter>
         </Dialog>
     }
@@ -320,14 +328,4 @@ fn meta_line(t: &TicketDto) -> AnyView {
     ui::subtle(&format!(
         "{category} · raised by {requester} · {created} · Assignee: {assignee}"
     ))
-}
-
-fn desc_block(description: &str) -> AnyView {
-    let cls = theme::class(format!(
-        "font-family: {ff}; font-size: {fs}; color: {c}; line-height: 1.55; white-space: pre-wrap;",
-        ff = typography::FONT_SANS,
-        fs = typography::TEXT_SMALL,
-        c = color::TEXT,
-    ));
-    view! { <p class=cls>{description.to_owned()}</p> }.into_any()
 }

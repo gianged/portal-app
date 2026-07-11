@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::{
     commands::overtime::{CreateOvertimeCommand, DecideOvertimeCommand},
-    error::{Error, Result},
+    error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
     service::policy::PolicyProvider,
@@ -53,13 +53,13 @@ impl OvertimeService {
 
         let cap = self.policy.current().overtime_max_hours_per_month;
         let year = cmd.work_date.year();
-        let month = u32::from(u8::from(cmd.work_date.month()));
+        let month = u8::from(cmd.work_date.month());
         let used = self
             .overtimes
             .approved_hours_in_month(actor, year, month)
             .await?;
         if used + cmd.hours > cap + f64::EPSILON {
-            return Err(Error::Conflict("overtime_monthly_cap_exceeded".into()));
+            return Err(Error::Conflict(ConflictCode::OvertimeMonthlyCapExceeded));
         }
 
         let overtime = Overtime {
@@ -129,7 +129,7 @@ impl OvertimeService {
         self.perms.require_hr(actor).await?;
         let mut overtime = self.load(id).await?;
         if overtime.status != OvertimeStatus::LeaderApproved {
-            return Err(Error::Conflict("not_awaiting_hr".into()));
+            return Err(Error::Conflict(ConflictCode::NotAwaitingHr));
         }
         let now = OffsetDateTime::now_utc();
         if cmd.approve {
@@ -142,10 +142,10 @@ impl OvertimeService {
         Ok(overtime)
     }
 
-    /// Requester cancels their own non-terminal request.
+    /// Requester cancels their own non-terminal request. Emits `OvertimeCancelled`.
     ///
     /// # Errors
-    /// Returns `NotFound` if the request is missing, `Forbidden` if the actor is not the requester, `Transition` if the request is terminal, or a repository error if the datastore is unavailable.
+    /// Returns `NotFound` if the request is missing, `Forbidden` if the actor is not the requester, `Transition` if the request is terminal, or a repository / event error if a backend is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, id = ?id))]
     pub async fn cancel(&self, actor: UserId, id: OvertimeId) -> Result<Overtime> {
         let mut overtime = self.load(id).await?;
@@ -155,6 +155,13 @@ impl OvertimeService {
         let now = OffsetDateTime::now_utc();
         overtime.cancel(now)?;
         self.overtimes.save(&overtime).await?;
+        self.events
+            .emit(DomainEvent::OvertimeCancelled {
+                overtime_id: overtime.id,
+                requester: overtime.requester_user_id,
+                at: now,
+            })
+            .await?;
         Ok(overtime)
     }
 

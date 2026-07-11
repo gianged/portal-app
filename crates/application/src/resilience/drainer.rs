@@ -79,10 +79,10 @@ impl Drainer {
                 HealthStatus::Up => self.cfg.max_batch,
             };
 
-            let entries = match self.spool.drain(batch).await {
+            let entries = match self.spool.peek(batch).await {
                 Ok(entries) => entries,
                 Err(e) => {
-                    tracing::warn!(error = %e, "chat drainer: spool drain failed");
+                    tracing::warn!(error = %e, "chat drainer: spool peek failed");
                     time::sleep(self.cfg.idle_interval).await;
                     continue;
                 }

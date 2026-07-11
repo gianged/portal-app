@@ -2,7 +2,7 @@
 
 use leptos::prelude::*;
 
-use crate::theme::{self, color, radius, space, typography};
+use crate::theme::{self, color, effect, radius, space};
 
 #[component]
 pub fn Card(#[prop(optional, into)] padding: Option<String>, children: Children) -> impl IntoView {
@@ -13,7 +13,7 @@ pub fn Card(#[prop(optional, into)] padding: Option<String>, children: Children)
         bg = color::BG_ELEVATED,
         b = color::BORDER,
         r = radius::LG,
-        s = typography::SHADOW_XS,
+        s = effect::SHADOW_XS,
         p = padding,
     ));
     view! { <div class=cls>{children()}</div> }

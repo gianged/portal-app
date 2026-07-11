@@ -263,8 +263,8 @@ impl DailyReportRepository for PgDailyReportRepo {
         sqlx::query!(
             r#"INSERT INTO attendance.daily_reports
                  (id, user_id, report_date, status, summary, submitted_at,
-                  reviewed_by_user_id, reviewed_at, review_note, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                  reviewed_by_user_id, reviewed_at, review_note, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                ON CONFLICT (id) DO UPDATE SET
                  user_id             = EXCLUDED.user_id,
                  report_date         = EXCLUDED.report_date,
@@ -273,8 +273,7 @@ impl DailyReportRepository for PgDailyReportRepo {
                  submitted_at        = EXCLUDED.submitted_at,
                  reviewed_by_user_id = EXCLUDED.reviewed_by_user_id,
                  reviewed_at         = EXCLUDED.reviewed_at,
-                 review_note         = EXCLUDED.review_note,
-                 updated_at          = EXCLUDED.updated_at"#,
+                 review_note         = EXCLUDED.review_note"#,
             report.id.0,
             report.user_id.0,
             report.report_date,
@@ -285,7 +284,6 @@ impl DailyReportRepository for PgDailyReportRepo {
             report.reviewed_at,
             report.review_note,
             report.created_at,
-            report.updated_at,
         )
         .execute(&mut *tx)
         .await
@@ -299,19 +297,40 @@ impl DailyReportRepository for PgDailyReportRepo {
         .await
         .map_err(mappers::map_pg_error)?;
 
-        for e in &report.entries {
-            let kind = SqlDailyReportEntryKind::from(e.kind);
+        if !report.entries.is_empty() {
+            let ids: Vec<Uuid> = report.entries.iter().map(|e| e.id.0).collect();
+            let report_ids: Vec<Uuid> =
+                report.entries.iter().map(|e| e.daily_report_id.0).collect();
+            let kinds: Vec<SqlDailyReportEntryKind> =
+                report.entries.iter().map(|e| e.kind.into()).collect();
+            let descriptions: Vec<String> = report
+                .entries
+                .iter()
+                .map(|e| e.description.clone())
+                .collect();
+            let request_ids: Vec<Option<Uuid>> = report
+                .entries
+                .iter()
+                .map(|e| e.request_id.map(|r| r.0))
+                .collect();
+            let hours: Vec<Option<f64>> = report.entries.iter().map(|e| e.hours).collect();
+            let created: Vec<OffsetDateTime> =
+                report.entries.iter().map(|e| e.created_at).collect();
             sqlx::query!(
                 r#"INSERT INTO attendance.daily_report_entries
                      (id, daily_report_id, kind, description, request_id, hours, created_at)
-                   VALUES ($1, $2, $3, $4, $5, $6::float8::numeric, $7)"#,
-                e.id.0,
-                e.daily_report_id.0,
-                kind as SqlDailyReportEntryKind,
-                e.description,
-                e.request_id.map(|r| r.0),
-                e.hours,
-                e.created_at,
+                   SELECT u.id, u.daily_report_id, u.kind, u.description, u.request_id,
+                          u.hours::numeric, u.created_at
+                   FROM UNNEST($1::uuid[], $2::uuid[], $3::attendance.daily_report_entry_kind[],
+                               $4::text[], $5::uuid[], $6::float8[], $7::timestamptz[])
+                     AS u(id, daily_report_id, kind, description, request_id, hours, created_at)"#,
+                &ids,
+                &report_ids,
+                kinds as Vec<SqlDailyReportEntryKind>,
+                &descriptions,
+                request_ids as Vec<Option<Uuid>>,
+                hours as Vec<Option<f64>>,
+                &created,
             )
             .execute(&mut *tx)
             .await

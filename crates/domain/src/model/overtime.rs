@@ -20,8 +20,7 @@ pub enum OvertimeStatus {
 }
 
 impl OvertimeStatus {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
+    const fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
             Self::LeaderApproved => "leader_approved",
@@ -35,7 +34,9 @@ impl OvertimeStatus {
     pub const fn try_leader_approve(self) -> Result<Self, TransitionError> {
         match self {
             Self::Pending => Ok(Self::LeaderApproved),
-            _ => Err(TransitionError::invalid(self.as_str(), "leader_approved")),
+            Self::LeaderApproved | Self::Approved | Self::Rejected | Self::Cancelled => {
+                Err(TransitionError::invalid(self.as_str(), "leader_approved"))
+            }
         }
     }
 
@@ -43,21 +44,27 @@ impl OvertimeStatus {
     pub const fn try_hr_approve(self) -> Result<Self, TransitionError> {
         match self {
             Self::LeaderApproved => Ok(Self::Approved),
-            _ => Err(TransitionError::invalid(self.as_str(), "approved")),
+            Self::Pending | Self::Approved | Self::Rejected | Self::Cancelled => {
+                Err(TransitionError::invalid(self.as_str(), "approved"))
+            }
         }
     }
 
     pub const fn try_reject(self) -> Result<Self, TransitionError> {
         match self {
             Self::Pending | Self::LeaderApproved => Ok(Self::Rejected),
-            _ => Err(TransitionError::invalid(self.as_str(), "rejected")),
+            Self::Approved | Self::Rejected | Self::Cancelled => {
+                Err(TransitionError::invalid(self.as_str(), "rejected"))
+            }
         }
     }
 
     pub const fn try_cancel(self) -> Result<Self, TransitionError> {
         match self {
             Self::Pending | Self::LeaderApproved => Ok(Self::Cancelled),
-            _ => Err(TransitionError::invalid(self.as_str(), "cancelled")),
+            Self::Approved | Self::Rejected | Self::Cancelled => {
+                Err(TransitionError::invalid(self.as_str(), "cancelled"))
+            }
         }
     }
 }

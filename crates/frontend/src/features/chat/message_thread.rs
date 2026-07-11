@@ -9,6 +9,7 @@ use shared::dto::ids::{ChannelId, MessageId, UserId};
 use shared::dto::ws::ClientFrame;
 use shared::validation::chat;
 
+use crate::api::error::FrontendError;
 use crate::api::ws::WsClient;
 use crate::features::chat::api;
 use crate::features::chat::ws;
@@ -25,6 +26,7 @@ use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
 use crate::theme::{self, color, radius, space, typography};
 use crate::util::format;
+use crate::util::load;
 
 const PAGE: u32 = 50;
 
@@ -40,6 +42,7 @@ pub fn MessageThread(
     let me = Signal::derive(move || auth.user.get().map(|u| u.id));
     let oldest = RwSignal::new(None::<MessageId>);
     let loading_older = RwSignal::new(false);
+    let history_err = RwSignal::new(None::<FrontendError>);
 
     // Shared edit-dialog target, populated from the caller's own message rows.
     let edit_open = RwSignal::new(false);
@@ -72,21 +75,27 @@ pub fn MessageThread(
         messages.set(Vec::new());
         typing.set(false);
         oldest.set(None);
+        history_err.set(None);
         ws.send(ClientFrame::Subscribe { channel_id: cid });
         task::spawn_local(async move {
-            if let Ok(mut history) = api::messages(cid, None, PAGE).await {
-                history.reverse();
-                oldest.set(history.first().map(|m| m.id));
-                messages.set(history);
+            match api::messages(cid, None, PAGE).await {
+                Ok(mut history) => {
+                    history.reverse();
+                    oldest.set(history.first().map(|m| m.id));
+                    messages.set(history);
+                }
+                Err(e) => history_err.set(Some(e)),
             }
+            // Best-effort; unread state self-corrects on the next channel list load.
             let _ = api::mark_read(cid).await;
         });
     });
 
     // Live frames for the open channel.
+    let typing_gen = StoredValue::new(0u64);
     let frame_handler = ws.on_frame(move |frame| {
         if let Some(cid) = channel.get_untracked() {
-            ws::apply_server_frame(frame, cid, messages, typing);
+            ws::apply_server_frame(frame, cid, messages, typing, typing_gen);
         }
     });
     on_cleanup(move || ws.off_frame(frame_handler));
@@ -100,18 +109,21 @@ pub fn MessageThread(
         };
         loading_older.set(true);
         task::spawn_local(async move {
-            if let Ok(mut older) = api::messages(cid, Some(before), PAGE).await {
-                older.reverse();
-                if let Some(first) = older.first() {
-                    oldest.set(Some(first.id));
+            match api::messages(cid, Some(before), PAGE).await {
+                Ok(mut older) => {
+                    older.reverse();
+                    if let Some(first) = older.first() {
+                        oldest.set(Some(first.id));
+                    }
+                    if !older.is_empty() {
+                        messages.update(move |v| {
+                            let mut combined = older;
+                            combined.append(v);
+                            *v = combined;
+                        });
+                    }
                 }
-                if !older.is_empty() {
-                    messages.update(move |v| {
-                        let mut combined = older;
-                        combined.append(v);
-                        *v = combined;
-                    });
-                }
+                Err(e) => toast.error_from(&e),
             }
             loading_older.set(false);
         });
@@ -138,7 +150,10 @@ pub fn MessageThread(
             </Show>
             <Show
                 when=move || !is_empty.get()
-                fallback=move || view! { <div class=empty_cls.clone()>"No messages yet — say hello."</div> }
+                fallback=move || match history_err.get() {
+                    Some(e) => load::load_error(&e),
+                    None => view! { <div class=empty_cls.clone()>"No messages yet — say hello."</div> }.into_any(),
+                }
             >
                 <Stack gap=Gap::Xs>
                     <For
@@ -320,7 +335,7 @@ fn attachment_views(attachments: Vec<ChatAttachmentDto>) -> AnyView {
                 .into_any()
             } else {
                 let file = ROW_CLS.file.clone();
-                let label = format!("{} ({})", a.filename, human_size(a.size_bytes));
+                let label = format!("{} ({})", a.filename, format::human_size(a.size_bytes));
                 view! {
                     <a class=file href=href target="_blank" rel="noopener">
                         <Icon name=IconName::Paperclip size=13 />
@@ -332,16 +347,6 @@ fn attachment_views(attachments: Vec<ChatAttachmentDto>) -> AnyView {
         })
         .collect_view();
     view! { <Stack gap=Gap::Xs>{views}</Stack> }.into_any()
-}
-
-fn human_size(bytes: u64) -> String {
-    if bytes >= 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else if bytes >= 1024 {
-        format!("{:.0} KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{bytes} B")
-    }
 }
 
 #[component]

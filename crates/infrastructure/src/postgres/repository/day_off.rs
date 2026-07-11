@@ -132,7 +132,7 @@ impl DayOffRepository for PgDayOffRepo {
         &self,
         user: UserId,
         year: i32,
-        month: u32,
+        month: u8,
     ) -> Result<f64, RepositoryError> {
         let (first, last) = mappers::month_bounds(year, month)?;
         // Approximation: a request spanning two months counts in full in each overlapping month.
@@ -214,9 +214,9 @@ impl DayOffRepository for PgDayOffRepo {
             r#"INSERT INTO attendance.dayoff
                  (id, requester_user_id, kind, start_date, end_date, start_half, end_half,
                   days, reason, status, leader_user_id, leader_decided_at, hr_user_id,
-                  hr_decided_at, decision_note, created_at, updated_at)
+                  hr_decided_at, decision_note, created_at)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8::float8::numeric, $9, $10, $11, $12,
-                       $13, $14, $15, $16, $17)
+                       $13, $14, $15, $16)
                ON CONFLICT (id) DO UPDATE SET
                  kind              = EXCLUDED.kind,
                  start_date        = EXCLUDED.start_date,
@@ -230,8 +230,7 @@ impl DayOffRepository for PgDayOffRepo {
                  leader_decided_at = EXCLUDED.leader_decided_at,
                  hr_user_id        = EXCLUDED.hr_user_id,
                  hr_decided_at     = EXCLUDED.hr_decided_at,
-                 decision_note     = EXCLUDED.decision_note,
-                 updated_at        = EXCLUDED.updated_at"#,
+                 decision_note     = EXCLUDED.decision_note"#,
             day_off.id.0,
             day_off.requester_user_id.0,
             kind as SqlDayOffKind,
@@ -248,7 +247,6 @@ impl DayOffRepository for PgDayOffRepo {
             day_off.hr_decided_at,
             day_off.decision_note,
             day_off.created_at,
-            day_off.updated_at,
         )
         .execute(&self.pool)
         .await

@@ -6,22 +6,6 @@ use crate::primitives::avatar::{Avatar, AvatarSize};
 use crate::theme::{self, color, typography};
 use crate::util::format;
 
-fn dimension(size: AvatarSize) -> &'static str {
-    match size {
-        AvatarSize::Sm => "24px",
-        AvatarSize::Md => "32px",
-        AvatarSize::Lg => "40px",
-    }
-}
-
-fn font_size(size: AvatarSize) -> &'static str {
-    match size {
-        AvatarSize::Sm => typography::TEXT_COUNT,
-        AvatarSize::Md => typography::TEXT_CAPTION,
-        AvatarSize::Lg => typography::TEXT_BODY,
-    }
-}
-
 /// A row of overlapping [`Avatar`]s with a trailing `+N` chip once the list
 /// exceeds `max`. Tones are derived per-name so a person keeps a stable color.
 #[component]
@@ -46,8 +30,8 @@ pub fn AvatarStack(
     });
 
     let overflow_chip = (overflow > 0).then(|| {
-        let dim = dimension(size);
-        let fs = font_size(size);
+        let dim = size.dimension();
+        let fs = size.font_size();
         let cls = theme::class(format!(
             "display: inline-flex; align-items: center; justify-content: center; \
              width: {dim}; height: {dim}; background: {bg}; color: {c}; \

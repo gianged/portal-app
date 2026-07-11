@@ -16,9 +16,10 @@ use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::table::{Table, TableToolbar, TableWrap};
 use crate::theme::{self, color, space, typography};
 use crate::util::format;
-use crate::util::load;
+use crate::util::load::{self, Loadable};
 
-pub use crate::util::load::Loadable;
+/// Row cap for each dashboard panel.
+const PANEL_ROWS: usize = 6;
 
 #[component]
 pub fn StatTiles(
@@ -113,10 +114,10 @@ pub fn RequestsPanel(requests: Loadable<Vec<RequestDto>>) -> impl IntoView {
                 <span></span>
             </TableToolbar>
             {move || match requests.get() {
-                None => note("Loading requests…", true),
+                None => load::note("Loading requests…"),
                 Some(Err(e)) => load::load_error(&e),
                 Some(Ok(items)) if items.is_empty() => {
-                    note("Nothing assigned to you right now.", true)
+                    load::note("Nothing assigned to you right now.")
                 }
                 Some(Ok(items)) => requests_table(&items),
             }}
@@ -131,10 +132,10 @@ pub fn TicketsPanel(tickets: Loadable<Vec<TicketDto>>) -> impl IntoView {
             <Stack gap=Gap::Md>
                 {panel_heading("My IT tickets")}
                 {move || match tickets.get() {
-                    None => note("Loading tickets…", false),
+                    None => load::note_inline("Loading tickets…"),
                     Some(Err(e)) => load::load_error(&e),
                     Some(Ok(items)) if items.is_empty() => {
-                        note("You haven't raised any tickets.", false)
+                        load::note_inline("You haven't raised any tickets.")
                     }
                     Some(Ok(items)) => tickets_list(&items),
                 }}
@@ -150,9 +151,9 @@ pub fn ChannelsPanel(channels: Loadable<Vec<ChannelSummaryDto>>) -> impl IntoVie
             <Stack gap=Gap::Md>
                 {panel_heading("Channels")}
                 {move || match channels.get() {
-                    None => note("Loading channels…", false),
+                    None => load::note_inline("Loading channels…"),
                     Some(Err(e)) => load::load_error(&e),
-                    Some(Ok(items)) if items.is_empty() => note("No channels yet.", false),
+                    Some(Ok(items)) if items.is_empty() => load::note_inline("No channels yet."),
                     Some(Ok(items)) => channels_list(&items),
                 }}
             </Stack>
@@ -162,8 +163,12 @@ pub fn ChannelsPanel(channels: Loadable<Vec<ChannelSummaryDto>>) -> impl IntoVie
 
 fn requests_table(items: &[RequestDto]) -> AnyView {
     let total = items.len();
-    let rows = items.iter().take(6).map(request_row).collect_view();
-    let footer = (total > 6).then(|| {
+    let rows = items
+        .iter()
+        .take(PANEL_ROWS)
+        .map(request_row)
+        .collect_view();
+    let footer = (total > PANEL_ROWS).then(|| {
         let cls = theme::class(format!(
             "padding: {p}; font-family: {ff}; font-size: {fs}; color: {c};",
             p = space::D3,
@@ -171,7 +176,7 @@ fn requests_table(items: &[RequestDto]) -> AnyView {
             fs = typography::TEXT_CAPTION,
             c = color::TEXT_FAINT,
         ));
-        view! { <div class=cls>{format!("+{} more", total - 6)}</div> }
+        view! { <div class=cls>{format!("+{} more", total - PANEL_ROWS)}</div> }
     });
     view! {
         <Table>
@@ -217,7 +222,7 @@ fn request_row(r: &RequestDto) -> AnyView {
 }
 
 fn tickets_list(items: &[TicketDto]) -> AnyView {
-    let rows = items.iter().take(6).map(ticket_row).collect_view();
+    let rows = items.iter().take(PANEL_ROWS).map(ticket_row).collect_view();
     view! { <Stack gap=Gap::Sm>{rows}</Stack> }.into_any()
 }
 
@@ -253,7 +258,11 @@ fn ticket_row(t: &TicketDto) -> AnyView {
 }
 
 fn channels_list(items: &[ChannelSummaryDto]) -> AnyView {
-    let rows = items.iter().take(6).map(channel_row).collect_view();
+    let rows = items
+        .iter()
+        .take(PANEL_ROWS)
+        .map(channel_row)
+        .collect_view();
     view! { <Stack gap=Gap::Sm>{rows}</Stack> }.into_any()
 }
 
@@ -328,17 +337,6 @@ fn panel_heading(text: &str) -> AnyView {
         c = color::TEXT_STRONG,
     ));
     view! { <span class=cls>{text.to_owned()}</span> }.into_any()
-}
-
-fn note(text: &str, padded: bool) -> AnyView {
-    let pad = if padded { space::D5 } else { "0px" };
-    let cls = theme::class(format!(
-        "padding: {pad}; font-family: {ff}; font-size: {fs}; color: {c};",
-        ff = typography::FONT_SANS,
-        fs = typography::TEXT_SMALL,
-        c = color::TEXT_MUTED,
-    ));
-    view! { <div class=cls>{text.to_owned()}</div> }.into_any()
 }
 
 fn count_where<T: Send + Sync + 'static>(

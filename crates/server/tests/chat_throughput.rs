@@ -34,6 +34,7 @@ use std::{
 
 use async_trait::async_trait;
 use futures::{StreamExt, stream};
+use redis::Client;
 use time::OffsetDateTime;
 use tokio::{sync::oneshot, task::JoinHandle};
 use uuid::Uuid;
@@ -67,7 +68,8 @@ use infrastructure::{
 const TOTAL_MESSAGES: usize = 20_000;
 const CONCURRENCY: usize = 256;
 const READBACK_PAGE: u32 = 1_000;
-// Hard caps so a lost message fails the assertion instead of hanging forever.
+// Hard cap on the fan-out tail, armed in assert_fanned_out AFTER posting/drain
+// completes, so load-generation time never eats the wait window.
 const FANOUT_WAIT: Duration = Duration::from_mins(2);
 
 const CHAT_EVENT_KEY: &str = "portal:event:portal.chat";
@@ -284,36 +286,28 @@ async fn setup() -> Harness {
 
 /// Subscribes to the chat fan-out plane and returns a task collecting the ids of
 /// this run's marked messages. Awaits subscriber readiness before returning, so
-/// no published event posted afterwards is missed.
+/// no published event posted afterwards is missed. The task runs until every
+/// message is seen (or the stream ends); the hard cap lives in
+/// [`assert_fanned_out`], which aborts it on timeout.
 async fn spawn_collector(redis_url: String, marker: String) -> JoinHandle<HashSet<Uuid>> {
     let (ready_tx, ready_rx) = oneshot::channel::<()>();
     let handle = tokio::spawn(async move {
-        let client = redis::Client::open(redis_url).expect("redis client");
+        let client = Client::open(redis_url).expect("redis client");
         let mut pubsub = client.get_async_pubsub().await.expect("pubsub conn");
         pubsub.subscribe(CHAT_EVENT_KEY).await.expect("subscribe");
         let _ = ready_tx.send(());
 
         let mut seen: HashSet<Uuid> = HashSet::new();
         let mut stream = pubsub.on_message();
-        let deadline = tokio::time::Instant::now() + FANOUT_WAIT;
-        loop {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                break;
-            }
-            match tokio::time::timeout(remaining, stream.next()).await {
-                Ok(Some(msg)) => {
-                    let Ok(payload) = msg.get_payload::<Vec<u8>>() else {
-                        continue;
-                    };
-                    if let Some(id) = parse_marked_message(&payload, &marker) {
-                        seen.insert(id);
-                        if seen.len() >= TOTAL_MESSAGES {
-                            break;
-                        }
-                    }
-                }
-                _ => break, // stream ended or timed out
+        while seen.len() < TOTAL_MESSAGES {
+            let Some(msg) = stream.next().await else {
+                break; // stream ended
+            };
+            let Ok(payload) = msg.get_payload::<Vec<u8>>() else {
+                continue;
+            };
+            if let Some(id) = parse_marked_message(&payload, &marker) {
+                seen.insert(id);
             }
         }
         seen
@@ -367,12 +361,19 @@ async fn assert_persisted(
     println!("persisted {}/{} in Scylla", found.len(), posted_ids.len());
 }
 
-/// No-loss in fan-out: every posted id must have crossed the Redis plane.
+/// No-loss in fan-out: every posted id must have crossed the Redis plane. The
+/// FANOUT_WAIT countdown starts here, after posting/drain has completed; on
+/// timeout the collector is aborted and the test fails.
 async fn assert_fanned_out(collector: JoinHandle<HashSet<Uuid>>, posted_ids: &HashSet<Uuid>) {
-    let seen = tokio::time::timeout(FANOUT_WAIT + Duration::from_secs(10), collector)
-        .await
-        .expect("fan-out collector hung")
-        .expect("fan-out collector panicked");
+    let abort = collector.abort_handle();
+    let Ok(joined) = tokio::time::timeout(FANOUT_WAIT, collector).await else {
+        abort.abort();
+        panic!(
+            "Redis fan-out lost messages: tail still missing after {FANOUT_WAIT:?} ({} expected)",
+            posted_ids.len(),
+        );
+    };
+    let seen = joined.expect("fan-out collector panicked");
     let fanned = posted_ids.intersection(&seen).count();
     assert_eq!(
         fanned,

@@ -31,312 +31,346 @@ impl AuditProjector {
     /// Returns a repository error if appending the audit row fails.
     #[tracing::instrument(skip_all)]
     pub async fn handle(&self, event: &DomainEvent) -> Result<()> {
-        use AuditAction::{Assign, Create, Delete, StatusChange, Transfer, Update};
-
-        let entry = match event {
-            // --- users: auth.users ---
-            DomainEvent::UserCreated {
-                user_id, actor, at, ..
-            } => row(Some(*actor), Create, "auth", "users", user_id.0, *at),
-            // First login is self-service; no acting admin.
-            DomainEvent::UserActivated { user_id, at, .. } => {
-                row(None, StatusChange, "auth", "users", user_id.0, *at)
-            }
-            DomainEvent::UserDeactivated {
-                user_id, actor, at, ..
-            }
-            | DomainEvent::UserReactivated {
-                user_id, actor, at, ..
-            } => row(Some(*actor), StatusChange, "auth", "users", user_id.0, *at),
-            DomainEvent::UserProfileUpdated {
-                user_id, actor, at, ..
-            }
-            | DomainEvent::UserPasswordReset {
-                user_id, actor, at, ..
-            } => row(Some(*actor), Update, "auth", "users", user_id.0, *at),
-            DomainEvent::UserPasswordChanged { user_id, at } => {
-                row(Some(*user_id), Update, "auth", "users", user_id.0, *at)
-            }
-
-            // --- groups: org.groups ---
-            DomainEvent::GroupCreated {
-                group_id,
-                actor,
-                at,
-                ..
-            } => row(Some(*actor), Create, "org", "groups", group_id.0, *at),
-            DomainEvent::GroupDeleted {
-                group_id,
-                actor,
-                at,
-                ..
-            } => row(Some(*actor), Delete, "org", "groups", group_id.0, *at),
-            DomainEvent::GroupMetadataUpdated {
-                group_id,
-                actor,
-                at,
-                ..
-            } => row(Some(*actor), Update, "org", "groups", group_id.0, *at),
-            DomainEvent::LeadershipTransferred {
-                group_id,
-                actor,
-                at,
-                ..
-            } => row(Some(*actor), Transfer, "org", "groups", group_id.0, *at),
-
-            // --- memberships: org.memberships ---
-            DomainEvent::MembershipAdded {
-                membership_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                Create,
-                "org",
-                "memberships",
-                membership_id.0,
-                *at,
-            ),
-            DomainEvent::MembershipRoleChanged {
-                membership_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                Update,
-                "org",
-                "memberships",
-                membership_id.0,
-                *at,
-            ),
-            DomainEvent::MembershipDeactivated {
-                membership_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                Delete,
-                "org",
-                "memberships",
-                membership_id.0,
-                *at,
-            ),
-
-            // --- projects: project.projects ---
-            DomainEvent::ProjectCreated {
-                project_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                Create,
-                "project",
-                "projects",
-                project_id.0,
-                *at,
-            ),
-            DomainEvent::ProjectMetadataUpdated {
-                project_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                Update,
-                "project",
-                "projects",
-                project_id.0,
-                *at,
-            ),
-            DomainEvent::ProjectStatusChanged {
-                project_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                StatusChange,
-                "project",
-                "projects",
-                project_id.0,
-                *at,
-            ),
-            DomainEvent::ProjectCollaboratorRemoved {
-                project_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                Delete,
-                "project",
-                "projects",
-                project_id.0,
-                *at,
-            ),
-
-            // --- project invites: project.project_invites ---
-            DomainEvent::ProjectInviteSent {
-                invite_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                Create,
-                "project",
-                "project_invites",
-                invite_id.0,
-                *at,
-            ),
-            DomainEvent::ProjectInviteResponded {
-                invite_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                StatusChange,
-                "project",
-                "project_invites",
-                invite_id.0,
-                *at,
-            ),
-
-            // --- requests: project.requests ---
-            DomainEvent::RequestCreated {
-                request_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                Create,
-                "project",
-                "requests",
-                request_id.0,
-                *at,
-            ),
-            DomainEvent::RequestMetadataUpdated {
-                request_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                Update,
-                "project",
-                "requests",
-                request_id.0,
-                *at,
-            ),
-            DomainEvent::RequestAssigned {
-                request_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                Assign,
-                "project",
-                "requests",
-                request_id.0,
-                *at,
-            ),
-            DomainEvent::RequestStatusChanged {
-                request_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                StatusChange,
-                "project",
-                "requests",
-                request_id.0,
-                *at,
-            ),
-
-            // --- tickets: ticket.tickets ---
-            DomainEvent::TicketRaised {
-                ticket_id,
-                requester,
-                at,
-                ..
-            } => row(
-                Some(*requester),
-                Create,
-                "ticket",
-                "tickets",
-                ticket_id.0,
-                *at,
-            ),
-            DomainEvent::TicketTriaged {
-                ticket_id,
-                actor,
-                at,
-                ..
-            } => row(Some(*actor), Update, "ticket", "tickets", ticket_id.0, *at),
-            DomainEvent::TicketAssigned {
-                ticket_id,
-                actor,
-                at,
-                ..
-            } => row(Some(*actor), Assign, "ticket", "tickets", ticket_id.0, *at),
-            DomainEvent::TicketStatusChanged {
-                ticket_id,
-                actor,
-                at,
-                ..
-            } => row(
-                Some(*actor),
-                StatusChange,
-                "ticket",
-                "tickets",
-                ticket_id.0,
-                *at,
-            ),
-            // System action, no actor (precedent: UserActivated).
-            DomainEvent::TicketAutoClosed { ticket_id, at } => {
-                row(None, StatusChange, "ticket", "tickets", ticket_id.0, *at)
-            }
-
-            // --- comments: project.request_comments / ticket.ticket_comments ---
-            DomainEvent::CommentAdded {
-                comment_id,
-                entity,
-                actor,
-                at,
-                ..
-            } => comment_row(*entity, Some(*actor), Create, comment_id.0, *at),
-            DomainEvent::CommentEdited {
-                comment_id,
-                entity,
-                actor,
-                at,
-                ..
-            } => comment_row(*entity, Some(*actor), Update, comment_id.0, *at),
-            DomainEvent::CommentDeleted {
-                comment_id,
-                entity,
-                actor,
-                at,
-            } => comment_row(*entity, Some(*actor), Delete, comment_id.0, *at),
-
-            // Chat / announcements live in Scylla, not the Postgres audit log.
-            other => {
-                tracing::debug!(topic = other.topic(), "audit: event not projected");
-                return Ok(());
-            }
+        let Some(entry) = project(event) else {
+            tracing::debug!(topic = event.topic(), "audit: event not projected");
+            return Ok(());
         };
-
         self.audit.append(&entry).await?;
         Ok(())
     }
+}
+
+/// Maps one event to its audit row, one helper per schema; `None` when the
+/// event is not projected.
+fn project(event: &DomainEvent) -> Option<AuditLog> {
+    user_row(event)
+        .or_else(|| org_row(event))
+        .or_else(|| project_row(event))
+        .or_else(|| ticket_row(event))
+        .or_else(|| comment_event_row(event))
+}
+
+/// `auth.users` rows.
+fn user_row(event: &DomainEvent) -> Option<AuditLog> {
+    use AuditAction::{Create, StatusChange, Update};
+
+    Some(match event {
+        DomainEvent::UserCreated {
+            user_id, actor, at, ..
+        } => row(Some(*actor), Create, "auth", "users", user_id.0, *at),
+        // First login is self-service; no acting admin.
+        DomainEvent::UserActivated { user_id, at, .. } => {
+            row(None, StatusChange, "auth", "users", user_id.0, *at)
+        }
+        DomainEvent::UserDeactivated {
+            user_id, actor, at, ..
+        }
+        | DomainEvent::UserReactivated {
+            user_id, actor, at, ..
+        } => row(Some(*actor), StatusChange, "auth", "users", user_id.0, *at),
+        DomainEvent::UserProfileUpdated {
+            user_id, actor, at, ..
+        }
+        | DomainEvent::UserPasswordReset {
+            user_id, actor, at, ..
+        } => row(Some(*actor), Update, "auth", "users", user_id.0, *at),
+        DomainEvent::UserPasswordChanged { user_id, at } => {
+            row(Some(*user_id), Update, "auth", "users", user_id.0, *at)
+        }
+        _ => return None,
+    })
+}
+
+/// `org.groups` and `org.memberships` rows.
+fn org_row(event: &DomainEvent) -> Option<AuditLog> {
+    use AuditAction::{Create, Delete, Transfer, Update};
+
+    Some(match event {
+        DomainEvent::GroupCreated {
+            group_id,
+            actor,
+            at,
+            ..
+        } => row(Some(*actor), Create, "org", "groups", group_id.0, *at),
+        DomainEvent::GroupDeleted {
+            group_id,
+            actor,
+            at,
+            ..
+        } => row(Some(*actor), Delete, "org", "groups", group_id.0, *at),
+        DomainEvent::GroupMetadataUpdated {
+            group_id,
+            actor,
+            at,
+            ..
+        } => row(Some(*actor), Update, "org", "groups", group_id.0, *at),
+        DomainEvent::LeadershipTransferred {
+            group_id,
+            actor,
+            at,
+            ..
+        } => row(Some(*actor), Transfer, "org", "groups", group_id.0, *at),
+        DomainEvent::MembershipAdded {
+            membership_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            Create,
+            "org",
+            "memberships",
+            membership_id.0,
+            *at,
+        ),
+        DomainEvent::MembershipRoleChanged {
+            membership_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            Update,
+            "org",
+            "memberships",
+            membership_id.0,
+            *at,
+        ),
+        DomainEvent::MembershipDeactivated {
+            membership_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            Delete,
+            "org",
+            "memberships",
+            membership_id.0,
+            *at,
+        ),
+        _ => return None,
+    })
+}
+
+/// `project.projects`, `project.project_invites`, and `project.requests` rows.
+#[allow(clippy::too_many_lines)]
+fn project_row(event: &DomainEvent) -> Option<AuditLog> {
+    use AuditAction::{Assign, Create, Delete, StatusChange, Update};
+
+    Some(match event {
+        DomainEvent::ProjectCreated {
+            project_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            Create,
+            "project",
+            "projects",
+            project_id.0,
+            *at,
+        ),
+        DomainEvent::ProjectMetadataUpdated {
+            project_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            Update,
+            "project",
+            "projects",
+            project_id.0,
+            *at,
+        ),
+        DomainEvent::ProjectStatusChanged {
+            project_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            StatusChange,
+            "project",
+            "projects",
+            project_id.0,
+            *at,
+        ),
+        DomainEvent::ProjectCollaboratorRemoved {
+            project_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            Delete,
+            "project",
+            "projects",
+            project_id.0,
+            *at,
+        ),
+        DomainEvent::ProjectInviteSent {
+            invite_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            Create,
+            "project",
+            "project_invites",
+            invite_id.0,
+            *at,
+        ),
+        DomainEvent::ProjectInviteResponded {
+            invite_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            StatusChange,
+            "project",
+            "project_invites",
+            invite_id.0,
+            *at,
+        ),
+        DomainEvent::RequestCreated {
+            request_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            Create,
+            "project",
+            "requests",
+            request_id.0,
+            *at,
+        ),
+        DomainEvent::RequestMetadataUpdated {
+            request_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            Update,
+            "project",
+            "requests",
+            request_id.0,
+            *at,
+        ),
+        DomainEvent::RequestAssigned {
+            request_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            Assign,
+            "project",
+            "requests",
+            request_id.0,
+            *at,
+        ),
+        DomainEvent::RequestStatusChanged {
+            request_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            StatusChange,
+            "project",
+            "requests",
+            request_id.0,
+            *at,
+        ),
+        _ => return None,
+    })
+}
+
+/// `ticket.tickets` rows.
+fn ticket_row(event: &DomainEvent) -> Option<AuditLog> {
+    use AuditAction::{Assign, Create, StatusChange, Update};
+
+    Some(match event {
+        DomainEvent::TicketRaised {
+            ticket_id,
+            requester,
+            at,
+            ..
+        } => row(
+            Some(*requester),
+            Create,
+            "ticket",
+            "tickets",
+            ticket_id.0,
+            *at,
+        ),
+        DomainEvent::TicketTriaged {
+            ticket_id,
+            actor,
+            at,
+            ..
+        } => row(Some(*actor), Update, "ticket", "tickets", ticket_id.0, *at),
+        DomainEvent::TicketAssigned {
+            ticket_id,
+            actor,
+            at,
+            ..
+        } => row(Some(*actor), Assign, "ticket", "tickets", ticket_id.0, *at),
+        DomainEvent::TicketStatusChanged {
+            ticket_id,
+            actor,
+            at,
+            ..
+        } => row(
+            Some(*actor),
+            StatusChange,
+            "ticket",
+            "tickets",
+            ticket_id.0,
+            *at,
+        ),
+        // System action, no actor (precedent: UserActivated).
+        DomainEvent::TicketAutoClosed { ticket_id, at } => {
+            row(None, StatusChange, "ticket", "tickets", ticket_id.0, *at)
+        }
+        _ => return None,
+    })
+}
+
+/// `project.request_comments` / `ticket.ticket_comments` rows.
+fn comment_event_row(event: &DomainEvent) -> Option<AuditLog> {
+    use AuditAction::{Create, Delete, Update};
+
+    Some(match event {
+        DomainEvent::CommentAdded {
+            comment_id,
+            entity,
+            actor,
+            at,
+            ..
+        } => comment_row(*entity, Some(*actor), Create, comment_id.0, *at),
+        DomainEvent::CommentEdited {
+            comment_id,
+            entity,
+            actor,
+            at,
+            ..
+        } => comment_row(*entity, Some(*actor), Update, comment_id.0, *at),
+        DomainEvent::CommentDeleted {
+            comment_id,
+            entity,
+            actor,
+            at,
+        } => comment_row(*entity, Some(*actor), Delete, comment_id.0, *at),
+        _ => return None,
+    })
 }
 
 /// [`row`] with the schema/table derived from the comment's parent entity.

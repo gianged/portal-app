@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use time::{Date, OffsetDateTime};
 
 use crate::dto::ids::{DayOffId, LeaveGrantId, LeaveTransactionId};
 
@@ -34,7 +34,7 @@ pub struct LeaveGrantDto {
     pub grant_year: u16,
     pub days_granted: f64,
     pub days_remaining: f64,
-    pub expires_on: String,
+    pub expires_on: Date,
 }
 
 /// A user's current balance: available days plus the per-year breakdown.

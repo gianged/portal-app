@@ -2,7 +2,6 @@
 
 use leptos::{prelude::*, task};
 use leptos_router::components::A;
-use uuid::Uuid;
 
 use shared::dto::ticket::{RaiseTicketRequest, TicketCategory, TicketDto};
 use shared::validation::ticket;
@@ -27,33 +26,10 @@ use crate::util::debounce;
 use crate::util::format;
 use crate::util::load::{self, Loadable};
 
-fn category_wire(c: TicketCategory) -> &'static str {
-    match c {
-        TicketCategory::Hardware => "hardware",
-        TicketCategory::Software => "software",
-        TicketCategory::Access => "access",
-        TicketCategory::Other => "other",
-    }
-}
-
-fn category_from_wire(s: &str) -> TicketCategory {
-    match s {
-        "hardware" => TicketCategory::Hardware,
-        "software" => TicketCategory::Software,
-        "access" => TicketCategory::Access,
-        _ => TicketCategory::Other,
-    }
-}
-
-fn short_id(id: &Uuid) -> String {
-    let s = id.to_string();
-    format!("#{}", s.get(..8).unwrap_or(&s))
-}
-
 #[component]
 pub fn TicketsIndex() -> impl IntoView {
     let scope = RwSignal::new(Scope::Mine);
-    let items: Loadable<Vec<TicketDto>> = RwSignal::new(None);
+    let items: Loadable<Vec<TicketDto>> = Loadable::new();
     let reload = RwSignal::new(0u32);
     let raise_open = RwSignal::new(false);
     let search = RwSignal::new(String::new());
@@ -137,7 +113,7 @@ fn tickets_table(items: Vec<TicketDto>) -> AnyView {
 
 fn ticket_row(t: &TicketDto) -> AnyView {
     let href = format!("/tickets/{}", t.id.0);
-    let id_label = short_id(&t.id.0);
+    let id_label = format::short_id(&t.id.0);
     let title = t.title.clone();
     let status = t.status;
     let priority = t.priority;
@@ -186,8 +162,10 @@ fn RaiseTicketDialog(open: RwSignal<bool>, on_raised: Callback<()>) -> impl Into
 
     let on_close = Callback::new(move |()| open.set(false));
     let cancel = Callback::new(move |_| open.set(false));
-    let on_category = Callback::new(move |v: String| category.set(category_from_wire(&v)));
-    let category_value = Signal::derive(move || category_wire(category.get()).to_owned());
+    let on_category = Callback::new(move |v: String| {
+        category.set(TicketCategory::from_wire(&v).unwrap_or(TicketCategory::Other));
+    });
+    let category_value = Signal::derive(move || category.get().as_str().to_owned());
 
     let submit = Callback::new(move |_| {
         if submitting.get_untracked() {
@@ -249,10 +227,9 @@ fn RaiseTicketDialog(open: RwSignal<bool>, on_raised: Callback<()>) -> impl Into
                     <div>
                         <FieldLabel for_id="tk-cat">"Category"</FieldLabel>
                         <Select value=category_value on_change=on_category>
-                            <option value="hardware">"Hardware"</option>
-                            <option value="software">"Software"</option>
-                            <option value="access">"Access"</option>
-                            <option value="other">"Other"</option>
+                            {TicketCategory::ALL.into_iter().map(|c| view! {
+                                <option value=c.as_str()>{c.label()}</option>
+                            }).collect_view()}
                         </Select>
                     </div>
                 </Stack>

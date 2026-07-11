@@ -18,8 +18,7 @@ pub enum DailyReportStatus {
 }
 
 impl DailyReportStatus {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
+    const fn as_str(self) -> &'static str {
         match self {
             Self::Draft => "draft",
             Self::Submitted => "submitted",

@@ -15,6 +15,8 @@ use crate::{error::Result, permissions::Permissions};
 pub use email::EmailNotifier;
 pub use fanout::NotificationFanout;
 
+/// Read side of per-user notifications: list, unread count, mark-read. Writes
+/// come from the system-level [`NotificationFanout`].
 pub struct NotificationService {
     notifications: Arc<dyn NotificationRepository>,
     perms: Arc<Permissions>,

@@ -44,6 +44,15 @@ impl AuthState {
         self.has_role_in(group, |r| r == GroupRole::Leader)
     }
 
+    /// Whether the signed-in user leads at least one group. Untracked read.
+    #[must_use]
+    pub fn leads_any_group(&self) -> bool {
+        self.user.with_untracked(|u| {
+            u.as_ref()
+                .is_some_and(|x| x.memberships.iter().any(|m| m.role == GroupRole::Leader))
+        })
+    }
+
     /// Whether the signed-in user leads or sub-leads `group`. Untracked read.
     #[must_use]
     pub fn leads_or_subleads(&self, group: GroupId) -> bool {

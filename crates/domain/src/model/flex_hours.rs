@@ -41,8 +41,7 @@ pub enum FlexStatus {
 }
 
 impl FlexStatus {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
+    const fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
             Self::Approved => "approved",
@@ -54,21 +53,27 @@ impl FlexStatus {
     pub const fn try_approve(self) -> Result<Self, TransitionError> {
         match self {
             Self::Pending => Ok(Self::Approved),
-            _ => Err(TransitionError::invalid(self.as_str(), "approved")),
+            Self::Approved | Self::Rejected | Self::Cancelled => {
+                Err(TransitionError::invalid(self.as_str(), "approved"))
+            }
         }
     }
 
     pub const fn try_reject(self) -> Result<Self, TransitionError> {
         match self {
             Self::Pending => Ok(Self::Rejected),
-            _ => Err(TransitionError::invalid(self.as_str(), "rejected")),
+            Self::Approved | Self::Rejected | Self::Cancelled => {
+                Err(TransitionError::invalid(self.as_str(), "rejected"))
+            }
         }
     }
 
     pub const fn try_cancel(self) -> Result<Self, TransitionError> {
         match self {
             Self::Pending => Ok(Self::Cancelled),
-            _ => Err(TransitionError::invalid(self.as_str(), "cancelled")),
+            Self::Approved | Self::Rejected | Self::Cancelled => {
+                Err(TransitionError::invalid(self.as_str(), "cancelled"))
+            }
         }
     }
 }
@@ -269,6 +274,10 @@ mod tests {
         f.approve(UserId(Uuid::now_v7()), String::new(), now)
             .unwrap();
         assert_eq!(f.status, FlexStatus::Approved);
+        assert!(
+            f.approve(UserId(Uuid::now_v7()), String::new(), now)
+                .is_err()
+        );
         assert!(f.cancel(now).is_err());
     }
 }

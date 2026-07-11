@@ -18,8 +18,8 @@ pub const STORAGE_KEY_MAX: usize = 512;
 pub const NOTIFICATION_BATCH_MAX: usize = 100;
 pub const COMMENT_BODY_MAX: usize = 4_000;
 
-/// Attendance leave/overtime/flex amounts are tracked in half-day / half-hour
-/// units. Mirrors `domain`'s `LEAVE_UNIT` (the two crates cannot share a const).
+/// Leave amounts are tracked in half-day units. Mirrors `domain`'s `LEAVE_UNIT`
+/// (the two crates cannot share a const).
 pub const LEAVE_UNIT: f64 = 0.5;
 
 /// Rejects a value outside the inclusive `[min, max]` range.
@@ -42,7 +42,8 @@ pub fn in_range(field: &str, value: f64, min: f64, max: f64) -> Result<(), Share
 ///
 /// Returns [`SharedError::Validation`] when `value` is not a multiple of 0.5.
 pub fn half_step(field: &str, value: f64) -> Result<(), SharedError> {
-    if (value * 2.0).fract().abs() > 1e-6 {
+    let scaled = value * 2.0;
+    if (scaled - scaled.round()).abs() > 1e-6 {
         return Err(SharedError::Validation(format!(
             "{field} must be in steps of {LEAVE_UNIT}"
         )));
@@ -113,25 +114,20 @@ pub fn len_range(field: &str, value: &str, min: usize, max: usize) -> Result<(),
     Ok(())
 }
 
-/// Parses and range-checks a `"YYYY-MM-DD"` string into a comparable tuple.
-pub(crate) fn iso_date(field: &str, s: &str) -> Result<(i32, u8, u8), SharedError> {
-    let err = || SharedError::Validation(format!("{field} must be a date (YYYY-MM-DD)"));
-    let mut parts = s.split('-');
-    let year: i32 = parts.next().ok_or_else(err)?.parse().map_err(|_| err())?;
-    let month: u8 = parts.next().ok_or_else(err)?.parse().map_err(|_| err())?;
-    let day: u8 = parts.next().ok_or_else(err)?.parse().map_err(|_| err())?;
-    if parts.next().is_some() || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
-        return Err(err());
-    }
-    Ok((year, month, day))
-}
-
 #[cfg(test)]
 mod tests {
     #[test]
     fn non_empty_rejects_blank() {
         assert!(super::non_empty("X", "   ").is_err());
         assert!(super::non_empty("X", "a").is_ok());
+    }
+
+    #[test]
+    fn half_step_tolerates_both_sides_of_a_step() {
+        assert!(super::half_step("X", 1.5).is_ok());
+        assert!(super::half_step("X", 1.499_999_999_999_999_8).is_ok());
+        assert!(super::half_step("X", 1.500_000_000_000_000_2).is_ok());
+        assert!(super::half_step("X", 1.23).is_err());
     }
 
     #[test]

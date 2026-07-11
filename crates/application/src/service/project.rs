@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::{
     commands::project::{CreateProjectCommand, UpdateProjectMetadataCommand},
-    error::{Error, Result},
+    error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
 };
@@ -197,11 +197,8 @@ impl ProjectService {
     /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the project cannot be completed from its current state (or an open request cannot be cancelled), or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id))]
     pub async fn complete(&self, actor: UserId, project_id: ProjectId) -> Result<Project> {
-        let project = self
-            .transition(actor, project_id, Project::complete)
-            .await?;
-        self.cascade_cancel_open_requests(actor, project_id).await?;
-        Ok(project)
+        self.terminal_transition(actor, project_id, Project::complete)
+            .await
     }
 
     /// Transitions the project to `Cancelled` and cascade-cancels its open requests.
@@ -210,9 +207,8 @@ impl ProjectService {
     /// Returns `NotFound` if the project does not exist, `Forbidden` if the actor is not a leader of the owner group, `Transition` if the project cannot be cancelled from its current state (or an open request cannot be cancelled), or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, project_id = ?project_id))]
     pub async fn cancel(&self, actor: UserId, project_id: ProjectId) -> Result<Project> {
-        let project = self.transition(actor, project_id, Project::cancel).await?;
-        self.cascade_cancel_open_requests(actor, project_id).await?;
-        Ok(project)
+        self.terminal_transition(actor, project_id, Project::cancel)
+            .await
     }
 
     /// Invites a group to collaborate on the project, creating a pending invite.
@@ -231,7 +227,7 @@ impl ProjectService {
             .require_group_leader(actor, project.owner_group_id)
             .await?;
         if project.status != ProjectStatus::Active {
-            return Err(Error::Conflict("project_not_active".into()));
+            return Err(Error::Conflict(ConflictCode::ProjectNotActive));
         }
         if target_group == project.owner_group_id {
             return Err(Error::Validation("owner_cannot_collaborate_on_self".into()));
@@ -239,7 +235,7 @@ impl ProjectService {
 
         let collaborators = self.projects.list_collaborators(project_id).await?;
         if collaborators.iter().any(|c| c.group_id == target_group) {
-            return Err(Error::Conflict("group_already_collaborator".into()));
+            return Err(Error::Conflict(ConflictCode::GroupAlreadyCollaborator));
         }
 
         let pending = self
@@ -247,7 +243,7 @@ impl ProjectService {
             .list_pending_invites_for_group(target_group)
             .await?;
         if pending.iter().any(|i| i.project_id == project_id) {
-            return Err(Error::Conflict("invite_already_pending".into()));
+            return Err(Error::Conflict(ConflictCode::InviteAlreadyPending));
         }
 
         let now = OffsetDateTime::now_utc();
@@ -519,6 +515,38 @@ impl ProjectService {
         let from = project.status;
         let now = OffsetDateTime::now_utc();
         op(&mut project, now)?;
+        self.projects.save_project(&project).await?;
+        self.events
+            .emit(DomainEvent::ProjectStatusChanged {
+                project_id: project.id,
+                from,
+                to: project.status,
+                actor,
+                at: now,
+            })
+            .await?;
+        Ok(project)
+    }
+
+    /// Terminal transition: validate first, cascade-cancel the open requests, and
+    /// persist the project last so a mid-cascade failure leaves the endpoint retryable.
+    async fn terminal_transition<F>(
+        &self,
+        actor: UserId,
+        project_id: ProjectId,
+        op: F,
+    ) -> Result<Project>
+    where
+        F: FnOnce(&mut Project, OffsetDateTime) -> std::result::Result<(), TransitionError>,
+    {
+        let mut project = self.load(project_id).await?;
+        self.perms
+            .require_group_leader(actor, project.owner_group_id)
+            .await?;
+        let from = project.status;
+        let now = OffsetDateTime::now_utc();
+        op(&mut project, now)?;
+        self.cascade_cancel_open_requests(actor, project_id).await?;
         self.projects.save_project(&project).await?;
         self.events
             .emit(DomainEvent::ProjectStatusChanged {

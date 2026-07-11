@@ -9,10 +9,6 @@ use shared::dto::{
         DecideDayOffRequest,
     },
 };
-use time::Date;
-
-use super::{daily_report::fmt_date, day_off_id};
-
 #[must_use]
 pub fn day_off_kind_dto(kind: model::DayOffKind) -> WireKind {
     match kind {
@@ -54,11 +50,11 @@ pub fn day_off_dto(
     hr: Option<UserSummaryDto>,
 ) -> DayOffDto {
     DayOffDto {
-        id: day_off_id(day_off.id),
+        id: super::day_off_id(day_off.id),
         requester,
         kind: day_off_kind_dto(day_off.kind),
-        start_date: fmt_date(day_off.start_date),
-        end_date: fmt_date(day_off.end_date),
+        start_date: day_off.start_date,
+        end_date: day_off.end_date,
         start_half: day_off.start_half,
         end_half: day_off.end_half,
         days: day_off.days,
@@ -75,15 +71,11 @@ pub fn day_off_dto(
 }
 
 #[must_use]
-pub fn create_day_off_command(
-    start: Date,
-    end: Date,
-    req: CreateDayOffRequest,
-) -> CreateDayOffCommand {
+pub fn create_day_off_command(req: CreateDayOffRequest) -> CreateDayOffCommand {
     CreateDayOffCommand {
         kind: day_off_kind_domain(req.kind),
-        start_date: start,
-        end_date: end,
+        start_date: req.start_date,
+        end_date: req.end_date,
         start_half: req.start_half,
         end_half: req.end_half,
         reason: req.reason,

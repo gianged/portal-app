@@ -4,8 +4,8 @@ use time::{Date, OffsetDateTime};
 
 use crate::ids::{DayOffId, LeaveGrantId, LeaveTransactionId, UserId};
 
-/// Leave is tracked in half-day units. `application` and `shared` mirror this in
-/// their own constant since neither can depend on the other's crate.
+/// Leave is tracked in half-day units. `shared` mirrors this constant in its
+/// validation layer since it cannot depend on `domain`.
 pub const LEAVE_UNIT: f64 = 0.5;
 
 /// Raised when a balance operation cannot be satisfied.
@@ -75,6 +75,7 @@ pub struct LeaveTransaction {
 ///
 /// # Errors
 /// Returns [`LeaveError::Insufficient`] when the available balance is below `days`.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 pub fn allocate_fifo(
     grants: &[LeaveGrant],
     days: f64,
@@ -138,14 +139,22 @@ mod tests {
         Date::from_calendar_date(year, Month::December, 31).unwrap()
     }
 
+    // Half-day-quantized values compare exactly well inside this tolerance.
+    fn assert_days_eq(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected} days, got {actual}"
+        );
+    }
+
     #[test]
     fn fifo_draws_oldest_first() {
         let asof = Date::from_calendar_date(2026, Month::January, 1).unwrap();
         let grants = vec![grant(2025, 2.0, dec31(2027)), grant(2024, 1.5, dec31(2026))];
         let deltas = allocate_fifo(&grants, 2.5, asof).unwrap();
         // Oldest (2026 expiry) drained first for 1.5, then 1.0 from the next.
-        assert_eq!(deltas[0].1, -1.5);
-        assert_eq!(deltas[1].1, -1.0);
+        assert_days_eq(deltas[0].1, -1.5);
+        assert_days_eq(deltas[1].1, -1.0);
     }
 
     #[test]
@@ -164,6 +173,6 @@ mod tests {
         let grants = vec![grant(2024, 5.0, dec31(2025)), grant(2025, 1.0, dec31(2027))];
         let deltas = allocate_fifo(&grants, 1.0, asof).unwrap();
         assert_eq!(deltas.len(), 1);
-        assert_eq!(deltas[0].1, -1.0);
+        assert_days_eq(deltas[0].1, -1.0);
     }
 }

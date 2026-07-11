@@ -6,8 +6,6 @@ use shared::dto::{
     common::UserSummaryDto,
 };
 
-use super::audit_log_id;
-
 #[must_use]
 pub fn audit_action_dto(action: model::AuditAction) -> WireAuditAction {
     match action {
@@ -25,7 +23,7 @@ pub fn audit_action_dto(action: model::AuditAction) -> WireAuditAction {
 #[must_use]
 pub fn audit_log_dto(log: &model::AuditLog, actor: Option<UserSummaryDto>) -> AuditLogDto {
     AuditLogDto {
-        id: audit_log_id(log.id),
+        id: super::audit_log_id(log.id),
         actor,
         action: audit_action_dto(log.action),
         entity_schema: log.entity_schema.clone(),

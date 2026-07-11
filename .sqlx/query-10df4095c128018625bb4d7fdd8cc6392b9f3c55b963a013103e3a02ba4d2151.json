@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 name,\n                 description,\n                 kind AS \"kind: SqlGroupKind\",\n                 created_at,\n                 updated_at\n               FROM org.groups\n               WHERE kind = $1\n               LIMIT 1",
+  "query": "SELECT\n                 id,\n                 name,\n                 description,\n                 kind AS \"kind: SqlGroupKind\",\n                 created_at,\n                 updated_at\n               FROM org.groups\n               WHERE kind = 'it'\n               LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -81,19 +81,7 @@
       }
     ],
     "parameters": {
-      "Left": [
-        {
-          "Custom": {
-            "name": "org.group_kind",
-            "kind": {
-              "Enum": [
-                "standard",
-                "it"
-              ]
-            }
-          }
-        }
-      ]
+      "Left": []
     },
     "nullable": [
       false,
@@ -104,5 +92,5 @@
       false
     ]
   },
-  "hash": "2fc925bc2b2a51dc2357e0ad3bba92200aea128bef8a3ceea2a1285092997dcd"
+  "hash": "10df4095c128018625bb4d7fdd8cc6392b9f3c55b963a013103e3a02ba4d2151"
 }

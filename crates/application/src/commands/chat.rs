@@ -2,6 +2,7 @@ use std::fmt;
 
 use domain::ids::{ChannelId, UserId};
 
+/// Input to post a chat message.
 #[derive(Debug, Clone)]
 pub struct PostMessageCommand {
     pub channel_id: ChannelId,
@@ -10,6 +11,7 @@ pub struct PostMessageCommand {
     pub attachment_keys: Vec<String>,
 }
 
+/// Input to post an announcement into a channel.
 #[derive(Debug, Clone)]
 pub struct PostAnnouncementCommand {
     pub channel_id: ChannelId,

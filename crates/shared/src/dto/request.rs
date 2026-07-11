@@ -20,6 +20,17 @@ pub enum RequestStatus {
 }
 
 impl RequestStatus {
+    /// Every variant in lifecycle order, for building select options.
+    pub const ALL: [Self; 7] = [
+        Self::Draft,
+        Self::Submitted,
+        Self::Assigned,
+        Self::InProgress,
+        Self::Review,
+        Self::Completed,
+        Self::Cancelled,
+    ];
+
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -31,6 +42,26 @@ impl RequestStatus {
             Self::Completed => "Completed",
             Self::Cancelled => "Cancelled",
         }
+    }
+
+    /// Canonical wire string (the serde `snake_case` tag).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Submitted => "submitted",
+            Self::Assigned => "assigned",
+            Self::InProgress => "in_progress",
+            Self::Review => "review",
+            Self::Completed => "completed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    /// Parses a wire string produced by [`Self::as_str`].
+    #[must_use]
+    pub fn from_wire(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|v| v.as_str() == s)
     }
 }
 
@@ -45,6 +76,9 @@ pub enum RequestPriority {
 }
 
 impl RequestPriority {
+    /// Every variant, for building select options.
+    pub const ALL: [Self; 4] = [Self::Low, Self::Normal, Self::High, Self::Urgent];
+
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -53,6 +87,23 @@ impl RequestPriority {
             Self::High => "High",
             Self::Urgent => "Urgent",
         }
+    }
+
+    /// Canonical wire string (the serde `snake_case` tag).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Normal => "normal",
+            Self::High => "high",
+            Self::Urgent => "urgent",
+        }
+    }
+
+    /// Parses a wire string produced by [`Self::as_str`].
+    #[must_use]
+    pub fn from_wire(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|v| v.as_str() == s)
     }
 }
 
@@ -104,7 +155,7 @@ pub struct CreateRequestRequest {
     pub title: String,
     pub description: String,
     pub priority: RequestPriority,
-    #[serde(with = "time::serde::rfc3339::option")]
+    #[serde(default, with = "time::serde::rfc3339::option")]
     pub due_at: Option<OffsetDateTime>,
 }
 
@@ -114,7 +165,7 @@ pub struct UpdateRequestRequest {
     pub title: Option<String>,
     pub description: Option<String>,
     pub priority: Option<RequestPriority>,
-    #[serde(with = "time::serde::rfc3339::option")]
+    #[serde(default, with = "time::serde::rfc3339::option")]
     pub due_at: Option<OffsetDateTime>,
 }
 
@@ -127,4 +178,27 @@ pub struct AssignRequestRequest {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SetRequestProgressRequest {
     pub progress: u8,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RequestPriority, RequestStatus};
+
+    #[test]
+    fn wire_helpers_match_serde() {
+        for s in RequestStatus::ALL {
+            assert_eq!(
+                serde_json::to_string(&s).unwrap(),
+                format!("\"{}\"", s.as_str())
+            );
+            assert_eq!(RequestStatus::from_wire(s.as_str()), Some(s));
+        }
+        for p in RequestPriority::ALL {
+            assert_eq!(
+                serde_json::to_string(&p).unwrap(),
+                format!("\"{}\"", p.as_str())
+            );
+            assert_eq!(RequestPriority::from_wire(p.as_str()), Some(p));
+        }
+    }
 }

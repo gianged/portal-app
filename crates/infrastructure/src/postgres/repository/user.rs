@@ -3,12 +3,7 @@ use sqlx::PgPool;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use domain::{
-    error::RepositoryError,
-    ids::UserId,
-    model::{User, UserStatus},
-    repository::UserRepository,
-};
+use domain::{error::RepositoryError, ids::UserId, model::User, repository::UserRepository};
 
 use crate::postgres::{
     enums::{SqlSystemRole, SqlUserStatus},
@@ -164,7 +159,6 @@ impl UserRepository for PgUserRepo {
         offset: u32,
         q: Option<&str>,
     ) -> Result<Vec<User>, RepositoryError> {
-        let active = SqlUserStatus::from(UserStatus::Active);
         let pattern: Option<String> = q.map(mappers::like_pattern);
         let rows = sqlx::query_as!(
             UserRow,
@@ -184,12 +178,11 @@ impl UserRepository for PgUserRepo {
                  created_at,
                  updated_at
                FROM auth.users
-               WHERE status = $1
-                 AND ($4::text IS NULL OR full_name ILIKE $4 OR email ILIKE $4)
+               WHERE status = 'active'
+                 AND ($3::text IS NULL OR full_name ILIKE $3 OR email ILIKE $3)
                ORDER BY created_at
-               LIMIT $2
-               OFFSET $3"#,
-            active as SqlUserStatus,
+               LIMIT $1
+               OFFSET $2"#,
             i64::from(limit),
             i64::from(offset),
             pattern,
@@ -275,9 +268,8 @@ impl UserRepository for PgUserRepo {
                  created_at,
                  updated_at
                FROM auth.users
-               WHERE system_role IS NOT NULL AND status = $1
+               WHERE system_role IS NOT NULL AND status = 'active'
                ORDER BY created_at"#,
-            SqlUserStatus::from(UserStatus::Active) as SqlUserStatus,
         )
         .fetch_all(&self.pool)
         .await

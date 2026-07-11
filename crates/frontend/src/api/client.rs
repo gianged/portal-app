@@ -134,7 +134,9 @@ async fn handle_empty(resp: Response) -> Result<(), FrontendError> {
 }
 
 /// Build a structured [`FrontendError::Http`] from a non-2xx response; a non-JSON
-/// body falls back to `Unknown` with the raw text as the message.
+/// body falls back to `Unknown` with the raw text as the message. A 401 also
+/// fires the [`on_unauthorized`] hook, clearing the session and redirecting to
+/// `/login`.
 async fn http_error(resp: Response) -> FrontendError {
     let status = resp.status();
     if status == 401

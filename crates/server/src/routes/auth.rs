@@ -1,6 +1,6 @@
 //! Authentication endpoints: login + logout (public) and `/me` (protected).
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 use axum::{
     Extension, Json, Router,
@@ -18,7 +18,7 @@ use crate::{
     auth::SESSION_COOKIE,
     dto,
     error::{AppError, AuthError},
-    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    extractors::{app_json::AppJson, auth_user::AuthUser, validated_json::ValidatedJson},
     middleware::{ip_allowlist::ClientIp, rate_limit},
     resolve,
 };
@@ -42,7 +42,7 @@ async fn login(
     client_ip: Option<Extension<ClientIp>>,
     peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     jar: CookieJar,
-    Json(body): Json<LoginRequest>,
+    AppJson(body): AppJson<LoginRequest>,
 ) -> Result<(CookieJar, Json<LoginResponse>), AppError> {
     // Brute-force gate per (IP, account): the per-IP middleware plane is
     // NAT-wide and loose, so the tight ceiling lives here where the email is known.
@@ -90,7 +90,10 @@ async fn logout(
         let remaining = verified.exp - OffsetDateTime::now_utc().unix_timestamp();
         state
             .revocation
-            .revoke(verified.jti, u64::try_from(remaining).unwrap_or(0))
+            .revoke(
+                verified.jti,
+                Duration::from_secs(u64::try_from(remaining).unwrap_or(0)),
+            )
             .await
             .map_err(application::Error::from)?;
     }

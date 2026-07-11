@@ -1,7 +1,7 @@
 use leptos::ev::{KeyboardEvent, keydown};
 use leptos::prelude::*;
 
-use crate::theme::{self, color, radius, space, typography};
+use crate::theme::{self, color, effect, radius, space, typography};
 
 /// Modal dialog. The parent owns the `open` signal; `on_close` fires on backdrop
 /// click and on `Escape`. Compose the body from [`DialogHeader`] / [`DialogBody`]
@@ -25,7 +25,7 @@ pub fn Dialog(
         bg = color::BG_ELEVATED,
         b = color::BORDER,
         r = radius::LG,
-        s = typography::SHADOW_LG,
+        s = effect::SHADOW_LG,
         p = space::D6,
     ));
 
@@ -69,7 +69,8 @@ pub fn DialogHeader(
         c = color::TEXT_STRONG,
     ));
     let sub_cls = theme::class(format!(
-        "font-family: {ff}; font-size: {fs}; color: {c}; margin: 4px 0 0;",
+        "font-family: {ff}; font-size: {fs}; color: {c}; margin: {mt} 0 0;",
+        mt = space::D1,
         ff = typography::FONT_SANS,
         fs = typography::TEXT_SMALL,
         c = color::TEXT_MUTED,

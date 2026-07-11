@@ -1,10 +1,8 @@
 //! Group + membership HTTP wrappers; the directory (`list`) backs group pickers across features, and the rest drive the group detail / roster admin page.
 
-use serde::Serialize;
-
 use shared::dto::group::{
     AddMemberRequest, ChangeMemberRoleRequest, CreateGroupRequest, GroupDetailDto, GroupDto,
-    MembershipDto, UpdateGroupRequest,
+    MembershipDto, TransferLeadershipRequest, UpdateGroupRequest,
 };
 use shared::dto::ids::{GroupId, UserId};
 
@@ -49,19 +47,12 @@ pub async fn remove_member(group: GroupId, user: UserId) -> Result<(), FrontendE
     client::del(&format!("/groups/{}/members/{}", group.0, user.0)).await
 }
 
-/// Server-local body for `POST /groups/{id}/transfer-leadership` (not in `shared::dto`).
-#[derive(Serialize)]
-struct TransferLeadership {
-    from_user_id: UserId,
-    to_user_id: UserId,
-}
-
 pub async fn transfer_leadership(
     group: GroupId,
     from: UserId,
     to: UserId,
 ) -> Result<(), FrontendError> {
-    let body = TransferLeadership {
+    let body = TransferLeadershipRequest {
         from_user_id: from,
         to_user_id: to,
     };

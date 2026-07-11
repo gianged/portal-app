@@ -15,16 +15,16 @@ use uuid::Uuid;
 
 use crate::{
     commands::chat::{AddChatAttachmentCommand, PostMessageCommand},
-    error::{Error, Result},
+    error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
 };
 
 pub use ingest::{ChatIngest, ChatIngestConfig};
 
-/// Members can delete only their own messages within this window after posting.
-/// Group-channel leaders bypass this grace and can delete anytime.
-const MESSAGE_DELETE_GRACE: Duration = Duration::minutes(15);
+/// Senders may edit or delete their own messages within this window after
+/// posting. Channel moderators bypass it for deletion, never for edits.
+const SENDER_GRACE_WINDOW: Duration = Duration::minutes(15);
 
 /// Max attachments per message; mirrors `shared::validation::common::ATTACHMENT_KEYS_MAX` (cannot import it).
 const MAX_MESSAGE_ATTACHMENTS: usize = 10;
@@ -97,7 +97,7 @@ impl ChatService {
             .await?
             .ok_or(Error::NotFound("user"))?;
         if other.status != UserStatus::Active {
-            return Err(Error::Conflict("recipient_not_active".into()));
+            return Err(Error::Conflict(ConflictCode::RecipientNotActive));
         }
 
         if let Some(existing) = self.chats.find_direct_channel(actor, other_user).await? {
@@ -241,8 +241,10 @@ impl ChatService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not active or cannot post in the
-    /// channel, `NotFound` if the channel does not exist, a repository error if
-    /// the datastore is unavailable, or an event error if the event bus fails.
+    /// channel, `NotFound` if the channel does not exist, `Validation` if the
+    /// attachments exceed the cap or are not owned by the actor in this channel,
+    /// a repository error if the datastore is unavailable, or an event error if
+    /// the event bus fails.
     #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn post_message(&self, actor: UserId, cmd: PostMessageCommand) -> Result<Message> {
         let message = self.prepare_message(actor, cmd).await?;
@@ -354,11 +356,8 @@ impl ChatService {
 
         let now = OffsetDateTime::now_utc();
         let is_sender = message.sender_user_id == actor;
-        let within_grace = now - uuid_v7_created_at(message.id.0) <= MESSAGE_DELETE_GRACE;
-        let is_moderator = self
-            .perms
-            .user_is_channel_moderator(actor, &channel)
-            .await?;
+        let within_grace = now - uuid_v7_created_at(message.id.0) <= SENDER_GRACE_WINDOW;
+        let is_moderator = self.perms.is_channel_moderator(actor, &channel).await?;
 
         if !((is_sender && within_grace) || is_moderator) {
             return Err(Error::Forbidden);
@@ -401,14 +400,14 @@ impl ChatService {
             .await?
             .ok_or(Error::NotFound("message"))?;
         if message.is_deleted() {
-            return Err(Error::Conflict("message_deleted".into()));
+            return Err(Error::Conflict(ConflictCode::MessageDeleted));
         }
         if message.is_announcement {
-            return Err(Error::Conflict("cannot_edit_announcement".into()));
+            return Err(Error::Conflict(ConflictCode::CannotEditAnnouncement));
         }
 
         let now = OffsetDateTime::now_utc();
-        let within_grace = now - uuid_v7_created_at(message.id.0) <= MESSAGE_DELETE_GRACE;
+        let within_grace = now - uuid_v7_created_at(message.id.0) <= SENDER_GRACE_WINDOW;
         if message.sender_user_id != actor || !within_grace {
             return Err(Error::Forbidden);
         }
@@ -470,9 +469,9 @@ impl ChatService {
 }
 
 /// Recover the creation timestamp embedded in a `UUIDv7` ID. Used for the
-/// message-delete grace window since `Message` doesn't store `created_at`; the
-/// time is implicit in the id. Ids are store-sourced, so a non-v7 row falls back
-/// to the epoch (grace window treated as long expired) instead of panicking.
+/// sender grace window since `Message` doesn't store `created_at`; the time is
+/// implicit in the id. Ids are store-sourced, so a non-v7 row falls back to
+/// the epoch (grace window treated as long expired) instead of panicking.
 fn uuid_v7_created_at(id: Uuid) -> OffsetDateTime {
     id.get_timestamp()
         .and_then(|ts| {

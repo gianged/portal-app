@@ -1,5 +1,5 @@
-pub mod enums;
-pub mod mappers;
+pub(crate) mod enums;
+pub(crate) mod mappers;
 mod pool;
 mod repository;
 

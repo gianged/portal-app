@@ -7,6 +7,7 @@ use axum::{
     routing,
 };
 use serde::Deserialize;
+use time::Date;
 use uuid::Uuid;
 
 use domain::{
@@ -14,16 +15,19 @@ use domain::{
     model::FlexHours,
 };
 use shared::{
-    dto::flex_hours::{DecideFlexRequest, FlexHoursDto, FlexMonthDeltaDto, RequestFlexRequest},
-    validation::flex_hours::validate_flex,
+    dto::{
+        flex_hours::{DecideFlexRequest, FlexHoursDto, FlexMonthDeltaDto, RequestFlexRequest},
+        ids as wire,
+    },
+    validation::flex_hours,
 };
 
 use crate::{
     app::AppState,
     dto,
     error::AppError,
-    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
-    resolve, routes,
+    extractors::{app_json::AppJson, auth_user::AuthUser, validated_json::ValidatedJson},
+    resolve,
 };
 
 pub fn router() -> Router<AppState> {
@@ -37,8 +41,8 @@ pub fn router() -> Router<AppState> {
 
 #[derive(Deserialize)]
 struct RangeQuery {
-    from: String,
-    to: String,
+    from: Date,
+    to: Date,
 }
 
 #[derive(Deserialize)]
@@ -56,13 +60,11 @@ struct MonthQuery {
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<RequestFlexRequest>,
+    AppJson(body): AppJson<RequestFlexRequest>,
 ) -> Result<Json<FlexHoursDto>, AppError> {
     let policy = dto::policy_dto(&state.policy.current());
-    validate_flex(&body, &policy).map_err(|e| AppError::Validation(e.to_string()))?;
-    let work_date = routes::parse_date(&body.work_date)?;
-    let cmd = dto::request_flex_command(work_date, body)
-        .map_err(|e| AppError::Validation(e.to_string()))?;
+    flex_hours::validate_flex(&body, &policy).map_err(|e| AppError::Validation(e.to_string()))?;
+    let cmd = dto::request_flex_command(&body).map_err(|e| AppError::Validation(e.to_string()))?;
     let flex = state.flex.request(auth.user_id, cmd).await?;
     Ok(Json(single(&state, &flex).await?))
 }
@@ -72,9 +74,7 @@ async fn list_mine(
     auth: AuthUser,
     Query(q): Query<RangeQuery>,
 ) -> Result<Json<Vec<FlexHoursDto>>, AppError> {
-    let from = routes::parse_date(&q.from)?;
-    let to = routes::parse_date(&q.to)?;
-    let list = state.flex.list_mine(auth.user_id, from, to).await?;
+    let list = state.flex.list_mine(auth.user_id, q.from, q.to).await?;
     Ok(Json(many(&state, list).await?))
 }
 
@@ -85,7 +85,7 @@ async fn month_delta(
 ) -> Result<Json<FlexMonthDeltaDto>, AppError> {
     let delta = state
         .flex
-        .month_delta(auth.user_id, q.year, u32::from(q.month))
+        .month_delta(auth.user_id, q.year, q.month)
         .await?;
     Ok(Json(FlexMonthDeltaDto {
         year: q.year,
@@ -109,22 +109,22 @@ async fn leader_queue(
 async fn cancel(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::FlexHoursId>,
 ) -> Result<Json<FlexHoursDto>, AppError> {
-    let flex = state.flex.cancel(auth.user_id, FlexHoursId(id)).await?;
+    let flex = state.flex.cancel(auth.user_id, FlexHoursId(id.0)).await?;
     Ok(Json(single(&state, &flex).await?))
 }
 
 async fn decision(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::FlexHoursId>,
     ValidatedJson(body): ValidatedJson<DecideFlexRequest>,
 ) -> Result<Json<FlexHoursDto>, AppError> {
     let cmd = dto::decide_flex_command(body);
     let flex = state
         .flex
-        .decide(auth.user_id, FlexHoursId(id), cmd)
+        .decide(auth.user_id, FlexHoursId(id.0), cmd)
         .await?;
     Ok(Json(single(&state, &flex).await?))
 }

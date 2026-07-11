@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 email,\n                 password_hash,\n                 full_name,\n                 avatar_storage_key,\n                 phone,\n                 timezone,\n                 status            AS \"status: SqlUserStatus\",\n                 system_role       AS \"system_role: SqlSystemRole\",\n                 email_notifications,\n                 first_logged_in_at,\n                 deactivated_at,\n                 created_at,\n                 updated_at\n               FROM auth.users\n               WHERE status = $1\n                 AND ($4::text IS NULL OR full_name ILIKE $4 OR email ILIKE $4)\n               ORDER BY created_at\n               LIMIT $2\n               OFFSET $3",
+  "query": "SELECT\n                 id,\n                 email,\n                 password_hash,\n                 full_name,\n                 avatar_storage_key,\n                 phone,\n                 timezone,\n                 status            AS \"status: SqlUserStatus\",\n                 system_role       AS \"system_role: SqlSystemRole\",\n                 email_notifications,\n                 first_logged_in_at,\n                 deactivated_at,\n                 created_at,\n                 updated_at\n               FROM auth.users\n               WHERE status = 'active'\n                 AND ($3::text IS NULL OR full_name ILIKE $3 OR email ILIKE $3)\n               ORDER BY created_at\n               LIMIT $1\n               OFFSET $2",
   "describe": {
     "columns": [
       {
@@ -181,18 +181,6 @@
     ],
     "parameters": {
       "Left": [
-        {
-          "Custom": {
-            "name": "auth.user_status",
-            "kind": {
-              "Enum": [
-                "pending",
-                "active",
-                "deactivated"
-              ]
-            }
-          }
-        },
         "Int8",
         "Int8",
         "Text"
@@ -215,5 +203,5 @@
       false
     ]
   },
-  "hash": "c6e4330ad1fefaa63b3053c95ed00c72123a4ee422288d427eb68bcff0a07aea"
+  "hash": "9e907a648827b73aa0d14effb63d16da6f298589c0765d1bdfdfb43d3057121c"
 }

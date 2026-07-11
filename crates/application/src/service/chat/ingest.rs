@@ -15,7 +15,7 @@ use tokio::{
 use super::ChatService;
 use crate::{
     commands::chat::PostMessageCommand,
-    error::{Error, Result},
+    error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
 };
 
@@ -84,16 +84,16 @@ impl ChatIngest {
     ///
     /// # Errors
     /// Surfaces the same validation errors as `ChatService::post_message`, plus
-    /// `Conflict("chat_overloaded")` when the buffer is full and
-    /// `Conflict("chat_unavailable")` when the drain loop has stopped.
+    /// `Conflict(ChatOverloaded)` when the buffer is full and
+    /// `Conflict(ChatUnavailable)` when the drain loop has stopped.
     #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn enqueue(&self, actor: UserId, cmd: PostMessageCommand) -> Result<Message> {
         let message = self.chat.prepare_message(actor, cmd).await?;
         // Backpressure: shed load rather than await capacity, so a full buffer never stalls the WS task.
         match self.tx.try_send(message.clone()) {
             Ok(()) => Ok(message),
-            Err(TrySendError::Full(_)) => Err(Error::Conflict("chat_overloaded".into())),
-            Err(TrySendError::Closed(_)) => Err(Error::Conflict("chat_unavailable".into())),
+            Err(TrySendError::Full(_)) => Err(Error::Conflict(ConflictCode::ChatOverloaded)),
+            Err(TrySendError::Closed(_)) => Err(Error::Conflict(ConflictCode::ChatUnavailable)),
         }
     }
 

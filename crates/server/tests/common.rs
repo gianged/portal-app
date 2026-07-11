@@ -15,6 +15,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -34,7 +35,10 @@ use application::{
     },
 };
 use domain::{
-    error::{AuthzError, EventError, JobError, RenderError, RepositoryError},
+    error::{
+        AuthzError, EventError, JobError, PresenceError, RateLimitError, RenderError,
+        RepositoryError, TokenRevocationError,
+    },
     health::BackendId,
     ids::{
         ChannelId, CommentId, DailyReportId, DayOffId, FlexHoursId, GroupId, LeaveGrantId,
@@ -71,8 +75,11 @@ use domain::{
 use infrastructure::{local_storage::LocalStorage, signed_url::SignedUrl};
 
 use server::{
-    app::AppState, auth::TokenService, middleware::ip_allowlist::IpAllowlist,
-    middleware::rate_limit::RateLimits, realtime::Realtime, resolve::SummaryCache,
+    app::AppState,
+    auth::TokenService,
+    middleware::{ip_allowlist::IpAllowlist, rate_limit::RateLimits},
+    realtime::Realtime,
+    resolve::SummaryCache,
 };
 
 // --- repositories --------------------------------------------------------------
@@ -695,10 +702,10 @@ struct FakePresence;
 
 #[async_trait]
 impl Presence for FakePresence {
-    async fn set_online(&self, _user: UserId, _ttl_secs: u64) -> Result<(), RepositoryError> {
+    async fn set_online(&self, _user: UserId, _ttl: Duration) -> Result<(), PresenceError> {
         Ok(())
     }
-    async fn is_online(&self, _user: UserId) -> Result<bool, RepositoryError> {
+    async fn is_online(&self, _user: UserId) -> Result<bool, PresenceError> {
         Ok(false)
     }
 }
@@ -713,7 +720,7 @@ struct FakeRateLimit {
 
 #[async_trait]
 impl RateLimit for FakeRateLimit {
-    async fn incr(&self, _bucket: &str) -> Result<u64, RepositoryError> {
+    async fn incr(&self, _bucket: &str) -> Result<u64, RateLimitError> {
         Ok(self.count.fetch_add(1, Ordering::SeqCst) + 1)
     }
 }
@@ -728,14 +735,14 @@ pub struct FakeRevocation {
 
 #[async_trait]
 impl TokenRevocation for FakeRevocation {
-    async fn revoke(&self, jti: Uuid, _ttl_secs: u64) -> Result<(), RepositoryError> {
+    async fn revoke(&self, jti: Uuid, _ttl: Duration) -> Result<(), TokenRevocationError> {
         self.revoked.lock().unwrap().insert(jti);
         Ok(())
     }
-    async fn is_revoked(&self, jti: Uuid) -> Result<bool, RepositoryError> {
+    async fn is_revoked(&self, jti: Uuid) -> Result<bool, TokenRevocationError> {
         Ok(self.revoked.lock().unwrap().contains(&jti))
     }
-    async fn version(&self, user: UserId) -> Result<u64, RepositoryError> {
+    async fn version(&self, user: UserId) -> Result<u64, TokenRevocationError> {
         Ok(self
             .versions
             .lock()
@@ -744,7 +751,7 @@ impl TokenRevocation for FakeRevocation {
             .copied()
             .unwrap_or(0))
     }
-    async fn bump_version(&self, user: UserId) -> Result<u64, RepositoryError> {
+    async fn bump_version(&self, user: UserId) -> Result<u64, TokenRevocationError> {
         let mut versions = self.versions.lock().unwrap();
         let v = versions.entry(user).or_insert(0);
         *v += 1;
@@ -950,7 +957,7 @@ impl DayOffRepository for FakeDayOff {
         &self,
         _user: UserId,
         _year: i32,
-        _month: u32,
+        _month: u8,
     ) -> Result<f64, RepositoryError> {
         Ok(0.0)
     }
@@ -987,7 +994,7 @@ impl OvertimeRepository for FakeOvertime {
         &self,
         _user: UserId,
         _year: i32,
-        _month: u32,
+        _month: u8,
     ) -> Result<f64, RepositoryError> {
         Ok(0.0)
     }
@@ -1031,7 +1038,7 @@ impl FlexHoursRepository for FakeFlexHours {
         &self,
         _user: UserId,
         _year: i32,
-        _month: u32,
+        _month: u8,
     ) -> Result<u32, RepositoryError> {
         Ok(0)
     }
@@ -1039,7 +1046,7 @@ impl FlexHoursRepository for FakeFlexHours {
         &self,
         _user: UserId,
         _year: i32,
-        _month: u32,
+        _month: u8,
     ) -> Result<f64, RepositoryError> {
         Ok(0.0)
     }
@@ -1052,7 +1059,7 @@ impl FlexHoursRepository for FakeFlexHours {
     async fn users_with_approved_flex_in_month(
         &self,
         _year: i32,
-        _month: u32,
+        _month: u8,
     ) -> Result<Vec<UserId>, RepositoryError> {
         Ok(Vec::new())
     }
@@ -1344,8 +1351,8 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         token: Arc::new(TokenService::new("test-secret", 3600, false)),
         revocation: revocation.clone(),
         realtime,
-        summary_cache: Arc::new(SummaryCache::new(std::time::Duration::from_secs(30))),
-        audit_service,
+        summary_cache: Arc::new(SummaryCache::new(Duration::from_secs(30))),
+        audit: audit_service,
         presence,
         rate_limiter,
         rate_limits,

@@ -18,7 +18,7 @@ pub fn UserPicker(
     #[prop(optional, into)] placeholder: Option<String>,
 ) -> impl IntoView {
     let placeholder = placeholder.unwrap_or_else(|| "Select a person…".to_owned());
-    let users: Loadable<Vec<UserDto>> = RwSignal::new(None);
+    let users: Loadable<Vec<UserDto>> = Loadable::new();
     load::load(users, api::list(None));
 
     let value = Signal::derive(move || selected.get().map(|u| u.0.to_string()).unwrap_or_default());
@@ -36,7 +36,7 @@ pub fn UserPicker(
                     list.into_iter()
                         .map(|u| {
                             let id = u.id.0.to_string();
-                            view! { <option value=id>{u.name}</option> }
+                            view! { <option value=id>{u.full_name}</option> }
                         })
                         .collect_view()
                 })

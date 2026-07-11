@@ -28,8 +28,10 @@ mod service_account;
 mod ticket;
 mod user;
 
+use time::Time;
+
 use domain::ids;
-use shared::dto::ids as wire;
+use shared::{dto::ids as wire, errors::SharedError};
 
 pub use self::{
     audit::{audit_action_dto, audit_log_dto},
@@ -124,10 +126,16 @@ id_map!(flex_hours_id, FlexHoursId);
 id_map!(flex_segment_id, FlexSegmentId);
 id_map!(service_account_id, ServiceAccountId);
 
-// `channel_id` would collide with the local binding name in the notification
-// payload match arms; this alias lets that module project a `ChannelId` there.
-#[must_use]
-#[allow(dead_code)]
-fn channel_id_wire(id: ids::ChannelId) -> wire::ChannelId {
-    wire::ChannelId(id.0)
+/// `HH:MM` wire form of a time-of-day, shared by the policy and flex projections.
+fn fmt_time(t: Time) -> String {
+    format!("{:02}:{:02}", t.hour(), t.minute())
+}
+
+/// Parses a wire `HH:MM` field, naming `field` in the validation error.
+/// `policy` here is the sibling dto module, so the validation path stays full.
+fn to_time(s: &str, field: &str) -> Result<Time, SharedError> {
+    let (h, m) = shared::validation::policy::parse_hhmm(s)
+        .ok_or_else(|| SharedError::Validation(format!("{field} must be a valid HH:MM time")))?;
+    Time::from_hms(h, m, 0)
+        .map_err(|_| SharedError::Validation(format!("{field} is not a valid time")))
 }

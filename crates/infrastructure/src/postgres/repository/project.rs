@@ -6,7 +6,7 @@ use uuid::Uuid;
 use domain::{
     error::RepositoryError,
     ids::{GroupId, ProjectCollaboratorId, ProjectId, ProjectInviteId, UserId},
-    model::{Project, ProjectCollaborator, ProjectInvite, ProjectInviteStatus},
+    model::{Project, ProjectCollaborator, ProjectInvite},
     repository::ProjectRepository,
 };
 
@@ -347,7 +347,6 @@ impl ProjectRepository for PgProjectRepo {
         group_id: GroupId,
     ) -> Result<Vec<ProjectInvite>, RepositoryError> {
         // Matches idx_project_invites_invited_group_id_status.
-        let pending = SqlInviteStatus::from(ProjectInviteStatus::Pending);
         let rows = sqlx::query_as!(
             InviteRow,
             r#"SELECT
@@ -361,10 +360,9 @@ impl ProjectRepository for PgProjectRepo {
                  created_at,
                  updated_at
                FROM project.project_invites
-               WHERE invited_group_id = $1 AND status = $2
+               WHERE invited_group_id = $1 AND status = 'pending'
                ORDER BY created_at DESC"#,
             group_id.0,
-            pending as SqlInviteStatus,
         )
         .fetch_all(&self.pool)
         .await
@@ -377,7 +375,6 @@ impl ProjectRepository for PgProjectRepo {
         &self,
         project_id: ProjectId,
     ) -> Result<Vec<ProjectInvite>, RepositoryError> {
-        let pending = SqlInviteStatus::from(ProjectInviteStatus::Pending);
         let rows = sqlx::query_as!(
             InviteRow,
             r#"SELECT
@@ -391,10 +388,9 @@ impl ProjectRepository for PgProjectRepo {
                  created_at,
                  updated_at
                FROM project.project_invites
-               WHERE project_id = $1 AND status = $2
+               WHERE project_id = $1 AND status = 'pending'
                ORDER BY created_at DESC"#,
             project_id.0,
-            pending as SqlInviteStatus,
         )
         .fetch_all(&self.pool)
         .await

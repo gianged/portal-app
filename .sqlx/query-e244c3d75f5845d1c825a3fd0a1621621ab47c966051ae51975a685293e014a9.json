@@ -1,13 +1,12 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO auth.service_accounts\n                 (id, name, key_hash, status, created_by, revoked_at, created_at, updated_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+  "query": "UPDATE auth.service_accounts\n               SET name = $2,\n                   status = $3,\n                   revoked_at = $4\n               WHERE id = $1",
   "describe": {
     "columns": [],
     "parameters": {
       "Left": [
         "Uuid",
         "Text",
-        "Bytea",
         {
           "Custom": {
             "name": "auth.service_account_status",
@@ -19,13 +18,10 @@
             }
           }
         },
-        "Uuid",
-        "Timestamptz",
-        "Timestamptz",
         "Timestamptz"
       ]
     },
     "nullable": []
   },
-  "hash": "dbb2aede1ab34b9ea0c71480abeed6d5366e44282a1d55159f6d37de8c6e9522"
+  "hash": "e244c3d75f5845d1c825a3fd0a1621621ab47c966051ae51975a685293e014a9"
 }

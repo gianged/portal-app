@@ -71,44 +71,50 @@ impl CircuitBreaker {
         }
     }
 
-    /// Try to admit a call. `true` when closed, or when half-open with a free
+    /// Try to admit a call. `Some` when closed, or when half-open with a free
     /// probe slot, or when an open cooldown has elapsed (which transitions the
-    /// breaker to half-open and consumes the first probe slot). `false` while
-    /// open and still cooling down.
-    pub fn acquire(&self) -> bool {
+    /// breaker to half-open and consumes the first probe slot). `None` while
+    /// open and still cooling down. Report the outcome through the returned
+    /// [`Permit`]; dropping it unreported returns the probe slot.
+    pub fn acquire(&self) -> Option<Permit<'_>> {
         let mut inner = self.lock();
-        match inner.state {
-            State::Closed { .. } => true,
+        let half_open_slot = match inner.state {
+            State::Closed { .. } => false,
             State::Open { until } => {
-                if Instant::now() >= until {
-                    inner.state = State::HalfOpen {
-                        in_flight: 1,
-                        successes: 0,
-                    };
-                    true
-                } else {
-                    false
+                if Instant::now() < until {
+                    return None;
                 }
+                inner.state = State::HalfOpen {
+                    in_flight: 1,
+                    successes: 0,
+                };
+                true
             }
             State::HalfOpen {
                 in_flight,
                 successes,
             } => {
-                if in_flight < self.cfg.half_open_max {
-                    inner.state = State::HalfOpen {
-                        in_flight: in_flight + 1,
-                        successes,
-                    };
-                    true
-                } else {
-                    false
+                if in_flight >= self.cfg.half_open_max {
+                    return None;
                 }
+                inner.state = State::HalfOpen {
+                    in_flight: in_flight + 1,
+                    successes,
+                };
+                true
             }
-        }
+        };
+        Some(Permit {
+            breaker: self,
+            half_open_slot,
+            settled: false,
+        })
     }
 
     /// Record a successful call. Resets the failure count while closed; advances
     /// the half-open success count and closes once the threshold is reached.
+    /// Acquire-gated callers report through their [`Permit`] instead; calling
+    /// this directly is for ungated feedback sources like the drainer.
     pub fn record_success(&self) {
         let mut inner = self.lock();
         match inner.state {
@@ -136,6 +142,7 @@ impl CircuitBreaker {
 
     /// Record a failed call. Opens the breaker once the failure threshold is hit
     /// while closed, or immediately re-opens (longer cooldown) while half-open.
+    /// Same direct-call caveat as [`Self::record_success`].
     pub fn record_failure(&self) {
         let mut inner = self.lock();
         match inner.state {
@@ -179,10 +186,57 @@ impl CircuitBreaker {
         }
     }
 
+    /// Return an unreported half-open probe slot so a cancelled call cannot pin
+    /// `in_flight` at the quota forever.
+    fn release_half_open_slot(&self) {
+        let mut inner = self.lock();
+        if let State::HalfOpen {
+            in_flight,
+            successes,
+        } = inner.state
+        {
+            inner.state = State::HalfOpen {
+                in_flight: in_flight.saturating_sub(1),
+                successes,
+            };
+        }
+    }
+
     fn lock(&self) -> MutexGuard<'_, Inner> {
         // Poisoning only happens if a holder panicked mid-update; the state is
         // still readable and self-correcting, so recover rather than propagate.
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// Admission token from [`CircuitBreaker::acquire`]. Holds the half-open probe
+/// slot: report the call's outcome through it, or drop it (e.g. on future
+/// cancellation) to release the slot without one.
+pub struct Permit<'a> {
+    breaker: &'a CircuitBreaker,
+    half_open_slot: bool,
+    settled: bool,
+}
+
+impl Permit<'_> {
+    /// Record the admitted call as successful.
+    pub fn record_success(mut self) {
+        self.settled = true;
+        self.breaker.record_success();
+    }
+
+    /// Record the admitted call as failed.
+    pub fn record_failure(mut self) {
+        self.settled = true;
+        self.breaker.record_failure();
+    }
+}
+
+impl Drop for Permit<'_> {
+    fn drop(&mut self) {
+        if !self.settled && self.half_open_slot {
+            self.breaker.release_half_open_slot();
+        }
     }
 }
 
@@ -205,12 +259,13 @@ mod tests {
     #[test]
     fn opens_after_threshold_then_fast_fails() {
         let cb = CircuitBreaker::new(fast_cfg());
-        assert!(cb.acquire());
-        cb.record_failure();
+        cb.acquire()
+            .expect("closed breaker admits")
+            .record_failure();
         assert_eq!(cb.status(), HealthStatus::Up);
         cb.record_failure();
         assert_eq!(cb.status(), HealthStatus::Down);
-        assert!(!cb.acquire(), "open breaker must reject");
+        assert!(cb.acquire().is_none(), "open breaker must reject");
     }
 
     #[test]
@@ -221,9 +276,23 @@ mod tests {
         // Sleep past max_cooldown so the jittered cooldown has certainly elapsed.
         thread::sleep(Duration::from_millis(60));
         // Cooldown elapsed: first acquire flips to half-open and is admitted.
-        assert!(cb.acquire());
+        let permit = cb.acquire().expect("elapsed cooldown admits a probe");
         assert_eq!(cb.status(), HealthStatus::Degraded);
-        cb.record_success();
+        permit.record_success();
+        assert_eq!(cb.status(), HealthStatus::Up);
+    }
+
+    #[test]
+    fn dropped_permit_releases_half_open_slot() {
+        let cb = CircuitBreaker::new(fast_cfg());
+        cb.record_failure();
+        cb.record_failure();
+        thread::sleep(Duration::from_millis(60));
+        // half_open_max is 1: an unreported drop must free the only slot.
+        drop(cb.acquire().expect("first probe admitted"));
+        cb.acquire()
+            .expect("slot released by drop")
+            .record_success();
         assert_eq!(cb.status(), HealthStatus::Up);
     }
 }

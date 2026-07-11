@@ -8,10 +8,6 @@ use shared::dto::{
         CreateOvertimeRequest, DecideOvertimeRequest, OvertimeDto, OvertimeStatus as WireStatus,
     },
 };
-use time::Date;
-
-use super::{daily_report::fmt_date, overtime_id};
-
 #[must_use]
 pub fn overtime_status_dto(status: model::OvertimeStatus) -> WireStatus {
     match status {
@@ -31,9 +27,9 @@ pub fn overtime_dto(
     hr: Option<UserSummaryDto>,
 ) -> OvertimeDto {
     OvertimeDto {
-        id: overtime_id(overtime.id),
+        id: super::overtime_id(overtime.id),
         requester,
-        work_date: fmt_date(overtime.work_date),
+        work_date: overtime.work_date,
         hours: overtime.hours,
         reason: overtime.reason.clone(),
         status: overtime_status_dto(overtime.status),
@@ -48,12 +44,9 @@ pub fn overtime_dto(
 }
 
 #[must_use]
-pub fn create_overtime_command(
-    work_date: Date,
-    req: CreateOvertimeRequest,
-) -> CreateOvertimeCommand {
+pub fn create_overtime_command(req: CreateOvertimeRequest) -> CreateOvertimeCommand {
     CreateOvertimeCommand {
-        work_date,
+        work_date: req.work_date,
         hours: req.hours,
         reason: req.reason,
     }

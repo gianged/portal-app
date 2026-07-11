@@ -24,10 +24,7 @@ use domain::{
     repository::ChatRepository,
 };
 
-use crate::scylla::mappers::{
-    AnnouncementRow, ChannelMembershipRow, ChannelRow, MessageRow, channel_kind_str,
-    row_to_announcement, row_to_channel, row_to_membership, row_to_message,
-};
+use crate::scylla::mappers::{self, AnnouncementRow, ChannelMembershipRow, ChannelRow, MessageRow};
 
 /// Prepared statements held for the repository's lifetime; prepared once at startup to avoid per-call round-trips.
 struct Statements {
@@ -246,7 +243,7 @@ fn backend<E: Display>(e: E) -> RepositoryError {
     RepositoryError::Backend(e.to_string())
 }
 
-/// Partition bucket (yyyymm, UTC) of a message id's embedded UUIDv7 timestamp.
+/// Partition bucket (yyyymm, UTC) of a message id's embedded `UUIDv7` timestamp.
 /// Non-v7 ids (never produced by the app) collapse into the epoch bucket.
 fn bucket_of(message_id: Uuid) -> i32 {
     let secs = message_id
@@ -312,7 +309,7 @@ impl ChatRepository for ScyllaChatRepo {
             .map_err(backend)?;
         let rows = result.into_rows_result().map_err(backend)?;
         match rows.maybe_first_row::<ChannelRow>().map_err(backend)? {
-            Some(row) => Ok(Some(row_to_channel(row)?)),
+            Some(row) => Ok(Some(mappers::row_to_channel(row)?)),
             None => Ok(None),
         }
     }
@@ -372,15 +369,15 @@ impl ChatRepository for ScyllaChatRepo {
                 batch.append_statement(self.stmts.insert_direct_channel_lookup.clone());
                 batch.append_statement(self.stmts.insert_channel_by_user.clone());
                 batch.append_statement(self.stmts.insert_channel_by_user.clone());
-                let kind = channel_kind_str(ChannelKind::Direct);
+                let kind = mappers::channel_kind_str(ChannelKind::Direct);
                 self.session
                     .batch(
                         &batch,
                         (
                             (c.id.0, c.user_low_id.0, c.user_high_id.0, c.created_at),
                             (c.user_low_id.0, c.user_high_id.0, c.id.0),
-                            (c.user_low_id.0, c.id.0, kind, None::<OffsetDateTime>),
-                            (c.user_high_id.0, c.id.0, kind, None::<OffsetDateTime>),
+                            (c.user_low_id.0, c.id.0, kind),
+                            (c.user_high_id.0, c.id.0, kind),
                         ),
                     )
                     .await
@@ -431,7 +428,7 @@ impl ChatRepository for ScyllaChatRepo {
         self.session
             .execute_unpaged(
                 &self.stmts.insert_channel_by_user,
-                (user_id.0, channel_id.0, channel_kind_str(kind)),
+                (user_id.0, channel_id.0, mappers::channel_kind_str(kind)),
             )
             .await
             .map_err(backend)?;
@@ -467,7 +464,7 @@ impl ChatRepository for ScyllaChatRepo {
         let rows = result.into_rows_result().map_err(backend)?;
         let mut out = Vec::new();
         for row in rows.rows::<ChannelMembershipRow>().map_err(backend)? {
-            out.push(row_to_membership(user_id, row.map_err(backend)?)?);
+            out.push(mappers::row_to_membership(user_id, row.map_err(backend)?)?);
         }
         Ok(out)
     }
@@ -532,7 +529,7 @@ impl ChatRepository for ScyllaChatRepo {
             };
             let rows = result.into_rows_result().map_err(backend)?;
             for row in rows.rows::<MessageRow>().map_err(backend)? {
-                out.push(row_to_message(channel_id, row.map_err(backend)?));
+                out.push(mappers::row_to_message(channel_id, row.map_err(backend)?));
             }
             if out.len() >= limit as usize || bucket <= floor {
                 break;
@@ -562,7 +559,7 @@ impl ChatRepository for ScyllaChatRepo {
         Ok(rows
             .maybe_first_row::<MessageRow>()
             .map_err(backend)?
-            .map(|row| row_to_message(channel_id, row)))
+            .map(|row| mappers::row_to_message(channel_id, row)))
     }
 
     #[tracing::instrument(skip_all)]
@@ -637,7 +634,7 @@ impl ChatRepository for ScyllaChatRepo {
             .map_err(backend)?;
         let rows = result.into_rows_result().map_err(backend)?;
         match rows.maybe_first_row::<AnnouncementRow>().map_err(backend)? {
-            Some(row) => Ok(Some(row_to_announcement(channel_id, row)?)),
+            Some(row) => Ok(Some(mappers::row_to_announcement(channel_id, row)?)),
             None => Ok(None),
         }
     }
@@ -657,7 +654,10 @@ impl ChatRepository for ScyllaChatRepo {
         let rows = result.into_rows_result().map_err(backend)?;
         let mut out = Vec::new();
         for row in rows.rows::<AnnouncementRow>().map_err(backend)? {
-            out.push(row_to_announcement(channel_id, row.map_err(backend)?)?);
+            out.push(mappers::row_to_announcement(
+                channel_id,
+                row.map_err(backend)?,
+            )?);
         }
         Ok(out)
     }

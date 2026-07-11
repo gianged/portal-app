@@ -34,7 +34,7 @@ fn kind_icon(kind: ChannelKind) -> IconName {
 
 #[component]
 pub fn ChannelList(selected: RwSignal<Option<ChannelId>>) -> impl IntoView {
-    let channels: Loadable<Vec<ChannelSummaryDto>> = RwSignal::new(None);
+    let channels: Loadable<Vec<ChannelSummaryDto>> = Loadable::new();
     let reload = RwSignal::new(0u32);
     let dm_open = RwSignal::new(false);
 

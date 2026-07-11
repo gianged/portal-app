@@ -53,6 +53,13 @@ impl Membership {
         self.updated_at = now;
     }
 
+    pub fn rejoin(&mut self, role: GroupRole, now: OffsetDateTime) {
+        self.role = role;
+        self.joined_at = now;
+        self.deactivated_at = None;
+        self.updated_at = now;
+    }
+
     pub fn change_role(&mut self, role: GroupRole, now: OffsetDateTime) {
         self.role = role;
         self.updated_at = now;

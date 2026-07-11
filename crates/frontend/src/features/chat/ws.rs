@@ -20,11 +20,13 @@ pub fn push_message(messages: RwSignal<Vec<MessageDto>>, msg: MessageDto) {
 }
 
 /// Fold one server frame into the open channel's view; frames for other channels are ignored.
+/// `typing_gen` guards the typing indicator: only the timer from the latest frame clears it.
 pub fn apply_server_frame(
     frame: &ServerFrame,
     channel: ChannelId,
     messages: RwSignal<Vec<MessageDto>>,
     typing: RwSignal<bool>,
+    typing_gen: StoredValue<u64>,
 ) {
     match frame {
         ServerFrame::MessageCreated { message } | ServerFrame::MessageEdited { message }
@@ -40,7 +42,16 @@ pub fn apply_server_frame(
         }
         ServerFrame::Typing { channel_id, .. } if *channel_id == channel => {
             typing.set(true);
-            set_timeout(move || typing.set(false), Duration::from_secs(3));
+            let generation = typing_gen.get_value().wrapping_add(1);
+            typing_gen.set_value(generation);
+            set_timeout(
+                move || {
+                    if typing_gen.try_get_value() == Some(generation) {
+                        typing.set(false);
+                    }
+                },
+                Duration::from_secs(3),
+            );
         }
         _ => {}
     }

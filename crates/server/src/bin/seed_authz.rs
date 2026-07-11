@@ -79,13 +79,13 @@ async fn main() -> Result<()> {
 
     let mut tally = Tally::default();
 
-    // 1. Company-wide member wildcard (also seeded by the server at boot; idempotent).
+    // Company-wide member wildcard (also seeded by the server at boot; idempotent).
     tally.record(
         "company#member=user:*",
         perms.seed_company_member_wildcard().await,
     );
 
-    // 2. Org-wide system roles (director / hr) -> company#director / company#hr.
+    // Org-wide system roles (director / hr) -> company#director / company#hr.
     let active_users = load_active_users(users.as_ref()).await?;
     for user in &active_users {
         if let Some(role) = user.system_role {
@@ -96,7 +96,24 @@ async fn main() -> Result<()> {
         }
     }
 
-    // 3. Groups -> group#company, and each active membership -> group#<role>.
+    seed_org_graph(&perms, groups.as_ref(), projects.as_ref(), &mut tally).await?;
+    seed_tickets(&perms, tickets.as_ref(), &active_users, &mut tally).await?;
+
+    println!(
+        "seed_authz: {} tuples written, {} rejected (rejections are expected on a re-run).",
+        tally.ok, tally.failed
+    );
+    Ok(())
+}
+
+/// Groups -> `group#company` plus each active membership -> `group#<role>`; then each
+/// owned project -> `project#owner_group` + `project#company` plus its collaborators.
+async fn seed_org_graph(
+    perms: &Permissions,
+    groups: &dyn GroupRepository,
+    projects: &dyn ProjectRepository,
+    tally: &mut Tally,
+) -> Result<()> {
     let all_groups = groups.list_all().await.context("listing groups")?;
     for group in &all_groups {
         tally.record(
@@ -116,8 +133,6 @@ async fn main() -> Result<()> {
             }
         }
 
-        // 4. Projects owned by this group -> project#owner_group + project#company,
-        //    plus each collaborator group -> project#collaborator_group.
         let owned = projects
             .list_for_owner_group(group.id, None)
             .await
@@ -143,11 +158,20 @@ async fn main() -> Result<()> {
             }
         }
     }
+    Ok(())
+}
 
-    // 5. Tickets. No list-all exists, so union the per-requester lists over active
-    //    users (every ticket has a requester); dedupe in case of overlap.
+/// Ticket creator + assignee tuples. No list-all exists, so union the
+/// per-requester lists over active users (every ticket has a requester);
+/// dedupe in case of overlap.
+async fn seed_tickets(
+    perms: &Permissions,
+    tickets: &dyn TicketRepository,
+    active_users: &[User],
+    tally: &mut Tally,
+) -> Result<()> {
     let mut seen: HashSet<TicketId> = HashSet::new();
-    for user in &active_users {
+    for user in active_users {
         let raised = tickets
             .list_for_requester(user.id, None)
             .await
@@ -170,11 +194,6 @@ async fn main() -> Result<()> {
             }
         }
     }
-
-    println!(
-        "seed_authz: {} tuples written, {} rejected (rejections are expected on a re-run).",
-        tally.ok, tally.failed
-    );
     Ok(())
 }
 

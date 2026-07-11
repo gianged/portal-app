@@ -15,8 +15,9 @@ use domain::{
     ids::{ChannelId, MessageId},
     model::Announcement,
 };
-use shared::dto::announcement::{
-    AnnouncementDto, EditAnnouncementRequest, PostAnnouncementRequest,
+use shared::dto::{
+    announcement::{AnnouncementDto, EditAnnouncementRequest, PostAnnouncementRequest},
+    ids as wire,
 };
 
 use crate::{
@@ -75,15 +76,15 @@ async fn list(
 async fn edit(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path((channel_id, announcement_id)): Path<(Uuid, Uuid)>,
+    Path((channel_id, announcement_id)): Path<(wire::ChannelId, wire::MessageId)>,
     ValidatedJson(body): ValidatedJson<EditAnnouncementRequest>,
 ) -> Result<Json<AnnouncementDto>, AppError> {
     let announcement = state
         .announcement
         .edit(
             auth.user_id,
-            ChannelId(channel_id),
-            MessageId(announcement_id),
+            ChannelId(channel_id.0),
+            MessageId(announcement_id.0),
             body.body,
         )
         .await?;
@@ -93,14 +94,14 @@ async fn edit(
 async fn remove(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path((channel_id, announcement_id)): Path<(Uuid, Uuid)>,
+    Path((channel_id, announcement_id)): Path<(wire::ChannelId, wire::MessageId)>,
 ) -> Result<StatusCode, AppError> {
     state
         .announcement
         .delete(
             auth.user_id,
-            ChannelId(channel_id),
-            MessageId(announcement_id),
+            ChannelId(channel_id.0),
+            MessageId(announcement_id.0),
         )
         .await?;
     Ok(StatusCode::NO_CONTENT)

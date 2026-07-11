@@ -40,10 +40,10 @@ fn remaining_edit_minutes(created_at: OffsetDateTime) -> Option<i64> {
 #[component]
 pub fn AnnouncementsIndex() -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
-    let channels: Loadable<Vec<ChannelSummaryDto>> = RwSignal::new(None);
+    let channels: Loadable<Vec<ChannelSummaryDto>> = Loadable::new();
     load::load(channels, chat_api::channels());
     let channel = RwSignal::new(None::<ChannelId>);
-    let items: Loadable<Vec<AnnouncementDto>> = RwSignal::new(None);
+    let items: Loadable<Vec<AnnouncementDto>> = Loadable::new();
     let reload = RwSignal::new(0u32);
     let post_open = RwSignal::new(false);
 
@@ -265,7 +265,7 @@ fn PostAnnouncementDialog(
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting>
                     {move || if submitting.get() { "Broadcasting…" } else { "Broadcast" }}
                 </Button>
             </DialogFooter>
@@ -321,7 +321,7 @@ fn EditAnnouncementDialog(
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting>
                     {move || if submitting.get() { "Saving…" } else { "Save" }}
                 </Button>
             </DialogFooter>

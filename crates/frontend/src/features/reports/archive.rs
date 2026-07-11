@@ -3,16 +3,21 @@ use leptos::prelude::*;
 use shared::dto::report::ReportSummaryDto;
 
 use crate::features::reports::api;
-use crate::features::reports::routes::section_title;
+use crate::features::reports::components::section_title;
 use crate::primitives::card::Card;
 use crate::primitives::stack::{Gap, Stack};
 use crate::theme::{self, color, space, typography};
 use crate::util::load::{self, Loadable};
 
+/// Generated-PDF archive; `refresh` re-fetches after a new report is generated.
 #[component]
-pub fn ReportArchive() -> impl IntoView {
-    let items: Loadable<Vec<ReportSummaryDto>> = RwSignal::new(None);
-    load::load(items, api::archive_list());
+pub fn ReportArchive(#[prop(into)] refresh: Signal<u32>) -> impl IntoView {
+    let items: Loadable<Vec<ReportSummaryDto>> = Loadable::new();
+
+    Effect::new(move |_| {
+        let _ = refresh.get();
+        load::load(items, api::archive_list());
+    });
 
     view! {
         <Card>

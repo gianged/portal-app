@@ -5,19 +5,15 @@ use domain::{
     model::{Ticket, TicketPriority, TicketStatus},
     repository::TicketRepository,
 };
-use time::{Duration, OffsetDateTime};
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
     commands::ticket::RaiseTicketCommand,
-    error::{Error, Result},
+    error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
 };
-
-/// A closed ticket can be reopened within this window. Past it, the requester
-/// must raise a new ticket.
-const REOPEN_WINDOW: Duration = Duration::days(7);
 
 pub struct TicketService {
     tickets: Arc<dyn TicketRepository>,
@@ -119,7 +115,7 @@ impl TicketService {
     ) -> Result<Ticket> {
         self.perms.require_it_member(actor).await?;
         if !self.perms.is_it_member(assignee).await? {
-            return Err(Error::Conflict("assignee_not_it".into()));
+            return Err(Error::Conflict(ConflictCode::AssigneeNotIt));
         }
         let mut ticket = self.load(ticket_id).await?;
         let from = ticket.status;
@@ -144,9 +140,10 @@ impl TicketService {
     /// Starts work on an assigned ticket. Assignee-only.
     ///
     /// # Errors
-    /// Returns `NotFound` if the ticket does not exist, `Forbidden` if the actor is not the assignee, `Transition` if the ticket is not in a startable state, or a repository or event error if the datastore or event bus is unavailable.
+    /// Returns `Forbidden` if the actor is not active or not the assignee, `NotFound` if the ticket does not exist, `Transition` if the ticket is not in a startable state, or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, ticket_id = ?ticket_id))]
     pub async fn start(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
+        self.perms.require_active(actor).await?;
         let mut ticket = self.load(ticket_id).await?;
         if ticket.assignee_user_id != Some(actor) {
             return Err(Error::Forbidden);
@@ -162,9 +159,10 @@ impl TicketService {
     /// Marks an in-progress ticket as resolved. Assignee-only.
     ///
     /// # Errors
-    /// Returns `NotFound` if the ticket does not exist, `Forbidden` if the actor is not the assignee, `Transition` if the ticket is not in a resolvable state, or a repository or event error if the datastore or event bus is unavailable.
+    /// Returns `Forbidden` if the actor is not active or not the assignee, `NotFound` if the ticket does not exist, `Transition` if the ticket is not in a resolvable state, or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, ticket_id = ?ticket_id))]
     pub async fn resolve(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
+        self.perms.require_active(actor).await?;
         let mut ticket = self.load(ticket_id).await?;
         if ticket.assignee_user_id != Some(actor) {
             return Err(Error::Forbidden);
@@ -180,9 +178,10 @@ impl TicketService {
     /// Closes a resolved ticket. Requester-only.
     ///
     /// # Errors
-    /// Returns `NotFound` if the ticket does not exist, `Forbidden` if the actor is not the requester, `Transition` if the ticket is not in a closable state, or a repository or event error if the datastore or event bus is unavailable.
+    /// Returns `Forbidden` if the actor is not active or not the requester, `NotFound` if the ticket does not exist, `Transition` if the ticket is not in a closable state, or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, ticket_id = ?ticket_id))]
     pub async fn close(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
+        self.perms.require_active(actor).await?;
         let mut ticket = self.load(ticket_id).await?;
         if ticket.requester_user_id != actor {
             return Err(Error::Forbidden);
@@ -198,9 +197,10 @@ impl TicketService {
     /// Rejects a ticket's resolution, sending it back to the assignee. Requester-only.
     ///
     /// # Errors
-    /// Returns `NotFound` if the ticket does not exist, `Forbidden` if the actor is not the requester, `Transition` if the ticket is not in a resolved state, or a repository or event error if the datastore or event bus is unavailable.
+    /// Returns `Forbidden` if the actor is not active or not the requester, `NotFound` if the ticket does not exist, `Transition` if the ticket is not in a resolved state, or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, ticket_id = ?ticket_id))]
     pub async fn reject_resolution(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
+        self.perms.require_active(actor).await?;
         let mut ticket = self.load(ticket_id).await?;
         if ticket.requester_user_id != actor {
             return Err(Error::Forbidden);
@@ -213,24 +213,19 @@ impl TicketService {
         Ok(ticket)
     }
 
-    /// Reopens a closed ticket within the 7-day reopen window. Requester-only.
+    /// Reopens a closed ticket within [`Ticket::REOPEN_WINDOW`]. Requester-only.
     ///
     /// # Errors
-    /// Returns `NotFound` if the ticket does not exist, `Forbidden` if the actor is not the requester, `Conflict` if the ticket is not closed or the 7-day reopen window has expired, `Transition` if the ticket is not in a reopenable state, or a repository or event error if the datastore or event bus is unavailable.
+    /// Returns `Forbidden` if the actor is not active or not the requester, `NotFound` if the ticket does not exist, `Transition` if the ticket is not closed or the reopen window has expired, or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, ticket_id = ?ticket_id))]
     pub async fn reopen(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
+        self.perms.require_active(actor).await?;
         let mut ticket = self.load(ticket_id).await?;
         if ticket.requester_user_id != actor {
             return Err(Error::Forbidden);
         }
-        let closed_at = ticket
-            .closed_at
-            .ok_or_else(|| Error::Conflict("ticket_not_closed".into()))?;
-        let now = OffsetDateTime::now_utc();
-        if now - closed_at > REOPEN_WINDOW {
-            return Err(Error::Conflict("reopen_window_expired".into()));
-        }
         let from = ticket.status;
+        let now = OffsetDateTime::now_utc();
         ticket.reopen(now)?;
         self.tickets.save(&ticket).await?;
         self.emit_status(actor, &ticket, from, now).await?;

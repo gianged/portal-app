@@ -20,16 +20,19 @@ use domain::{
     model::{Channel, DirectChannel, Message},
     ports::file_storage::FileStorage,
 };
-use shared::dto::chat::{
-    ChannelDto, ChannelSummaryDto, ChatAttachmentDto, EditMessageRequest, MessageDto,
-    SendMessageRequest,
+use shared::dto::{
+    chat::{
+        ChannelDto, ChannelSummaryDto, ChatAttachmentDto, EditMessageRequest, MessageDto,
+        OpenDirectRequest, SendMessageRequest,
+    },
+    ids as wire,
 };
 
 use crate::{
     app::AppState,
     dto,
     error::AppError,
-    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
+    extractors::{app_json::AppJson, auth_user::AuthUser, validated_json::ValidatedJson},
     resolve, routes,
 };
 
@@ -59,11 +62,6 @@ pub fn router() -> Router<AppState> {
 }
 
 #[derive(Deserialize)]
-struct OpenDirectRequest {
-    user_id: Uuid,
-}
-
-#[derive(Deserialize)]
 struct HistoryQuery {
     before: Option<Uuid>,
     limit: Option<u32>,
@@ -72,9 +70,9 @@ struct HistoryQuery {
 async fn open_direct(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<OpenDirectRequest>,
+    AppJson(body): AppJson<OpenDirectRequest>,
 ) -> Result<Json<ChannelDto>, AppError> {
-    let other = UserId(body.user_id);
+    let other = UserId(body.user_id.0);
     let channel = state.chat.open_direct_channel(auth.user_id, other).await?;
     let other_summary = resolve::user_summary(&state.user, &state.group, other).await?;
     Ok(Json(dto::channel_dto(&channel, Some(other_summary))))
@@ -131,14 +129,14 @@ fn dm_counterpart(c: &DirectChannel, viewer: UserId) -> UserId {
 async fn list_messages(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::ChannelId>,
     Query(q): Query<HistoryQuery>,
 ) -> Result<Json<Vec<MessageDto>>, AppError> {
     let before = q.before.map(MessageId);
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
     let messages = state
         .chat
-        .list_messages(auth.user_id, ChannelId(id), before, limit)
+        .list_messages(auth.user_id, ChannelId(id.0), before, limit)
         .await?;
     Ok(Json(
         messages_to_dtos(&state, auth.user_id, messages).await?,
@@ -148,12 +146,15 @@ async fn list_messages(
 async fn post_message(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::ChannelId>,
     ValidatedJson(body): ValidatedJson<SendMessageRequest>,
 ) -> Result<Json<MessageDto>, AppError> {
     let message = state
         .chat
-        .post_message(auth.user_id, dto::post_message_command(ChannelId(id), body))
+        .post_message(
+            auth.user_id,
+            dto::post_message_command(ChannelId(id.0), body),
+        )
         .await?;
     Ok(Json(message_to_dto(&state, auth.user_id, &message).await?))
 }
@@ -161,15 +162,15 @@ async fn post_message(
 async fn edit_message(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path((id, message_id)): Path<(Uuid, Uuid)>,
+    Path((id, message_id)): Path<(wire::ChannelId, wire::MessageId)>,
     ValidatedJson(body): ValidatedJson<EditMessageRequest>,
 ) -> Result<Json<MessageDto>, AppError> {
     let message = state
         .chat
         .edit_message(
             auth.user_id,
-            ChannelId(id),
-            MessageId(message_id),
+            ChannelId(id.0),
+            MessageId(message_id.0),
             body.body,
         )
         .await?;
@@ -179,11 +180,11 @@ async fn edit_message(
 async fn delete_message(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path((id, message_id)): Path<(Uuid, Uuid)>,
+    Path((id, message_id)): Path<(wire::ChannelId, wire::MessageId)>,
 ) -> Result<StatusCode, AppError> {
     state
         .chat
-        .delete_message(auth.user_id, ChannelId(id), MessageId(message_id))
+        .delete_message(auth.user_id, ChannelId(id.0), MessageId(message_id.0))
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -191,9 +192,9 @@ async fn delete_message(
 async fn mark_read(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::ChannelId>,
 ) -> Result<StatusCode, AppError> {
-    state.chat.mark_read(auth.user_id, ChannelId(id)).await?;
+    state.chat.mark_read(auth.user_id, ChannelId(id.0)).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -202,7 +203,7 @@ async fn mark_read(
 async fn upload_attachment(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::ChannelId>,
     mut multipart: Multipart,
 ) -> Result<Json<ChatAttachmentDto>, AppError> {
     let (filename, content_type, bytes) = routes::read_upload_field(&mut multipart).await?;
@@ -211,7 +212,7 @@ async fn upload_attachment(
         .chat
         .add_attachment(
             auth.user_id,
-            ChannelId(id),
+            ChannelId(id.0),
             AddChatAttachmentCommand {
                 filename,
                 content_type,

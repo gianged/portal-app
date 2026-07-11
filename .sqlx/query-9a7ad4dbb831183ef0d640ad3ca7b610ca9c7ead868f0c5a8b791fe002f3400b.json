@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO attendance.leave_transactions\n                     (id, user_id, grant_id, kind, delta, dayoff_id, work_pct, reason,\n                      created_by_user_id, created_at)\n                   SELECT u.id, u.user_id, u.grant_id, u.kind, u.delta::numeric, u.dayoff_id,\n                          u.work_pct::numeric, u.reason, u.created_by_user_id, u.created_at\n                   FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[],\n                               $4::attendance.leave_txn_kind[], $5::float8[], $6::uuid[],\n                               $7::float8[], $8::text[], $9::uuid[], $10::timestamptz[])\n                     AS u(id, user_id, grant_id, kind, delta, dayoff_id, work_pct, reason,\n                          created_by_user_id, created_at)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "UuidArray",
+        "UuidArray",
+        {
+          "Custom": {
+            "name": "attendance.leave_txn_kind[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "attendance.leave_txn_kind",
+                  "kind": {
+                    "Enum": [
+                      "grant",
+                      "consume",
+                      "refund",
+                      "adjust",
+                      "expire"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "Float8Array",
+        "UuidArray",
+        "Float8Array",
+        "TextArray",
+        "UuidArray",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9a7ad4dbb831183ef0d640ad3ca7b610ca9c7ead868f0c5a8b791fe002f3400b"
+}

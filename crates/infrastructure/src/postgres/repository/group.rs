@@ -1,12 +1,12 @@
 use async_trait::async_trait;
-use sqlx::PgPool;
+use sqlx::{PgExecutor, PgPool};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use domain::{
     error::RepositoryError,
     ids::{GroupId, MembershipId, UserId},
-    model::{Group, GroupKind, Membership},
+    model::{Group, Membership},
     repository::GroupRepository,
 };
 
@@ -72,6 +72,37 @@ impl From<MembershipRow> for Membership {
             updated_at: r.updated_at,
         }
     }
+}
+
+// Single upsert statement shared by single and batched saves so the sqlx
+// statement cache serves both.
+async fn upsert_membership(
+    executor: impl PgExecutor<'_>,
+    m: &Membership,
+) -> Result<(), sqlx::Error> {
+    let role = SqlGroupRole::from(m.role);
+    // Literal kept byte-identical to the committed .sqlx cache entry.
+    sqlx::query!(
+        r#"INSERT INTO org.memberships
+                 (id, group_id, user_id, role, joined_at, deactivated_at, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               ON CONFLICT (id) DO UPDATE SET
+                 group_id       = EXCLUDED.group_id,
+                 user_id        = EXCLUDED.user_id,
+                 role           = EXCLUDED.role,
+                 joined_at      = EXCLUDED.joined_at,
+                 deactivated_at = EXCLUDED.deactivated_at"#,
+        m.id.0,
+        m.group_id.0,
+        m.user_id.0,
+        role as SqlGroupRole,
+        m.joined_at,
+        m.deactivated_at,
+        m.created_at,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
 }
 
 #[async_trait]
@@ -145,7 +176,6 @@ impl GroupRepository for PgGroupRepo {
     #[tracing::instrument(skip_all)]
     async fn find_it_group(&self) -> Result<Option<Group>, RepositoryError> {
         // The uq_groups_one_it partial unique index guarantees at most one row.
-        let it = SqlGroupKind::from(GroupKind::It);
         sqlx::query_as!(
             GroupRow,
             r#"SELECT
@@ -156,9 +186,8 @@ impl GroupRepository for PgGroupRepo {
                  created_at,
                  updated_at
                FROM org.groups
-               WHERE kind = $1
+               WHERE kind = 'it'
                LIMIT 1"#,
-            it as SqlGroupKind,
         )
         .fetch_optional(&self.pool)
         .await
@@ -305,28 +334,20 @@ impl GroupRepository for PgGroupRepo {
 
     #[tracing::instrument(skip_all)]
     async fn save_membership(&self, m: &Membership) -> Result<(), RepositoryError> {
-        let role = SqlGroupRole::from(m.role);
-        sqlx::query!(
-            r#"INSERT INTO org.memberships
-                 (id, group_id, user_id, role, joined_at, deactivated_at, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)
-               ON CONFLICT (id) DO UPDATE SET
-                 group_id       = EXCLUDED.group_id,
-                 user_id        = EXCLUDED.user_id,
-                 role           = EXCLUDED.role,
-                 joined_at      = EXCLUDED.joined_at,
-                 deactivated_at = EXCLUDED.deactivated_at"#,
-            m.id.0,
-            m.group_id.0,
-            m.user_id.0,
-            role as SqlGroupRole,
-            m.joined_at,
-            m.deactivated_at,
-            m.created_at,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(mappers::map_pg_error)?;
+        upsert_membership(&self.pool, m)
+            .await
+            .map_err(mappers::map_pg_error)
+    }
+
+    #[tracing::instrument(skip_all, fields(count = memberships.len()))]
+    async fn save_memberships(&self, memberships: &[Membership]) -> Result<(), RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
+        for m in memberships {
+            upsert_membership(&mut *tx, m)
+                .await
+                .map_err(mappers::map_pg_error)?;
+        }
+        tx.commit().await.map_err(mappers::map_pg_error)?;
         Ok(())
     }
 }

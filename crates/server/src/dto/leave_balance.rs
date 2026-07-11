@@ -7,8 +7,6 @@ use shared::dto::leave_balance::{
     LeaveTxnKind as WireKind, SetLeaveGrantRequest,
 };
 
-use super::{daily_report::fmt_date, day_off_id, leave_grant_id, leave_transaction_id};
-
 #[must_use]
 pub fn leave_txn_kind_dto(kind: model::LeaveTxnKind) -> WireKind {
     match kind {
@@ -23,11 +21,11 @@ pub fn leave_txn_kind_dto(kind: model::LeaveTxnKind) -> WireKind {
 #[must_use]
 pub fn leave_grant_dto(grant: &model::LeaveGrant) -> LeaveGrantDto {
     LeaveGrantDto {
-        id: leave_grant_id(grant.id),
+        id: super::leave_grant_id(grant.id),
         grant_year: grant.grant_year,
         days_granted: grant.days_granted,
         days_remaining: grant.days_remaining,
-        expires_on: fmt_date(grant.expires_on),
+        expires_on: grant.expires_on,
     }
 }
 
@@ -42,10 +40,10 @@ pub fn leave_balance_dto(available: f64, grants: &[model::LeaveGrant]) -> LeaveB
 #[must_use]
 pub fn leave_transaction_dto(txn: &model::LeaveTransaction) -> LeaveTransactionDto {
     LeaveTransactionDto {
-        id: leave_transaction_id(txn.id),
+        id: super::leave_transaction_id(txn.id),
         kind: leave_txn_kind_dto(txn.kind),
         delta: txn.delta,
-        dayoff_id: txn.dayoff_id.map(day_off_id),
+        dayoff_id: txn.dayoff_id.map(super::day_off_id),
         work_pct: txn.work_pct,
         reason: txn.reason.clone(),
         created_at: txn.created_at,
@@ -64,7 +62,10 @@ pub fn leave_statement_dto(
 }
 
 #[must_use]
-pub fn set_leave_grant_command(user_id: UserId, req: SetLeaveGrantRequest) -> SetLeaveGrantCommand {
+pub fn set_leave_grant_command(
+    user_id: UserId,
+    req: &SetLeaveGrantRequest,
+) -> SetLeaveGrantCommand {
     SetLeaveGrantCommand {
         user_id,
         grant_year: req.grant_year,

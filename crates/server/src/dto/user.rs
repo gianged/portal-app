@@ -10,8 +10,6 @@ use shared::dto::{
     },
 };
 
-use super::{group_id, group_role_dto, user_id};
-
 #[must_use]
 pub fn system_role_dto(role: model::SystemRole) -> WireSystemRole {
     match role {
@@ -69,8 +67,8 @@ pub fn user_dto(
     memberships: Vec<UserMembershipDto>,
 ) -> UserDto {
     UserDto {
-        id: user_id(user.id),
-        name: user.full_name.clone(),
+        id: super::user_id(user.id),
+        full_name: user.full_name.clone(),
         email: user.email.clone(),
         role,
         memberships,
@@ -80,16 +78,16 @@ pub fn user_dto(
 #[must_use]
 pub fn user_membership_dto(m: &model::Membership, group_name: String) -> UserMembershipDto {
     UserMembershipDto {
-        group_id: group_id(m.group_id),
+        group_id: super::group_id(m.group_id),
         group_name,
-        role: group_role_dto(m.role),
+        role: super::group_role_dto(m.role),
     }
 }
 
 #[must_use]
 pub fn user_profile_dto(user: &model::User) -> UserProfileDto {
     UserProfileDto {
-        id: user_id(user.id),
+        id: super::user_id(user.id),
         email: user.email.clone(),
         full_name: user.full_name.clone(),
         avatar_storage_key: user.avatar_storage_key.clone(),
@@ -105,7 +103,7 @@ pub fn user_profile_dto(user: &model::User) -> UserProfileDto {
 #[must_use]
 pub fn user_summary_dto(user: &model::User, role: UserRole) -> UserSummaryDto {
     UserSummaryDto {
-        id: user_id(user.id),
+        id: super::user_id(user.id),
         full_name: user.full_name.clone(),
         avatar_storage_key: user.avatar_storage_key.clone(),
         role,
@@ -117,7 +115,7 @@ pub fn user_summary_dto(user: &model::User, role: UserRole) -> UserSummaryDto {
 #[must_use]
 pub fn unknown_user_summary(id: ids::UserId) -> UserSummaryDto {
     UserSummaryDto {
-        id: user_id(id),
+        id: super::user_id(id),
         full_name: "Unknown user".to_owned(),
         avatar_storage_key: None,
         role: UserRole::Member,

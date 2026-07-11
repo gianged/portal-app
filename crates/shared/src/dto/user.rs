@@ -64,12 +64,30 @@ pub enum SystemRole {
 }
 
 impl SystemRole {
+    /// Every variant, for building select options.
+    pub const ALL: [Self; 2] = [Self::Director, Self::Hr];
+
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::Director => "Director",
             Self::Hr => "HR",
         }
+    }
+
+    /// Canonical wire string (the serde `snake_case` tag).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Director => "director",
+            Self::Hr => "hr",
+        }
+    }
+
+    /// Parses a wire string produced by [`Self::as_str`].
+    #[must_use]
+    pub fn from_wire(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|v| v.as_str() == s)
     }
 }
 
@@ -86,7 +104,7 @@ pub struct UserMembershipDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserDto {
     pub id: UserId,
-    pub name: String,
+    pub full_name: String,
     pub email: String,
     pub role: UserRole,
     pub memberships: Vec<UserMembershipDto>,
@@ -157,19 +175,6 @@ pub struct ResetPasswordRequest {
     pub new_password: String,
 }
 
-/// Assign a user to a group with an initial role (HR action).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AssignUserToGroupRequest {
-    pub group_id: GroupId,
-    pub role: GroupRole,
-}
-
-/// Change a user's org-wide role (HR action). `None` clears it.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChangeSystemRoleRequest {
-    pub system_role: Option<SystemRole>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::{SystemRole, UserRole, UserStatus};
@@ -193,5 +198,16 @@ mod tests {
         let json = serde_json::to_string(&UserRole::GroupSubLeader).unwrap();
         let back: UserRole = serde_json::from_str(&json).unwrap();
         assert_eq!(back, UserRole::GroupSubLeader);
+    }
+
+    #[test]
+    fn system_role_wire_helpers_match_serde() {
+        for role in SystemRole::ALL {
+            assert_eq!(
+                serde_json::to_string(&role).unwrap(),
+                format!("\"{}\"", role.as_str())
+            );
+            assert_eq!(SystemRole::from_wire(role.as_str()), Some(role));
+        }
     }
 }

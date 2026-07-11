@@ -99,7 +99,7 @@ pub fn InboxIndex() -> impl IntoView {
     let navigate = hooks::use_navigate();
 
     let unread_only = RwSignal::new(false);
-    let items: Loadable<Vec<NotificationDto>> = RwSignal::new(None);
+    let items: Loadable<Vec<NotificationDto>> = Loadable::new();
     let reload = RwSignal::new(0u32);
 
     Effect::new(move |_| {
@@ -107,26 +107,20 @@ pub fn InboxIndex() -> impl IntoView {
         load::load(items, api::list(unread_only.get(), 50));
     });
 
-    // Pull a fresh unread count into the topbar badge after a mutation.
-    let refresh_badge = move || {
-        task::spawn_local(async move {
-            if let Ok(c) = api::unread_count().await {
-                notifications.set_unread(c);
-            }
-        });
-    };
-
     let mark_all = Callback::new(move |_| {
         task::spawn_local(async move {
             match api::mark_read(Vec::new()).await {
                 Ok(()) => {
                     toast.success("All caught up");
                     reload.update(|n| *n += 1);
+                    // Badge refresh only after the mark-read committed.
+                    if let Ok(c) = api::unread_count().await {
+                        notifications.set_unread(c);
+                    }
                 }
                 Err(e) => toast.error_from(&e),
             }
         });
-        refresh_badge();
     });
 
     let seg = move |label: &'static str, val: bool| {
@@ -217,6 +211,7 @@ fn notification_row(
         let navigate = navigate.clone();
         let href = href.clone();
         task::spawn_local(async move {
+            // Best effort: navigation proceeds even if mark-read fails.
             let _ = api::mark_read(vec![id]).await;
             if let Ok(c) = api::unread_count().await {
                 notifications.set_unread(c);

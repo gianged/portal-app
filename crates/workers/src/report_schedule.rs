@@ -7,10 +7,18 @@ use std::sync::Arc;
 use time::OffsetDateTime;
 
 use application::{GeneratedReport, ReportService};
-use domain::ports::{
-    job_queue::{JobQueue, QUEUE_EMAILS},
-    mailer::{EmailAttachment, EmailMessage},
+use domain::{
+    error::JobError,
+    ports::{
+        job_queue::{JobQueue, QUEUE_EMAILS},
+        mailer::{EmailAttachment, EmailMessage},
+    },
 };
+
+/// Enqueue attempts per recipient before that month's email is given up.
+const ENQUEUE_ATTEMPTS: u32 = 3;
+/// Delay before the first enqueue retry; doubles each attempt.
+const ENQUEUE_BACKOFF: std::time::Duration = std::time::Duration::from_secs(2);
 
 pub async fn run(
     reports: Arc<ReportService>,
@@ -88,7 +96,7 @@ async fn email_report(
     for (email, _user_id) in recipients {
         let message = EmailMessage {
             to: email,
-            subject: format!("[Portal] Monthly company report — {year:04}-{month:02}"),
+            subject: format!("[Portal] Monthly company report {year:04}-{month:02}"),
             body: "Attached is the monthly company report.".to_owned(),
             attachments: vec![EmailAttachment {
                 filename: filename.clone(),
@@ -98,11 +106,32 @@ async fn email_report(
         };
         match serde_json::to_vec(&message) {
             Ok(bytes) => {
-                if let Err(e) = email_queue.enqueue(QUEUE_EMAILS, &bytes).await {
+                if let Err(e) = enqueue_with_retry(email_queue, &bytes).await {
                     tracing::error!(error = %e, to = %message.to, "report email enqueue failed");
                 }
             }
             Err(e) => tracing::error!(error = %e, "report email serialization failed"),
+        }
+    }
+}
+
+// Bounded in-tick retry: generation fires the email exactly once per month, so
+// a transiently failed enqueue would otherwise be lost until next month.
+async fn enqueue_with_retry(email_queue: &dyn JobQueue, bytes: &[u8]) -> Result<(), JobError> {
+    let mut delay = ENQUEUE_BACKOFF;
+    let mut attempt = 1;
+    loop {
+        match email_queue.enqueue(QUEUE_EMAILS, bytes).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                if attempt >= ENQUEUE_ATTEMPTS {
+                    return Err(e);
+                }
+                tracing::warn!(error = %e, attempt, "report email enqueue failed; retrying");
+                tokio::time::sleep(delay).await;
+                delay *= 2;
+                attempt += 1;
+            }
         }
     }
 }

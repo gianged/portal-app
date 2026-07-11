@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     commands::request::{AddAttachmentCommand, CreateRequestCommand, UpdateRequestCommand},
-    error::{Error, Result},
+    error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
 };
@@ -87,9 +87,10 @@ impl RequestService {
     /// Submits a draft request for assignment. Creator-only.
     ///
     /// # Errors
-    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the creator, `Transition` if the request is not in a submittable state, or a repository or event error if the datastore or event bus is unavailable.
+    /// Returns `Forbidden` if the actor is not active or not the creator, `NotFound` if the request does not exist, `Transition` if the request is not in a submittable state, or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn submit(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
+        self.perms.require_active(actor).await?;
         let mut request = self.load(request_id).await?;
         if request.creator_user_id != actor {
             return Err(Error::Forbidden);
@@ -139,9 +140,10 @@ impl RequestService {
     /// Starts work on an assigned request. Assignee-only.
     ///
     /// # Errors
-    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the assignee, `Transition` if the request is not in a startable state, or a repository or event error if the datastore or event bus is unavailable.
+    /// Returns `Forbidden` if the actor is not active or not the assignee, `NotFound` if the request does not exist, `Transition` if the request is not in a startable state, or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn start(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
+        self.perms.require_active(actor).await?;
         let mut request = self.load(request_id).await?;
         if request.assignee_user_id != Some(actor) {
             return Err(Error::Forbidden);
@@ -157,9 +159,10 @@ impl RequestService {
     /// Sends an in-progress request for review. Assignee-only.
     ///
     /// # Errors
-    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the assignee, `Transition` if the request is not in a reviewable state, or a repository or event error if the datastore or event bus is unavailable.
+    /// Returns `Forbidden` if the actor is not active or not the assignee, `NotFound` if the request does not exist, `Transition` if the request is not in a reviewable state, or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn send_for_review(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
+        self.perms.require_active(actor).await?;
         let mut request = self.load(request_id).await?;
         if request.assignee_user_id != Some(actor) {
             return Err(Error::Forbidden);
@@ -207,9 +210,10 @@ impl RequestService {
     /// Cancels a request. Allowed for the creator, the assignee, or anyone who can assign requests on the project.
     ///
     /// # Errors
-    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is none of the creator, assignee, or an assigner on the project, `Transition` if the request cannot be cancelled from its current state, or a repository or event error if the datastore or event bus is unavailable.
+    /// Returns `Forbidden` if the actor is not active or is none of the creator, assignee, or an assigner on the project, `NotFound` if the request does not exist, `Transition` if the request cannot be cancelled from its current state, or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn cancel(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
+        self.perms.require_active(actor).await?;
         let mut request = self.load(request_id).await?;
         let is_creator = request.creator_user_id == actor;
         let is_assignee = request.assignee_user_id == Some(actor);
@@ -229,7 +233,7 @@ impl RequestService {
     /// Sets the completion percentage on an in-progress request. Assignee-only.
     ///
     /// # Errors
-    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the assignee or the request is not in progress, or a repository or event error if the datastore or event bus is unavailable.
+    /// Returns `Forbidden` if the actor is not active, not the assignee, or the request is not in progress, `NotFound` if the request does not exist, or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id, progress = progress))]
     pub async fn set_progress(
         &self,
@@ -237,6 +241,7 @@ impl RequestService {
         request_id: RequestId,
         progress: u8,
     ) -> Result<Request> {
+        self.perms.require_active(actor).await?;
         let mut request = self.load(request_id).await?;
         if request.assignee_user_id != Some(actor) || request.status != RequestStatus::InProgress {
             return Err(Error::Forbidden);
@@ -365,7 +370,7 @@ impl RequestService {
     /// (`Draft`/`Submitted`); once assigned the request is frozen to edits here.
     ///
     /// # Errors
-    /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is not the creator, `Conflict` if the request is no longer editable (past `Draft`/`Submitted`), or a repository or event error if the datastore or event bus is unavailable.
+    /// Returns `Forbidden` if the actor is not active or not the creator, `NotFound` if the request does not exist, `Conflict` if the request is no longer editable (past `Draft`/`Submitted`), or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn update_metadata(
         &self,
@@ -373,6 +378,7 @@ impl RequestService {
         request_id: RequestId,
         cmd: UpdateRequestCommand,
     ) -> Result<Request> {
+        self.perms.require_active(actor).await?;
         let mut request = self.load(request_id).await?;
         if request.creator_user_id != actor {
             return Err(Error::Forbidden);
@@ -381,7 +387,7 @@ impl RequestService {
             request.status,
             RequestStatus::Draft | RequestStatus::Submitted
         ) {
-            return Err(Error::Conflict("request_not_editable".into()));
+            return Err(Error::Conflict(ConflictCode::RequestNotEditable));
         }
         let before = request.clone();
         let now = OffsetDateTime::now_utc();
@@ -427,7 +433,7 @@ impl RequestService {
         assignee: UserId,
     ) -> Result<()> {
         if !self.perms.is_user_active(assignee).await? {
-            return Err(Error::Conflict("assignee_not_active".into()));
+            return Err(Error::Conflict(ConflictCode::AssigneeNotActive));
         }
         let project = self
             .projects
@@ -444,7 +450,7 @@ impl RequestService {
             .await?;
         let in_allowed_group = memberships.iter().any(|m| allowed.contains(&m.group_id));
         if !in_allowed_group {
-            return Err(Error::Conflict("assignee_not_eligible".into()));
+            return Err(Error::Conflict(ConflictCode::AssigneeNotEligible));
         }
         Ok(())
     }

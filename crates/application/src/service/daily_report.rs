@@ -12,7 +12,7 @@ use crate::{
     commands::daily_report::{
         DailyReportEntryInput, ReviewDailyReportCommand, UpsertDailyReportCommand,
     },
-    error::{Error, Result},
+    error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
     service::request::RequestService,
@@ -76,7 +76,7 @@ impl DailyReportService {
                     existing.status,
                     DailyReportStatus::Draft | DailyReportStatus::Returned
                 ) {
-                    return Err(Error::Conflict("daily_report_not_editable".into()));
+                    return Err(Error::Conflict(ConflictCode::DailyReportNotEditable));
                 }
                 existing
             }
@@ -234,7 +234,7 @@ impl DailyReportService {
 
     /// Best-effort request-progress bumps for `RequestWork` entries that carry a
     /// hint. A non-assignee, missing, or non-in-progress request is silently
-    /// skipped; only unexpected errors propagate.
+    /// skipped; unexpected errors are logged, never propagated.
     async fn apply_progress_hints(&self, actor: UserId, entries: &[DailyReportEntryInput]) {
         for entry in entries {
             if entry.kind != DailyReportEntryKind::RequestWork {

@@ -12,8 +12,6 @@ use shared::dto::{
 };
 use time::OffsetDateTime;
 
-use super::{channel_id, chat_attachment_id, group_id, message_id, unknown_user_summary};
-
 #[must_use]
 pub fn channel_kind_dto(kind: model::ChannelKind) -> WireChannelKind {
     match kind {
@@ -29,16 +27,16 @@ pub fn channel_kind_dto(kind: model::ChannelKind) -> WireChannelKind {
 pub fn channel_dto(channel: &model::Channel, other_user: Option<UserSummaryDto>) -> ChannelDto {
     match channel {
         model::Channel::Group(c) => ChannelDto::Group {
-            id: channel_id(c.id),
-            group_id: group_id(c.group_id),
+            id: super::channel_id(c.id),
+            group_id: super::group_id(c.group_id),
             name: c.name.clone(),
         },
         model::Channel::General(c) => ChannelDto::General {
-            id: channel_id(c.id),
+            id: super::channel_id(c.id),
         },
         model::Channel::Direct(c) => ChannelDto::Direct {
-            id: channel_id(c.id),
-            other_user: other_user.unwrap_or_else(|| unknown_user_summary(c.user_high_id)),
+            id: super::channel_id(c.id),
+            other_user: other_user.unwrap_or_else(|| super::unknown_user_summary(c.user_high_id)),
         },
     }
 }
@@ -51,7 +49,7 @@ pub fn channel_summary_dto(
     last_message_at: Option<OffsetDateTime>,
 ) -> ChannelSummaryDto {
     ChannelSummaryDto {
-        id: channel_id(membership.channel_id),
+        id: super::channel_id(membership.channel_id),
         kind: channel_kind_dto(membership.kind),
         title,
         unread,
@@ -78,7 +76,7 @@ pub fn message_created_at(id: ids::MessageId) -> OffsetDateTime {
 #[must_use]
 pub fn chat_attachment_dto(a: &model::ChatAttachment, download_url: String) -> ChatAttachmentDto {
     ChatAttachmentDto {
-        id: chat_attachment_id(a.id),
+        id: super::chat_attachment_id(a.id),
         storage_key: a.storage_key.clone(),
         filename: a.filename.clone(),
         content_type: a.content_type.clone(),
@@ -97,8 +95,8 @@ pub fn message_dto(
     attachments: Vec<ChatAttachmentDto>,
 ) -> MessageDto {
     MessageDto {
-        id: message_id(message.id),
-        channel_id: channel_id(message.channel_id),
+        id: super::message_id(message.id),
+        channel_id: super::channel_id(message.channel_id),
         sender,
         body: message.body.clone(),
         mentions,
@@ -117,8 +115,8 @@ pub fn announcement_dto(
     now: OffsetDateTime,
 ) -> AnnouncementDto {
     AnnouncementDto {
-        id: message_id(announcement.id),
-        channel_id: channel_id(announcement.channel_id),
+        id: super::message_id(announcement.id),
+        channel_id: super::channel_id(announcement.channel_id),
         sender,
         body: announcement.body.clone(),
         edited_at: announcement.edited_at,

@@ -27,7 +27,7 @@ use tokio::{signal, time};
 use application::resilience;
 use infrastructure::telemetry;
 
-use crate::bootstrap::WorkerContext;
+use crate::{bootstrap::WorkerContext, grpc::GrpcJobs, job_spool::JobSpoolDrainer};
 
 /// Grace after the shutdown signal before the watchdog forces exit.
 const FORCE_EXIT_GRACE: Duration = Duration::from_secs(3);
@@ -78,7 +78,7 @@ async fn run() -> anyhow::Result<()> {
     // Shares the shutdown signal; a crash is logged, the direct apalis hop and
     // the job spool keep dispatch alive while it is down.
     {
-        let jobs_service = grpc::GrpcJobs::new(
+        let jobs_service = GrpcJobs::new(
             storage.clone(),
             audit_storage.clone(),
             email_storage.clone(),
@@ -94,7 +94,7 @@ async fn run() -> anyhow::Result<()> {
 
     // Replays job dispatches the server spooled while both enqueue hops were down.
     {
-        let drainer = job_spool::JobSpoolDrainer::new(
+        let drainer = JobSpoolDrainer::new(
             job_spool,
             storage.clone(),
             audit_storage.clone(),

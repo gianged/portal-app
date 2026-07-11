@@ -1,9 +1,7 @@
 use leptos::ev::Event;
 use leptos::prelude::*;
-use wasm_bindgen::JsCast;
-use web_sys::HtmlInputElement;
 
-use crate::theme::{self, color, radius, space, typography};
+use crate::theme::{self, color, effect, radius, space, typography};
 
 /// A single-line input wrapped with optional leading/trailing slots (icon,
 /// keyboard hint, inline button). The inner `<input>` is borderless; the group
@@ -31,9 +29,9 @@ pub fn InputGroup(
         bg = color::BG_ELEVATED,
         bc = color::BORDER,
         r = radius::MD,
-        s = typography::SHADOW_XS,
+        s = effect::SHADOW_XS,
         bfc = color::BORDER_FOCUS,
-        ring = typography::RING,
+        ring = effect::RING,
     ));
     let inner = theme::class(format!(
         "flex: 1; min-width: 0; border: none; background: transparent; outline: none; \
@@ -76,7 +74,7 @@ pub fn Input(
     #[prop(optional)] on_input: Option<Callback<String>>,
     #[prop(optional, into)] placeholder: Option<String>,
     #[prop(optional, into)] type_: Option<String>,
-    #[prop(optional)] disabled: bool,
+    #[prop(optional, into)] disabled: Signal<bool>,
     #[prop(optional, into)] autocomplete: Option<String>,
 ) -> impl IntoView {
     let placeholder = placeholder.unwrap_or_default();
@@ -102,18 +100,13 @@ pub fn Input(
         fs = typography::TEXT_BODY,
         phc = color::TEXT_FAINT,
         bfc = color::BORDER_FOCUS,
-        ring = typography::RING,
+        ring = effect::RING,
         bgd = color::BG_SUNKEN,
     ));
 
     let handle_input = move |ev: Event| {
         if let Some(cb) = on_input {
-            let target = ev
-                .target()
-                .and_then(|t| t.dyn_into::<HtmlInputElement>().ok());
-            if let Some(el) = target {
-                cb.run(el.value());
-            }
+            cb.run(event_target_value(&ev));
         }
     };
 
@@ -123,7 +116,7 @@ pub fn Input(
             type=type_
             placeholder=placeholder
             autocomplete=autocomplete
-            disabled=disabled
+            disabled=move || disabled.get()
             prop:value=move || value.get()
             on:input=handle_input
         />

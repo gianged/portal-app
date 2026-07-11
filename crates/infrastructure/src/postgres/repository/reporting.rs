@@ -36,15 +36,9 @@ fn count(n: i64) -> u32 {
 }
 
 /// Round and clamp an average into the 0-100 percentage range.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn pct(v: f64) -> u8 {
-    let r = v.round();
-    if r <= 0.0 {
-        0
-    } else if r >= 100.0 {
-        100
-    } else {
-        r as u8
-    }
+    v.clamp(0.0, 100.0).round() as u8
 }
 
 // -----------------------------------------------------------------------------

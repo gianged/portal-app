@@ -4,7 +4,7 @@ use time::OffsetDateTime;
 use shared::dto::report::{GroupReportRowDto, MonthlyReportDto};
 
 use crate::features::reports::api;
-use crate::features::reports::routes::{metric, month_name, section_title};
+use crate::features::reports::components::{metric, month_name, section_title};
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
 use crate::primitives::chart::{BarChart, ProgressBar};
@@ -16,13 +16,14 @@ use crate::state::toast::ToastState;
 use crate::theme::{self, color, space, typography};
 use crate::util::load::{self, Loadable};
 
+/// `refresh` is bumped after a successful PDF generation so the archive reloads.
 #[component]
-pub fn MonthlyTab() -> impl IntoView {
+pub fn MonthlyTab(refresh: RwSignal<u32>) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
     let now = OffsetDateTime::now_utc();
     let year = RwSignal::new(now.year());
     let month = RwSignal::new(u8::from(now.month()));
-    let report: Loadable<MonthlyReportDto> = RwSignal::new(None);
+    let report: Loadable<MonthlyReportDto> = Loadable::new();
     let download = RwSignal::new(None::<String>);
     let generating = RwSignal::new(false);
 
@@ -56,7 +57,10 @@ pub fn MonthlyTab() -> impl IntoView {
         let (y, m) = (year.get_untracked(), month.get_untracked());
         task::spawn_local(async move {
             match api::generate_monthly(y, m).await {
-                Ok(summary) => download.set(Some(summary.download_url)),
+                Ok(summary) => {
+                    download.set(Some(summary.download_url));
+                    refresh.update(|n| *n += 1);
+                }
                 Err(e) => toast.error_from(&e),
             }
             generating.set(false);

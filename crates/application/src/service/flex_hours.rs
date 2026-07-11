@@ -10,11 +10,15 @@ use uuid::Uuid;
 
 use crate::{
     commands::flex_hours::{DecideFlexCommand, RequestFlexCommand},
-    error::{Error, Result},
+    error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
     service::policy::PolicyProvider,
 };
+
+/// Tolerance in hours for the month-end reconciliation; absorbs float
+/// accumulation error in summed segment hours.
+const RECONCILE_TOLERANCE_HOURS: f64 = 1e-6;
 
 /// Flexible hours: staff file a per-day custom schedule, a leader approves, and
 /// the month is expected to net to the standard total. Per-day shape and the
@@ -91,7 +95,7 @@ impl FlexHoursService {
             .approved_count_in_month(actor, year, month)
             .await?;
         if used >= u32::from(policy.flex_max_per_month) {
-            return Err(Error::Conflict("flex_monthly_cap_reached".into()));
+            return Err(Error::Conflict(ConflictCode::FlexMonthlyCapReached));
         }
         if self
             .flex
@@ -99,7 +103,7 @@ impl FlexHoursService {
             .await?
             .is_some()
         {
-            return Err(Error::Conflict("flex_already_exists_for_date".into()));
+            return Err(Error::Conflict(ConflictCode::FlexAlreadyExistsForDate));
         }
 
         self.flex.save(&flex).await?;
@@ -139,7 +143,7 @@ impl FlexHoursService {
                 .approved_count_in_month(flex.user_id, year, month)
                 .await?;
             if used >= u32::from(self.policy.current().flex_max_per_month) {
-                return Err(Error::Conflict("flex_monthly_cap_reached".into()));
+                return Err(Error::Conflict(ConflictCode::FlexMonthlyCapReached));
             }
             flex.approve(actor, cmd.note, now)?;
         } else {
@@ -158,11 +162,11 @@ impl FlexHoursService {
         Ok(flex)
     }
 
-    /// Owner cancels their own pending request.
+    /// Owner cancels their own pending request. Emits `FlexCancelled`.
     ///
     /// # Errors
     /// Returns `NotFound` if missing, `Forbidden` if the actor is not the owner,
-    /// `Transition` if it is not pending, or a repository error.
+    /// `Transition` if it is not pending, or a repository / event error.
     #[tracing::instrument(skip_all, fields(actor = ?actor, id = ?id))]
     pub async fn cancel(&self, actor: UserId, id: FlexHoursId) -> Result<FlexHours> {
         let mut flex = self.load(id).await?;
@@ -172,6 +176,13 @@ impl FlexHoursService {
         let now = OffsetDateTime::now_utc();
         flex.cancel(now)?;
         self.flex.save(&flex).await?;
+        self.events
+            .emit(DomainEvent::FlexCancelled {
+                flex_id: flex.id,
+                user_id: flex.user_id,
+                at: now,
+            })
+            .await?;
         Ok(flex)
     }
 
@@ -202,7 +213,7 @@ impl FlexHoursService {
     /// # Errors
     /// Returns a repository error if a backend is unavailable.
     #[tracing::instrument(skip_all, fields(user = ?user, year, month))]
-    pub async fn month_delta(&self, user: UserId, year: i32, month: u32) -> Result<f64> {
+    pub async fn month_delta(&self, user: UserId, year: i32, month: u8) -> Result<f64> {
         let hours = self.flex.approved_hours_in_month(user, year, month).await?;
         let days = self.flex.approved_count_in_month(user, year, month).await?;
         let expected = f64::from(days) * self.policy.current().work_hours_per_day;
@@ -215,14 +226,14 @@ impl FlexHoursService {
     /// # Errors
     /// Returns a repository / event error if a backend is unavailable.
     #[tracing::instrument(skip_all, fields(year, month))]
-    pub async fn emit_unreconciled(&self, year: i32, month: u32) -> Result<()> {
+    pub async fn emit_unreconciled(&self, year: i32, month: u8) -> Result<()> {
         let users = self
             .flex
             .users_with_approved_flex_in_month(year, month)
             .await?;
         let now = OffsetDateTime::now_utc();
         for user in users {
-            if self.month_delta(user, year, month).await?.abs() > f64::EPSILON {
+            if self.month_delta(user, year, month).await?.abs() > RECONCILE_TOLERANCE_HOURS {
                 self.events
                     .emit(DomainEvent::FlexMonthUnreconciled {
                         user_id: user,
@@ -245,6 +256,6 @@ impl FlexHoursService {
 }
 
 /// Calendar `(year, month)` of a date, with `month` as 1..=12.
-fn year_month(date: Date) -> (i32, u32) {
-    (date.year(), u32::from(u8::from(date.month())))
+fn year_month(date: Date) -> (i32, u8) {
+    (date.year(), u8::from(date.month()))
 }

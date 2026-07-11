@@ -126,6 +126,7 @@ pub async fn user_map(
 
 /// Summary from a preloaded map, with the dangling-ref fallback.
 #[must_use]
+#[allow(clippy::implicit_hasher)]
 pub fn summary_from(map: &HashMap<UserId, UserSummaryDto>, id: UserId) -> UserSummaryDto {
     map.get(&id)
         .cloned()
@@ -209,6 +210,7 @@ pub async fn group_map(
 
 /// Group summary from a preloaded map, with the dangling-ref fallback.
 #[must_use]
+#[allow(clippy::implicit_hasher)]
 pub fn group_summary_from(map: &HashMap<GroupId, Group>, id: GroupId) -> GroupSummaryDto {
     map.get(&id)
         .map_or_else(|| dto::unknown_group_summary(id), dto::group_summary_dto)

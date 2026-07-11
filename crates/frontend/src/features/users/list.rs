@@ -24,25 +24,9 @@ use crate::util::debounce;
 use crate::util::format;
 use crate::util::load::{self, Loadable};
 
-fn system_role_wire(r: Option<SystemRole>) -> &'static str {
-    match r {
-        Some(SystemRole::Director) => "director",
-        Some(SystemRole::Hr) => "hr",
-        None => "",
-    }
-}
-
-fn system_role_from_wire(s: &str) -> Option<SystemRole> {
-    match s {
-        "director" => Some(SystemRole::Director),
-        "hr" => Some(SystemRole::Hr),
-        _ => None,
-    }
-}
-
 #[component]
 pub fn UsersIndex() -> impl IntoView {
-    let users: Loadable<Vec<UserDto>> = RwSignal::new(None);
+    let users: Loadable<Vec<UserDto>> = Loadable::new();
     let reload = RwSignal::new(0u32);
     let create_open = RwSignal::new(false);
     let search = RwSignal::new(String::new());
@@ -97,15 +81,15 @@ fn users_table(items: Vec<UserDto>) -> AnyView {
                     <th>"Group"</th>
                 </tr>
             </thead>
-            <tbody>{items.into_iter().map(user_row).collect_view()}</tbody>
+            <tbody>{items.into_iter().map(|u| user_row(&u)).collect_view()}</tbody>
         </Table>
     }
     .into_any()
 }
 
-fn user_row(u: UserDto) -> impl IntoView {
+fn user_row(u: &UserDto) -> impl IntoView + use<> {
     let href = format!("/users/{}", u.id.0);
-    let name = u.name.clone();
+    let name = u.full_name.clone();
     let email = u.email.clone();
     let role = u.role.label();
     let group = u
@@ -152,8 +136,14 @@ fn CreateUserDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl Into
 
     let on_close = Callback::new(move |()| open.set(false));
     let cancel = Callback::new(move |_| open.set(false));
-    let on_role = Callback::new(move |v: String| system_role.set(system_role_from_wire(&v)));
-    let role_value = Signal::derive(move || system_role_wire(system_role.get()).to_owned());
+    let on_role = Callback::new(move |v: String| system_role.set(SystemRole::from_wire(&v)));
+    let role_value = Signal::derive(move || {
+        system_role
+            .get()
+            .map(SystemRole::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    });
 
     let submit = Callback::new(move |_| {
         if submitting.get_untracked() {
@@ -219,15 +209,16 @@ fn CreateUserDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl Into
                         <FieldLabel for_id="u-role">"Org role"</FieldLabel>
                         <Select value=role_value on_change=on_role>
                             <option value="">"None"</option>
-                            <option value="director">"Director"</option>
-                            <option value="hr">"HR"</option>
+                            {SystemRole::ALL.into_iter().map(|r| view! {
+                                <option value=r.as_str()>{r.label()}</option>
+                            }).collect_view()}
                         </Select>
                     </div>
                 </Stack>
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting>
                     {move || if submitting.get() { "Creating…" } else { "Create user" }}
                 </Button>
             </DialogFooter>

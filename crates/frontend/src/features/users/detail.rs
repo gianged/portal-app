@@ -39,7 +39,7 @@ fn status_variant(s: UserStatus) -> BadgeVariant {
 pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
     let auth = use_context::<AuthState>().expect("AuthState context");
-    let profile: Loadable<UserProfileDto> = RwSignal::new(None);
+    let profile: Loadable<UserProfileDto> = Loadable::new();
     let reload = RwSignal::new(0u32);
     let edit_open = RwSignal::new(false);
     let pwd_open = RwSignal::new(false);
@@ -224,7 +224,7 @@ fn ChangePasswordDialog(open: RwSignal<bool>) -> impl IntoView {
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting>
                     {move || if submitting.get() { "Changing…" } else { "Change password" }}
                 </Button>
             </DialogFooter>
@@ -286,7 +286,7 @@ fn ResetPasswordDialog(
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting>
                     {move || if submitting.get() { "Resetting…" } else { "Reset password" }}
                 </Button>
             </DialogFooter>
@@ -404,7 +404,7 @@ fn EditProfileDialog(
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting>
                     {move || if submitting.get() { "Saving…" } else { "Save" }}
                 </Button>
             </DialogFooter>

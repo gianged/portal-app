@@ -17,6 +17,7 @@ use shared::validation::day_off;
 use crate::features::day_off::api;
 use crate::features::groups::api as groups_api;
 use crate::features::leave::api as leave_api;
+use crate::features::ui;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
 use crate::primitives::checkbox::Checkbox;
@@ -25,37 +26,9 @@ use crate::primitives::select::Select;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
-use crate::theme::{self, color, space, typography};
-use crate::util::date::{days_ago_iso, today_iso};
+use crate::theme::{self, space};
+use crate::util::date;
 use crate::util::load::{self, Loadable};
-
-fn kind_from_str(s: &str) -> DayOffKind {
-    match s {
-        "annual_leave" => DayOffKind::AnnualLeave,
-        "sick_leave" => DayOffKind::SickLeave,
-        "unpaid_leave" => DayOffKind::UnpaidLeave,
-        "remote" => DayOffKind::Remote,
-        _ => DayOffKind::Other,
-    }
-}
-
-fn muted_cls() -> String {
-    theme::class(format!(
-        "font-family: {ff}; font-size: {fs}; color: {c};",
-        ff = typography::FONT_SANS,
-        fs = typography::TEXT_SMALL,
-        c = color::TEXT_MUTED,
-    ))
-}
-
-fn strong_cls() -> String {
-    theme::class(format!(
-        "font-family: {ff}; font-weight: {fw}; color: {c};",
-        ff = typography::FONT_SANS,
-        fw = typography::WEIGHT_SEMIBOLD,
-        c = color::TEXT_STRONG,
-    ))
-}
 
 // --- request + my list ---
 
@@ -63,26 +36,25 @@ fn strong_cls() -> String {
 pub fn TimeOff() -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
 
-    let kind = RwSignal::new("annual_leave".to_string());
-    let start = RwSignal::new(today_iso());
-    let end = RwSignal::new(today_iso());
+    let kind = RwSignal::new(DayOffKind::AnnualLeave.as_str().to_string());
+    let start = RwSignal::new(date::today_iso());
+    let end = RwSignal::new(date::today_iso());
     let start_half = RwSignal::new(false);
     let end_half = RwSignal::new(false);
     let reason = RwSignal::new(String::new());
     let err = RwSignal::new(None::<String>);
     let saving = RwSignal::new(false);
 
-    let mine: Loadable<Vec<DayOffDto>> = RwSignal::new(None);
+    let mine: Loadable<Vec<DayOffDto>> = Loadable::new();
     let tick = RwSignal::new(0u32);
     Effect::new(move |_| {
         let _ = tick.get();
-        let from = days_ago_iso(120.0);
-        let to = days_ago_iso(-365.0);
+        let (from, to) = date::attendance_window();
         load::load(mine, async move { api::list_mine(&from, &to).await });
     });
 
     // Available balance, surfaced when requesting annual leave.
-    let balance: Loadable<LeaveBalanceDto> = RwSignal::new(None);
+    let balance: Loadable<LeaveBalanceDto> = Loadable::new();
     Effect::new(move |_| load::load(balance, leave_api::my_balance()));
 
     let submit = Callback::new(move |_| {
@@ -90,10 +62,17 @@ pub fn TimeOff() -> impl IntoView {
             return;
         }
         err.set(None);
+        let (Some(start_date), Some(end_date)) = (
+            date::from_iso(&start.get_untracked()),
+            date::from_iso(&end.get_untracked()),
+        ) else {
+            err.set(Some("Pick valid start and end dates".into()));
+            return;
+        };
         let req = CreateDayOffRequest {
-            kind: kind_from_str(&kind.get_untracked()),
-            start_date: start.get_untracked(),
-            end_date: end.get_untracked(),
+            kind: DayOffKind::from_wire(&kind.get_untracked()).unwrap_or(DayOffKind::Other),
+            start_date,
+            end_date,
             start_half: start_half.get_untracked(),
             end_half: end_half.get_untracked(),
             reason: reason.get_untracked(),
@@ -125,7 +104,7 @@ pub fn TimeOff() -> impl IntoView {
         "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: {g};",
         g = space::D4,
     ));
-    let muted = muted_cls();
+    let muted = ui::muted_class();
 
     view! {
         <Stack gap=Gap::Lg>
@@ -133,22 +112,20 @@ pub fn TimeOff() -> impl IntoView {
                 <Stack gap=Gap::Md>
                     <div class=grid.clone()>
                         <div>
-                            <FieldLabel for_id="do-kind".to_string()>"Type"</FieldLabel>
+                            <FieldLabel for_id="do-kind">"Type"</FieldLabel>
                             <Select value=kind on_change=Callback::new(move |v| kind.set(v))>
-                                <option value="annual_leave">"Annual leave"</option>
-                                <option value="sick_leave">"Sick leave"</option>
-                                <option value="unpaid_leave">"Unpaid leave"</option>
-                                <option value="remote">"Remote"</option>
-                                <option value="other">"Other"</option>
+                                {DayOffKind::ALL.into_iter().map(|k| view! {
+                                    <option value=k.as_str()>{k.label()}</option>
+                                }).collect_view()}
                             </Select>
                         </div>
                         <div>
                             {move || {
-                                let annual = kind_from_str(&kind.get()) == DayOffKind::AnnualLeave;
+                                let annual = kind.get() == DayOffKind::AnnualLeave.as_str();
                                 let muted = muted.clone();
                                 annual.then(|| match balance.get() {
                                     Some(Ok(b)) => view! {
-                                        <FieldLabel for_id="do-bal".to_string()>"Available balance"</FieldLabel>
+                                        <FieldLabel for_id="do-bal">"Available balance"</FieldLabel>
                                         <div class=muted.clone()>{format!("{} day(s)", b.available)}</div>
                                     }.into_any(),
                                     _ => ().into_any(),
@@ -158,23 +135,23 @@ pub fn TimeOff() -> impl IntoView {
                     </div>
                     <div class=grid.clone()>
                         <div>
-                            <FieldLabel for_id="do-start".to_string()>"Start date"</FieldLabel>
-                            <Input value=start on_input=Callback::new(move |v| start.set(v)) type_="date".to_string() />
+                            <FieldLabel for_id="do-start">"Start date"</FieldLabel>
+                            <Input value=start on_input=Callback::new(move |v| start.set(v)) type_="date" />
                             <Checkbox checked=start_half on_change=Callback::new(move |v| start_half.set(v)) label="Half day (start)" />
                         </div>
                         <div>
-                            <FieldLabel for_id="do-end".to_string()>"End date"</FieldLabel>
-                            <Input value=end on_input=Callback::new(move |v| end.set(v)) type_="date".to_string() />
+                            <FieldLabel for_id="do-end">"End date"</FieldLabel>
+                            <Input value=end on_input=Callback::new(move |v| end.set(v)) type_="date" />
                             <Checkbox checked=end_half on_change=Callback::new(move |v| end_half.set(v)) label="Half day (end)" />
                         </div>
                     </div>
                     <div>
-                        <FieldLabel for_id="do-reason".to_string()>"Reason"</FieldLabel>
-                        <Input value=reason on_input=Callback::new(move |v| reason.set(v)) placeholder="Optional".to_string() />
+                        <FieldLabel for_id="do-reason">"Reason"</FieldLabel>
+                        <Input value=reason on_input=Callback::new(move |v| reason.set(v)) placeholder="Optional" />
                     </div>
                     {move || err.get().map(|m| view! { <FieldError message=m /> })}
                     <div>
-                        <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || saving.get())>
+                        <Button variant=ButtonVariant::Primary on_click=submit disabled=saving>
                             {move || if saving.get() { "Requesting…" } else { "Request leave" }}
                         </Button>
                     </div>
@@ -182,7 +159,7 @@ pub fn TimeOff() -> impl IntoView {
             </Card>
 
             <Stack gap=Gap::Sm>
-                <SectionTitle title="My time off" />
+                {ui::eyebrow_title("My time off")}
                 {move || match mine.get() {
                     None => load::note("Loading…"),
                     Some(Err(e)) => load::load_error(&e),
@@ -231,12 +208,16 @@ fn MyRow(day_off: DayOffDto, on_changed: Callback<()>) -> impl IntoView {
         "display: flex; align-items: center; justify-content: space-between; gap: {g};",
         g = space::D3,
     ));
-    let muted = muted_cls();
-    let strong = strong_cls();
+    let muted = ui::muted_class();
+    let strong = ui::strong_class();
     let span = if day_off.start_date == day_off.end_date {
-        day_off.start_date.clone()
+        date::to_iso(day_off.start_date)
     } else {
-        format!("{} → {}", day_off.start_date, day_off.end_date)
+        format!(
+            "{} → {}",
+            date::to_iso(day_off.start_date),
+            date::to_iso(day_off.end_date)
+        )
     };
     let line = format!("{} · {} day(s)", span, day_off.days);
 
@@ -250,7 +231,7 @@ fn MyRow(day_off: DayOffDto, on_changed: Callback<()>) -> impl IntoView {
                 </div>
                 {cancellable.then(|| view! {
                     <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm
-                        on_click=Callback::new(cancel) disabled=Signal::derive(move || busy.get())>
+                        on_click=Callback::new(cancel) disabled=busy>
                         "Cancel"
                     </Button>
                 })}
@@ -264,17 +245,11 @@ fn MyRow(day_off: DayOffDto, on_changed: Callback<()>) -> impl IntoView {
 #[component]
 pub fn Approvals() -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");
-    let (show_leader, is_hr) = auth.user.with(|u| {
-        u.as_ref().map_or((false, false), |x| {
-            (
-                matches!(
-                    x.role,
-                    UserRole::GroupLeader | UserRole::Director | UserRole::Hr
-                ),
-                matches!(x.role, UserRole::Hr),
-            )
-        })
-    });
+    // Leader queue is per-group membership on the server; the flattened role stays display-only.
+    let show_leader = auth.leads_any_group();
+    let is_hr = auth
+        .user
+        .with(|u| u.as_ref().is_some_and(|x| matches!(x.role, UserRole::Hr)));
 
     view! {
         <Stack gap=Gap::Lg>
@@ -299,7 +274,7 @@ fn LeaderQueue() -> impl IntoView {
     });
 
     let group = RwSignal::new(String::new());
-    let queue: Loadable<Vec<DayOffDto>> = RwSignal::new(None);
+    let queue: Loadable<Vec<DayOffDto>> = Loadable::new();
     let tick = RwSignal::new(0u32);
     Effect::new(move |_| {
         let _ = tick.get();
@@ -313,9 +288,9 @@ fn LeaderQueue() -> impl IntoView {
 
     view! {
         <Stack gap=Gap::Sm>
-            <SectionTitle title="Leader queue" />
+            {ui::eyebrow_title("Leader queue")}
             <div class=theme::class("min-width: 220px; max-width: 320px;")>
-                <FieldLabel for_id="do-grp".to_string()>"Group"</FieldLabel>
+                <FieldLabel for_id="do-grp">"Group"</FieldLabel>
                 <Select value=group on_change=Callback::new(move |v| group.set(v))>
                     <option value="">"— select group —"</option>
                     {move || groups.get().into_iter().map(|g| {
@@ -346,7 +321,7 @@ fn LeaderQueue() -> impl IntoView {
 
 #[component]
 fn HrQueue() -> impl IntoView {
-    let queue: Loadable<Vec<DayOffDto>> = RwSignal::new(None);
+    let queue: Loadable<Vec<DayOffDto>> = Loadable::new();
     let tick = RwSignal::new(0u32);
     Effect::new(move |_| {
         let _ = tick.get();
@@ -356,7 +331,7 @@ fn HrQueue() -> impl IntoView {
 
     view! {
         <Stack gap=Gap::Sm>
-            <SectionTitle title="HR queue (annual leave)" />
+            {ui::eyebrow_title("HR queue (annual leave)")}
             {move || match queue.get() {
                 None => load::note("Loading…"),
                 Some(Err(e)) => load::load_error(&e),
@@ -406,12 +381,16 @@ fn DecideCard(day_off: DayOffDto, is_hr: bool, on_done: Callback<()>) -> impl In
         });
     };
 
-    let muted = muted_cls();
-    let strong = strong_cls();
+    let muted = ui::muted_class();
+    let strong = ui::strong_class();
     let span = if day_off.start_date == day_off.end_date {
-        day_off.start_date.clone()
+        date::to_iso(day_off.start_date)
     } else {
-        format!("{} → {}", day_off.start_date, day_off.end_date)
+        format!(
+            "{} → {}",
+            date::to_iso(day_off.start_date),
+            date::to_iso(day_off.end_date)
+        )
     };
     let line = format!("{} · {} day(s)", span, day_off.days);
     let reason = day_off.reason.clone();
@@ -425,29 +404,18 @@ fn DecideCard(day_off: DayOffDto, is_hr: bool, on_done: Callback<()>) -> impl In
                     <span class=muted.clone()>{format!("  ·  {line}")}</span>
                 </div>
                 {(!reason.is_empty()).then(|| view! { <div class=muted.clone()>{reason}</div> })}
-                <Input value=note on_input=Callback::new(move |v| note.set(v)) placeholder="Decision note (optional)".to_string() />
+                <Input value=note on_input=Callback::new(move |v| note.set(v)) placeholder="Decision note (optional)" />
                 <div class=theme::class(format!("display: flex; gap: {g};", g = space::D2))>
                     <Button variant=ButtonVariant::Primary size=ButtonSize::Sm
-                        on_click=Callback::new(move |_| decide(true)) disabled=Signal::derive(move || busy.get())>
+                        on_click=Callback::new(move |_| decide(true)) disabled=busy>
                         "Approve"
                     </Button>
                     <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm
-                        on_click=Callback::new(move |_| decide(false)) disabled=Signal::derive(move || busy.get())>
+                        on_click=Callback::new(move |_| decide(false)) disabled=busy>
                         "Reject"
                     </Button>
                 </div>
             </Stack>
         </Card>
     }
-}
-
-#[component]
-fn SectionTitle(title: &'static str) -> impl IntoView {
-    let cls = theme::class(format!(
-        "font-size: {fs}; font-weight: {fw}; color: {c}; text-transform: uppercase; letter-spacing: 0.04em;",
-        fs = typography::TEXT_LABEL,
-        fw = typography::WEIGHT_SEMIBOLD,
-        c = color::TEXT_MUTED,
-    ));
-    view! { <div class=cls>{title}</div> }
 }

@@ -90,8 +90,8 @@ impl AppError {
                     ErrorCode::Forbidden,
                     "forbidden".to_owned(),
                 ),
-                application::Error::Conflict(message) => {
-                    (StatusCode::CONFLICT, ErrorCode::Conflict, message.clone())
+                application::Error::Conflict(code) => {
+                    (StatusCode::CONFLICT, ErrorCode::Conflict, code.to_string())
                 }
                 application::Error::Transition(err) => {
                     (StatusCode::CONFLICT, ErrorCode::Conflict, err.to_string())
@@ -108,7 +108,11 @@ impl AppError {
                 | application::Error::Event(_)
                 | application::Error::Job(_)
                 | application::Error::Render(_)
-                | application::Error::Authz(_) => (
+                | application::Error::Presence(_)
+                | application::Error::RateLimit(_)
+                | application::Error::TokenRevocation(_)
+                | application::Error::Authz(_)
+                | application::Error::Internal(_) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     ErrorCode::Internal,
                     "internal server error".to_owned(),
@@ -134,8 +138,12 @@ impl IntoResponse for AppError {
 mod tests {
     use super::*;
 
+    use application::error::ConflictCode;
     use axum::body;
-    use domain::error::{EventError, JobError, RepositoryError, StorageError, TransitionError};
+    use domain::error::{
+        EventError, JobError, PresenceError, RateLimitError, RepositoryError, StorageError,
+        TokenRevocationError, TransitionError,
+    };
 
     /// Renders an `AppError` and decodes the wire body the frontend would see.
     async fn decode(err: AppError) -> (StatusCode, ApiError) {
@@ -149,6 +157,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::too_many_lines)]
     async fn maps_every_variant_to_its_status_and_code() {
         let cases: Vec<(AppError, StatusCode, ErrorCode)> = vec![
             (
@@ -197,7 +206,7 @@ mod tests {
                 ErrorCode::Forbidden,
             ),
             (
-                application::Error::Conflict("dup".to_owned()).into(),
+                application::Error::Conflict(ConflictCode::EmailAlreadyInUse).into(),
                 StatusCode::CONFLICT,
                 ErrorCode::Conflict,
             ),
@@ -228,7 +237,30 @@ mod tests {
                 ErrorCode::Internal,
             ),
             (
+                application::Error::Presence(PresenceError::Backend("redis".to_owned())).into(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorCode::Internal,
+            ),
+            (
+                application::Error::RateLimit(RateLimitError::Backend("redis".to_owned())).into(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorCode::Internal,
+            ),
+            (
+                application::Error::TokenRevocation(TokenRevocationError::Backend(
+                    "redis".to_owned(),
+                ))
+                .into(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorCode::Internal,
+            ),
+            (
                 application::Error::Authz("openfga down".to_owned()).into(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorCode::Internal,
+            ),
+            (
+                application::Error::Internal("hash task failed".to_owned()).into(),
                 StatusCode::INTERNAL_SERVER_ERROR,
                 ErrorCode::Internal,
             ),
@@ -266,7 +298,8 @@ mod tests {
         let (_, body) = decode(AppError::Validation("email is required".to_owned())).await;
         assert_eq!(body.message, "email is required");
 
-        let (_, body) = decode(application::Error::Conflict("name taken".to_owned()).into()).await;
-        assert_eq!(body.message, "name taken");
+        let (_, body) =
+            decode(application::Error::Conflict(ConflictCode::EmailAlreadyInUse).into()).await;
+        assert_eq!(body.message, "email_already_in_use");
     }
 }

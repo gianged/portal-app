@@ -3,6 +3,7 @@ use std::fmt;
 use domain::{ids::ProjectId, model::RequestPriority};
 use time::OffsetDateTime;
 
+/// Input to create a draft request under a project.
 #[derive(Debug, Clone)]
 pub struct CreateRequestCommand {
     pub project_id: ProjectId,
@@ -22,6 +23,7 @@ pub struct UpdateRequestCommand {
     pub due_at: Option<OffsetDateTime>,
 }
 
+/// One request attachment upload.
 pub struct AddAttachmentCommand {
     pub filename: String,
     pub content_type: String,

@@ -158,7 +158,8 @@ impl CommentService {
     ///
     /// # Errors
     /// Returns `NotFound` if the comment is missing, `Forbidden` for a
-    /// non-author or past the grace window, or a repository/event error.
+    /// non-author, `Transition` past the grace window, or a repository/event
+    /// error.
     #[tracing::instrument(skip_all, fields(actor = ?actor, comment_id = ?comment_id))]
     pub async fn remove(
         &self,
@@ -172,10 +173,11 @@ impl CommentService {
             .find_by_id(entity, comment_id)
             .await?
             .ok_or(Error::NotFound("comment"))?;
-        let now = OffsetDateTime::now_utc();
-        if comment.author_user_id != actor || !comment.within_edit_grace(now) {
+        if comment.author_user_id != actor {
             return Err(Error::Forbidden);
         }
+        let now = OffsetDateTime::now_utc();
+        comment.require_within_edit_grace(now)?;
         self.comments.delete(entity, comment_id).await?;
         self.events
             .emit(DomainEvent::CommentDeleted {

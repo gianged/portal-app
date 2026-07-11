@@ -52,8 +52,7 @@ pub enum DayOffStatus {
 }
 
 impl DayOffStatus {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
+    const fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
             Self::LeaderApproved => "leader_approved",
@@ -67,7 +66,9 @@ impl DayOffStatus {
     pub const fn try_approve(self) -> Result<Self, TransitionError> {
         match self {
             Self::Pending => Ok(Self::Approved),
-            _ => Err(TransitionError::invalid(self.as_str(), "approved")),
+            Self::LeaderApproved | Self::Approved | Self::Rejected | Self::Cancelled => {
+                Err(TransitionError::invalid(self.as_str(), "approved"))
+            }
         }
     }
 
@@ -75,7 +76,9 @@ impl DayOffStatus {
     pub const fn try_leader_approve(self) -> Result<Self, TransitionError> {
         match self {
             Self::Pending => Ok(Self::LeaderApproved),
-            _ => Err(TransitionError::invalid(self.as_str(), "leader_approved")),
+            Self::LeaderApproved | Self::Approved | Self::Rejected | Self::Cancelled => {
+                Err(TransitionError::invalid(self.as_str(), "leader_approved"))
+            }
         }
     }
 
@@ -83,21 +86,27 @@ impl DayOffStatus {
     pub const fn try_hr_approve(self) -> Result<Self, TransitionError> {
         match self {
             Self::LeaderApproved => Ok(Self::Approved),
-            _ => Err(TransitionError::invalid(self.as_str(), "approved")),
+            Self::Pending | Self::Approved | Self::Rejected | Self::Cancelled => {
+                Err(TransitionError::invalid(self.as_str(), "approved"))
+            }
         }
     }
 
     pub const fn try_reject(self) -> Result<Self, TransitionError> {
         match self {
             Self::Pending | Self::LeaderApproved => Ok(Self::Rejected),
-            _ => Err(TransitionError::invalid(self.as_str(), "rejected")),
+            Self::Approved | Self::Rejected | Self::Cancelled => {
+                Err(TransitionError::invalid(self.as_str(), "rejected"))
+            }
         }
     }
 
     pub const fn try_cancel(self) -> Result<Self, TransitionError> {
         match self {
             Self::Pending | Self::LeaderApproved => Ok(Self::Cancelled),
-            _ => Err(TransitionError::invalid(self.as_str(), "cancelled")),
+            Self::Approved | Self::Rejected | Self::Cancelled => {
+                Err(TransitionError::invalid(self.as_str(), "cancelled"))
+            }
         }
     }
 }
@@ -262,12 +271,20 @@ mod tests {
         Date::from_calendar_date(y, m, day).unwrap()
     }
 
+    // Half-day-quantized values compare exactly well inside this tolerance.
+    fn assert_days_eq(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected} days, got {actual}"
+        );
+    }
+
     #[test]
     fn counts_weekdays_only() {
         // Mon 2026-06-29 .. Fri 2026-07-03 => 5 working days.
         let start = d(2026, Month::June, 29);
         let end = d(2026, Month::July, 3);
-        assert_eq!(working_days(start, end, false, false, &[]), 5.0);
+        assert_days_eq(working_days(start, end, false, false, &[]), 5.0);
     }
 
     #[test]
@@ -276,19 +293,19 @@ mod tests {
         let end = d(2026, Month::July, 3);
         let holidays = [d(2026, Month::July, 1)]; // one mid-week holiday
         // 4 working days, minus 0.5 start, minus 0.5 end = 3.0
-        assert_eq!(working_days(start, end, true, true, &holidays), 3.0);
+        assert_days_eq(working_days(start, end, true, true, &holidays), 3.0);
     }
 
     #[test]
     fn single_half_day() {
         let day = d(2026, Month::June, 29); // Monday
-        assert_eq!(working_days(day, day, true, false, &[]), 0.5);
+        assert_days_eq(working_days(day, day, true, false, &[]), 0.5);
     }
 
     #[test]
     fn weekend_only_is_zero() {
         let sat = d(2026, Month::July, 4);
         let sun = d(2026, Month::July, 5);
-        assert_eq!(working_days(sat, sun, false, false, &[]), 0.0);
+        assert_days_eq(working_days(sat, sun, false, false, &[]), 0.0);
     }
 }

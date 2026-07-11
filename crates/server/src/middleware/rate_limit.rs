@@ -12,7 +12,7 @@
 //!   Unlike the other two it is NOT middleware: WS frames are not HTTP requests,
 //!   so the per-connection task calls it per frame instead.
 //!
-//! All three call [`RateLimit::incr`] and compare the returned count against the
+//! All four call [`RateLimit::incr`] and compare the returned count against the
 //! relevant ceiling in [`RateLimits`]. The HTTP planes return
 //! [`AppError::RateLimited`] (429) when exceeded; the chat plane returns a bool so
 //! the WS layer can answer with an error frame instead.
@@ -76,6 +76,7 @@ pub async fn per_ip(
 
 /// Limiter identity for the auth planes: trusted-proxy client IP, then the raw
 /// peer, then a shared `unknown` bucket (e.g. under `oneshot` tests).
+#[must_use]
 pub fn bucket_ip(client_ip: Option<ClientIp>, peer: Option<SocketAddr>) -> String {
     client_ip.map_or_else(
         || peer.map_or_else(|| "unknown".to_owned(), |p| p.ip().to_string()),
@@ -117,7 +118,7 @@ pub async fn within_chat_rate(state: &AppState, uid: UserId) -> bool {
 }
 
 /// Increments `bucket` and rejects with 429 once the count passes `limit`. A
-/// backend failure surfaces as the wrapped repository error (500), never a silent
+/// backend failure surfaces as the wrapped limiter error (500), never a silent
 /// bypass.
 pub async fn enforce(state: &AppState, bucket: &str, limit: u64) -> Result<(), AppError> {
     let count = state

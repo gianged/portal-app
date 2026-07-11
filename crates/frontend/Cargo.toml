@@ -18,7 +18,8 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 # `wasm-bindgen` lets `OffsetDateTime::now_utc()` read the clock via JS `Date` in
 # the browser. Resolver v2 keeps this feature off the native (server/worker) builds.
-time = { workspace = true, features = ["wasm-bindgen"] }
+# `macros`/`parsing`/`formatting` back the `YYYY-MM-DD` helpers in `util::date`.
+time = { workspace = true, features = ["wasm-bindgen", "macros", "parsing", "formatting"] }
 uuid = { workspace = true, features = ["js"] }
 tracing = { workspace = true }
 

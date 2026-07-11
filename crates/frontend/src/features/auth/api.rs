@@ -8,8 +8,7 @@ pub async fn login(req: LoginRequest) -> Result<LoginResponse, FrontendError> {
 }
 
 pub async fn logout() -> Result<(), FrontendError> {
-    let _: serde_json::Value = client::post_json("/logout", &serde_json::json!({})).await?;
-    Ok(())
+    client::post_no_content("/logout").await
 }
 
 pub async fn me() -> Result<UserDto, FrontendError> {

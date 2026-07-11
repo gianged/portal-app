@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use domain::{
-    ids::{ChannelId, GroupId, NotificationId, UserId},
+    ids::{ChannelId, GroupId, NotificationId, ProjectInviteId, RequestId, TicketId, UserId},
     model::{
         Channel, CommentEntity, GroupRole, Membership, NotificationPayload, ProjectInviteStatus,
         TicketPriority, TicketStatus,
@@ -77,6 +77,7 @@ impl NotificationFanout {
     /// Returns a repository error if resolving recipients (channels, groups,
     /// users, or the originating request) or persisting any notification fails.
     #[tracing::instrument(skip_all)]
+    #[allow(clippy::too_many_lines)]
     pub async fn handle(&self, event: &DomainEvent) -> Result<()> {
         match event {
             DomainEvent::AnnouncementPosted {
@@ -140,15 +141,7 @@ impl NotificationFanout {
                 actor,
                 ..
             } => {
-                // The event omits creator/assignee; fetch the request to learn
-                // who cares about the status change.
-                let mut recipients = Vec::new();
-                if let Some(request) = self.requests.find_by_id(*request_id).await? {
-                    recipients.push(request.creator_user_id);
-                    if let Some(assignee) = request.assignee_user_id {
-                        recipients.push(assignee);
-                    }
-                }
+                let recipients = self.request_participants(*request_id).await?;
                 let payload = NotificationPayload::RequestStatusChange {
                     request_id: *request_id,
                     from: *from,
@@ -191,15 +184,7 @@ impl NotificationFanout {
                 if !Self::is_notable_ticket_transition(*from, *to) {
                     return Ok(());
                 }
-                // The event omits requester/assignee; fetch the ticket to learn
-                // who cares about the status change (mirrors RequestStatusChanged).
-                let mut recipients = Vec::new();
-                if let Some(ticket) = self.tickets.find_by_id(*ticket_id).await? {
-                    recipients.push(ticket.requester_user_id);
-                    if let Some(assignee) = ticket.assignee_user_id {
-                        recipients.push(assignee);
-                    }
-                }
+                let recipients = self.ticket_participants(*ticket_id).await?;
                 let payload = NotificationPayload::TicketStatusChange {
                     ticket_id: *ticket_id,
                     from: *from,
@@ -209,13 +194,7 @@ impl NotificationFanout {
             }
             // Auto-close (null actor marks it system, not manual); reuses the status-change payload.
             DomainEvent::TicketAutoClosed { ticket_id, .. } => {
-                let mut recipients = Vec::new();
-                if let Some(ticket) = self.tickets.find_by_id(*ticket_id).await? {
-                    recipients.push(ticket.requester_user_id);
-                    if let Some(assignee) = ticket.assignee_user_id {
-                        recipients.push(assignee);
-                    }
-                }
+                let recipients = self.ticket_participants(*ticket_id).await?;
                 let payload = NotificationPayload::TicketStatusChange {
                     ticket_id: *ticket_id,
                     from: TicketStatus::Resolved,
@@ -231,25 +210,9 @@ impl NotificationFanout {
                 actor,
                 ..
             } => {
-                let recipients: Vec<UserId> = match status {
-                    // Accept/decline: notify the inviter. The event omits them, so
-                    // fetch the invite for `invited_by_user_id`.
-                    ProjectInviteStatus::Accepted | ProjectInviteStatus::Declined => self
-                        .projects
-                        .find_invite(*invite_id)
-                        .await?
-                        .map(|inv| inv.invited_by_user_id)
-                        .into_iter()
-                        .collect(),
-                    // Revoke: notify the invited group's leader (had a pending invite).
-                    ProjectInviteStatus::Revoked => self
-                        .group_leader_id(*target_group)
-                        .await?
-                        .into_iter()
-                        .collect(),
-                    // Not emitted for this event; defensively a no-op.
-                    ProjectInviteStatus::Pending => Vec::new(),
-                };
+                let recipients = self
+                    .invite_response_recipients(*invite_id, *target_group, *status)
+                    .await?;
                 let payload = NotificationPayload::ProjectInviteResponse {
                     invite_id: *invite_id,
                     project_id: *project_id,
@@ -276,38 +239,20 @@ impl NotificationFanout {
                 ..
             } => {
                 let (recipients, payload) = match entity {
-                    CommentEntity::Request { request_id } => {
-                        let mut recipients = Vec::new();
-                        if let Some(request) = self.requests.find_by_id(*request_id).await? {
-                            recipients.push(request.creator_user_id);
-                            if let Some(assignee) = request.assignee_user_id {
-                                recipients.push(assignee);
-                            }
-                        }
-                        (
-                            recipients,
-                            NotificationPayload::RequestComment {
-                                request_id: *request_id,
-                                comment_id: *comment_id,
-                            },
-                        )
-                    }
-                    CommentEntity::Ticket { ticket_id } => {
-                        let mut recipients = Vec::new();
-                        if let Some(ticket) = self.tickets.find_by_id(*ticket_id).await? {
-                            recipients.push(ticket.requester_user_id);
-                            if let Some(assignee) = ticket.assignee_user_id {
-                                recipients.push(assignee);
-                            }
-                        }
-                        (
-                            recipients,
-                            NotificationPayload::TicketComment {
-                                ticket_id: *ticket_id,
-                                comment_id: *comment_id,
-                            },
-                        )
-                    }
+                    CommentEntity::Request { request_id } => (
+                        self.request_participants(*request_id).await?,
+                        NotificationPayload::RequestComment {
+                            request_id: *request_id,
+                            comment_id: *comment_id,
+                        },
+                    ),
+                    CommentEntity::Ticket { ticket_id } => (
+                        self.ticket_participants(*ticket_id).await?,
+                        NotificationPayload::TicketComment {
+                            ticket_id: *ticket_id,
+                            comment_id: *comment_id,
+                        },
+                    ),
                 };
                 self.fan_out(recipients, Some(*actor), &payload).await
             }
@@ -368,6 +313,58 @@ impl NotificationFanout {
             email.notify(&targets, payload).await;
         }
         Ok(())
+    }
+
+    /// Creator plus assignee of a request; events omit them, so the request is
+    /// fetched. Empty when the request no longer exists.
+    async fn request_participants(&self, request_id: RequestId) -> Result<Vec<UserId>> {
+        let mut recipients = Vec::new();
+        if let Some(request) = self.requests.find_by_id(request_id).await? {
+            recipients.push(request.creator_user_id);
+            if let Some(assignee) = request.assignee_user_id {
+                recipients.push(assignee);
+            }
+        }
+        Ok(recipients)
+    }
+
+    /// Requester plus assignee of a ticket (mirrors [`Self::request_participants`]).
+    async fn ticket_participants(&self, ticket_id: TicketId) -> Result<Vec<UserId>> {
+        let mut recipients = Vec::new();
+        if let Some(ticket) = self.tickets.find_by_id(ticket_id).await? {
+            recipients.push(ticket.requester_user_id);
+            if let Some(assignee) = ticket.assignee_user_id {
+                recipients.push(assignee);
+            }
+        }
+        Ok(recipients)
+    }
+
+    /// Who hears about an invite response: the inviter on accept/decline, the
+    /// invited group's leader on revoke.
+    async fn invite_response_recipients(
+        &self,
+        invite_id: ProjectInviteId,
+        target_group: GroupId,
+        status: ProjectInviteStatus,
+    ) -> Result<Vec<UserId>> {
+        Ok(match status {
+            // The event omits the inviter; fetch the invite for `invited_by_user_id`.
+            ProjectInviteStatus::Accepted | ProjectInviteStatus::Declined => self
+                .projects
+                .find_invite(invite_id)
+                .await?
+                .map(|inv| inv.invited_by_user_id)
+                .into_iter()
+                .collect(),
+            ProjectInviteStatus::Revoked => self
+                .group_leader_id(target_group)
+                .await?
+                .into_iter()
+                .collect(),
+            // Not emitted for this event; defensively a no-op.
+            ProjectInviteStatus::Pending => Vec::new(),
+        })
     }
 
     /// Recipients of a channel-scoped notification (e.g. an announcement).

@@ -7,20 +7,24 @@ use axum::{
     routing,
 };
 use serde::Deserialize;
+use time::Date;
 use uuid::Uuid;
 
 use domain::{
     ids::{GroupId, OvertimeId, UserId},
     model::Overtime,
 };
-use shared::dto::overtime::{CreateOvertimeRequest, DecideOvertimeRequest, OvertimeDto};
+use shared::dto::{
+    ids as wire,
+    overtime::{CreateOvertimeRequest, DecideOvertimeRequest, OvertimeDto},
+};
 
 use crate::{
     app::AppState,
     dto,
     error::AppError,
     extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
-    resolve, routes,
+    resolve,
 };
 
 pub fn router() -> Router<AppState> {
@@ -38,8 +42,8 @@ pub fn router() -> Router<AppState> {
 
 #[derive(Deserialize)]
 struct RangeQuery {
-    from: String,
-    to: String,
+    from: Date,
+    to: Date,
 }
 
 #[derive(Deserialize)]
@@ -52,8 +56,7 @@ async fn create(
     auth: AuthUser,
     ValidatedJson(body): ValidatedJson<CreateOvertimeRequest>,
 ) -> Result<Json<OvertimeDto>, AppError> {
-    let work_date = routes::parse_date(&body.work_date)?;
-    let cmd = dto::create_overtime_command(work_date, body);
+    let cmd = dto::create_overtime_command(body);
     let overtime = state.overtime.create(auth.user_id, cmd).await?;
     Ok(Json(single(&state, &overtime).await?))
 }
@@ -63,9 +66,7 @@ async fn list_mine(
     auth: AuthUser,
     Query(q): Query<RangeQuery>,
 ) -> Result<Json<Vec<OvertimeDto>>, AppError> {
-    let from = routes::parse_date(&q.from)?;
-    let to = routes::parse_date(&q.to)?;
-    let list = state.overtime.list_mine(auth.user_id, from, to).await?;
+    let list = state.overtime.list_mine(auth.user_id, q.from, q.to).await?;
     Ok(Json(many(&state, list).await?))
 }
 
@@ -92,22 +93,25 @@ async fn hr_queue(
 async fn cancel(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::OvertimeId>,
 ) -> Result<Json<OvertimeDto>, AppError> {
-    let overtime = state.overtime.cancel(auth.user_id, OvertimeId(id)).await?;
+    let overtime = state
+        .overtime
+        .cancel(auth.user_id, OvertimeId(id.0))
+        .await?;
     Ok(Json(single(&state, &overtime).await?))
 }
 
 async fn leader_decision(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::OvertimeId>,
     ValidatedJson(body): ValidatedJson<DecideOvertimeRequest>,
 ) -> Result<Json<OvertimeDto>, AppError> {
     let cmd = dto::decide_overtime_command(body);
     let overtime = state
         .overtime
-        .leader_decide(auth.user_id, OvertimeId(id), cmd)
+        .leader_decide(auth.user_id, OvertimeId(id.0), cmd)
         .await?;
     Ok(Json(single(&state, &overtime).await?))
 }
@@ -115,13 +119,13 @@ async fn leader_decision(
 async fn hr_decision(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::OvertimeId>,
     ValidatedJson(body): ValidatedJson<DecideOvertimeRequest>,
 ) -> Result<Json<OvertimeDto>, AppError> {
     let cmd = dto::decide_overtime_command(body);
     let overtime = state
         .overtime
-        .hr_decide(auth.user_id, OvertimeId(id), cmd)
+        .hr_decide(auth.user_id, OvertimeId(id.0), cmd)
         .await?;
     Ok(Json(single(&state, &overtime).await?))
 }

@@ -13,8 +13,6 @@ use shared::dto::{
 };
 use time::Date;
 
-use super::{daily_report_entry_id, daily_report_id};
-
 #[must_use]
 pub fn daily_report_status_dto(status: model::DailyReportStatus) -> WireStatus {
     match status {
@@ -46,24 +44,13 @@ pub fn daily_report_entry_kind_domain(kind: WireKind) -> model::DailyReportEntry
 #[must_use]
 pub fn daily_report_entry_dto(entry: &model::DailyReportEntry) -> DailyReportEntryDto {
     DailyReportEntryDto {
-        id: daily_report_entry_id(entry.id),
+        id: super::daily_report_entry_id(entry.id),
         kind: daily_report_entry_kind_dto(entry.kind),
         description: entry.description.clone(),
         request_id: entry.request_id.map(super::request_id),
         hours: entry.hours,
         created_at: entry.created_at,
     }
-}
-
-/// Formats a calendar date as the wire `"YYYY-MM-DD"`.
-#[must_use]
-pub fn fmt_date(date: Date) -> String {
-    format!(
-        "{:04}-{:02}-{:02}",
-        date.year(),
-        u8::from(date.month()),
-        date.day()
-    )
 }
 
 #[must_use]
@@ -73,9 +60,9 @@ pub fn daily_report_dto(
     reviewed_by: Option<UserSummaryDto>,
 ) -> DailyReportDto {
     DailyReportDto {
-        id: daily_report_id(report.id),
+        id: super::daily_report_id(report.id),
         user,
-        report_date: fmt_date(report.report_date),
+        report_date: report.report_date,
         status: daily_report_status_dto(report.status),
         summary: report.summary.clone(),
         entries: report.entries.iter().map(daily_report_entry_dto).collect(),

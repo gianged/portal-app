@@ -2,7 +2,7 @@
 //! round-trip that proves the backend answers, under a short timeout so a hung
 //! backend reports `Down` quickly.
 
-use std::{sync::Arc, time::Duration};
+use std::{fmt::Display, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use proto::{
@@ -20,8 +20,6 @@ use tokio::time;
 
 use domain::{error::HealthError, health::BackendId, ports::health::HealthCheck};
 
-use crate::redis::connect_manager;
-
 /// Upper bound on any single probe; a hung backend reports `Down` after this.
 const PING_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -35,7 +33,7 @@ where
         .unwrap_or(Err(HealthError::Timeout))
 }
 
-fn backend<E: std::fmt::Display>(e: E) -> HealthError {
+fn backend<E: Display>(e: E) -> HealthError {
     HealthError::Backend(e.to_string())
 }
 
@@ -112,7 +110,7 @@ impl RedisHealthCheck {
     /// Opens a dedicated connection for probing; kept separate from the app
     /// connections so a saturated app pool doesn't mask a healthy server.
     pub async fn new(url: &str) -> Result<Self, HealthError> {
-        let conn = connect_manager(url).await.map_err(backend)?;
+        let conn = crate::redis::connect_manager(url).await.map_err(backend)?;
         Ok(Self { conn })
     }
 }
@@ -164,6 +162,30 @@ impl OpenFgaHealthCheck {
     }
 }
 
+#[async_trait]
+impl HealthCheck for OpenFgaHealthCheck {
+    fn backend(&self) -> BackendId {
+        BackendId::OpenFga
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn ping(&self) -> Result<(), HealthError> {
+        with_timeout(async {
+            let mut req = self.http.get(&self.healthz_url);
+            if let Some(token) = &self.bearer_token {
+                req = req.bearer_auth(token);
+            }
+            let status = req.send().await.map_err(backend)?.status();
+            if status == StatusCode::OK {
+                Ok(())
+            } else {
+                Err(HealthError::Backend(format!("healthz returned {status}")))
+            }
+        })
+        .await
+    }
+}
+
 /// Workers-gRPC probe: standard `grpc.health.v1/Check` against the workers'
 /// ingest plane. Non-gating in readiness — dispatch falls back to apalis.
 pub struct WorkersGrpcHealthCheck {
@@ -201,30 +223,6 @@ impl HealthCheck for WorkersGrpcHealthCheck {
                 Ok(())
             } else {
                 Err(HealthError::Backend("workers grpc not serving".to_owned()))
-            }
-        })
-        .await
-    }
-}
-
-#[async_trait]
-impl HealthCheck for OpenFgaHealthCheck {
-    fn backend(&self) -> BackendId {
-        BackendId::OpenFga
-    }
-
-    #[tracing::instrument(skip_all)]
-    async fn ping(&self) -> Result<(), HealthError> {
-        with_timeout(async {
-            let mut req = self.http.get(&self.healthz_url);
-            if let Some(token) = &self.bearer_token {
-                req = req.bearer_auth(token);
-            }
-            let status = req.send().await.map_err(backend)?.status();
-            if status == StatusCode::OK {
-                Ok(())
-            } else {
-                Err(HealthError::Backend(format!("healthz returned {status}")))
             }
         })
         .await

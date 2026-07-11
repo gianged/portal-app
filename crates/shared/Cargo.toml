@@ -9,5 +9,5 @@ license.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-time = { workspace = true, features = ["serde-well-known"] }
+time = { workspace = true, features = ["serde-well-known", "serde-human-readable"] }
 uuid = { workspace = true, features = ["js"] }

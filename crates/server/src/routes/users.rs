@@ -7,12 +7,14 @@ use axum::{
     routing,
 };
 use serde::Deserialize;
-use uuid::Uuid;
 
 use domain::ids::UserId;
-use shared::dto::user::{
-    CreateUserRequest, ResetPasswordRequest, UpdateProfileRequest, UserDto, UserProfileDto,
-    UserRole,
+use shared::dto::{
+    ids as wire,
+    user::{
+        CreateUserRequest, ResetPasswordRequest, UpdateProfileRequest, UserDto, UserProfileDto,
+        UserRole,
+    },
 };
 
 use crate::{
@@ -80,11 +82,11 @@ async fn list(
 async fn get_one(
     State(state): State<AppState>,
     _auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::UserId>,
 ) -> Result<Json<UserProfileDto>, AppError> {
     let user = state
         .user
-        .find(UserId(id))
+        .find(UserId(id.0))
         .await?
         .ok_or(application::Error::NotFound("user"))?;
     Ok(Json(dto::user_profile_dto(&user)))
@@ -93,12 +95,16 @@ async fn get_one(
 async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::UserId>,
     ValidatedJson(body): ValidatedJson<UpdateProfileRequest>,
 ) -> Result<Json<UserProfileDto>, AppError> {
     let user = state
         .user
-        .update_profile(auth.user_id, UserId(id), dto::update_profile_command(body))
+        .update_profile(
+            auth.user_id,
+            UserId(id.0),
+            dto::update_profile_command(body),
+        )
         .await?;
     Ok(Json(dto::user_profile_dto(&user)))
 }
@@ -106,18 +112,24 @@ async fn update(
 async fn deactivate(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::UserId>,
 ) -> Result<StatusCode, AppError> {
-    state.user.deactivate_user(auth.user_id, UserId(id)).await?;
+    state
+        .user
+        .deactivate_user(auth.user_id, UserId(id.0))
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 async fn reactivate(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::UserId>,
 ) -> Result<Json<UserProfileDto>, AppError> {
-    let user = state.user.reactivate_user(auth.user_id, UserId(id)).await?;
+    let user = state
+        .user
+        .reactivate_user(auth.user_id, UserId(id.0))
+        .await?;
     Ok(Json(dto::user_profile_dto(&user)))
 }
 
@@ -125,12 +137,12 @@ async fn reactivate(
 async fn reset_password(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::UserId>,
     ValidatedJson(body): ValidatedJson<ResetPasswordRequest>,
 ) -> Result<StatusCode, AppError> {
     state
         .user
-        .admin_reset_password(auth.user_id, UserId(id), body.new_password)
+        .admin_reset_password(auth.user_id, UserId(id.0), body.new_password)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }

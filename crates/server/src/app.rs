@@ -6,7 +6,7 @@ use axum::{
     error_handling::HandleErrorLayer,
     extract::{DefaultBodyLimit, State},
     http::{HeaderValue, Method, StatusCode, header},
-    middleware::{from_fn, from_fn_with_state},
+    middleware,
     response::{IntoResponse, Response},
     routing,
 };
@@ -148,7 +148,7 @@ pub struct AppState {
     pub realtime: Realtime,
     // Short-TTL user-summary cache for the WS fan-out path.
     pub summary_cache: Arc<resolve::SummaryCache>,
-    pub audit_service: Arc<AuditService>,
+    pub audit: Arc<AuditService>,
     pub presence: Arc<dyn Presence>,
     pub rate_limiter: Arc<dyn RateLimit>,
     pub rate_limits: RateLimits,
@@ -575,7 +575,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
         revocation,
         realtime,
         summary_cache: Arc::new(resolve::SummaryCache::new(Duration::from_secs(30))),
-        audit_service,
+        audit: audit_service,
         presence,
         rate_limiter,
         rate_limits: RateLimits {
@@ -635,16 +635,27 @@ pub fn router(state: AppState) -> Router {
         .merge(overtime::router())
         .merge(flex_hours::router())
         .merge(service_accounts::router())
-        .route_layer(from_fn_with_state(state.clone(), rate_limit::per_user))
-        .route_layer(from_fn_with_state(state.clone(), auth::require_auth));
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit::per_user,
+        ))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::require_auth,
+        ));
 
     // Public API: login / logout carry no session yet; rate-limited per client IP.
-    let public = routes::auth::public_router()
-        .route_layer(from_fn_with_state(state.clone(), rate_limit::per_ip));
+    let public = routes::auth::public_router().route_layer(middleware::from_fn_with_state(
+        state.clone(),
+        rate_limit::per_ip,
+    ));
 
     // Files need session + signed `?exp&sig` (bound to the user); skip the per-user limiter -
     // the signature already scopes each fetch, so image-heavy pages don't burn the API budget.
-    let files = files::router().route_layer(from_fn_with_state(state.clone(), auth::require_auth));
+    let files = files::router().route_layer(middleware::from_fn_with_state(
+        state.clone(),
+        auth::require_auth,
+    ));
     // Timeout + load-shed guard the API tree only: /healthz (liveness) must keep
     // answering under overload, and /readyz reads breaker state, not backends.
     let api = public
@@ -670,7 +681,7 @@ pub fn router(state: AppState) -> Router {
     // of the SPA tree's load-shed so a script burst can't starve the app (the
     // per-key limiter bounds it instead).
     let ext_api = ext::router()
-        .route_layer(from_fn_with_state(
+        .route_layer(middleware::from_fn_with_state(
             state.clone(),
             service_account::require_service_account,
         ))
@@ -714,26 +725,21 @@ pub fn router(state: AppState) -> Router {
         ))
         // Network gate: rejects out-of-allowlist peers before auth/handlers, but
         // inside trace + request-id so a 403 is still traced and correlated.
-        .layer(from_fn_with_state(state.clone(), ip_allowlist::enforce))
-        .layer(from_fn(request_id::propagate))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            ip_allowlist::enforce,
+        ))
+        .layer(middleware::from_fn(request_id::propagate))
         .layer(trace::layer())
         .with_state(state)
 }
 
-/// Builds the credentialed CORS layer from the configured origins. Invalid origin
-/// strings are dropped with a warning rather than failing startup. Credentialed
+/// Builds the credentialed CORS layer from the origins already validated by
+/// `config::from_env` (a malformed origin fails startup there). Credentialed
 /// CORS forbids a wildcard origin, so the allow-list is always explicit.
-pub fn cors_layer(origins: &[String]) -> CorsLayer {
-    let parsed: Vec<HeaderValue> = origins
-        .iter()
-        .filter_map(|o| {
-            o.parse::<HeaderValue>()
-                .inspect_err(|_| tracing::warn!(origin = %o, "ignoring invalid CORS origin"))
-                .ok()
-        })
-        .collect();
+pub fn cors_layer(origins: &[HeaderValue]) -> CorsLayer {
     CorsLayer::new()
-        .allow_origin(AllowOrigin::list(parsed))
+        .allow_origin(AllowOrigin::list(origins.iter().cloned()))
         .allow_credentials(true)
         .allow_methods([
             Method::GET,

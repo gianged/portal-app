@@ -18,7 +18,6 @@ use crate::{
 /// # Errors
 /// Returns [`SharedError::Validation`] describing the first rule violated.
 pub fn validate_flex(req: &RequestFlexRequest, policy: &PolicyDto) -> Result<(), SharedError> {
-    common::iso_date("Work date", &req.work_date)?;
     let max = usize::from(policy.flex_max_segments);
     if req.segments.is_empty() {
         return Err(SharedError::Validation(

@@ -38,7 +38,6 @@ use tokio::time;
 
 use application::{DomainEvent, commands::chat::PostMessageCommand};
 use domain::{
-    error::EventError,
     ids::{ChannelId, MessageId, UserId},
     model::Message as ChatMessage,
     ports::file_storage::FileStorage,
@@ -46,7 +45,7 @@ use domain::{
 use shared::{
     dto::{
         chat::MessageDto,
-        ws::{ClientFrame, ServerFrame},
+        ws::{ClientFrame, ServerFrame, WsErrorCode},
     },
     validation::chat,
 };
@@ -62,7 +61,7 @@ use crate::{
 
 /// Presence key TTL; must exceed [`HEARTBEAT`] so a live connection never lets
 /// its presence lapse between refreshes.
-const PRESENCE_TTL_SECS: u64 = 60;
+const PRESENCE_TTL: Duration = Duration::from_mins(1);
 const HEARTBEAT: Duration = Duration::from_secs(30);
 /// Lifetime of presigned attachment URLs embedded in live message frames.
 const DOWNLOAD_URL_TTL: Duration = Duration::from_hours(1);
@@ -108,7 +107,7 @@ async fn connection(socket: WebSocket, state: AppState, uid: UserId, session: Op
     // Presence/typing/read-marker signals are ephemeral best-effort: a redis or cache
     // hiccup must not tear down the socket, so the `let _ =` publish/cache failures
     // throughout this task are intentionally ignored.
-    let _ = state.presence.set_online(uid, PRESENCE_TTL_SECS).await;
+    let _ = state.presence.set_online(uid, PRESENCE_TTL).await;
     let _ = state
         .realtime
         .publish_signal(&WsSignal::Presence {
@@ -119,13 +118,7 @@ async fn connection(socket: WebSocket, state: AppState, uid: UserId, session: Op
 
     let mut subscribed: HashSet<ChannelId> = HashSet::new();
 
-    let mut events = match open_streams(&state).await {
-        Ok(streams) => streams,
-        Err(e) => {
-            tracing::error!(error = %e, "ws: failed to open redis subscriptions");
-            return;
-        }
-    };
+    let mut events = open_streams(&state).await;
 
     let mut heartbeat = time::interval(HEARTBEAT);
 
@@ -148,7 +141,7 @@ async fn connection(socket: WebSocket, state: AppState, uid: UserId, session: Op
                 }
             }
             _ = heartbeat.tick() => {
-                let _ = state.presence.set_online(uid, PRESENCE_TTL_SECS).await;
+                let _ = state.presence.set_online(uid, PRESENCE_TTL).await;
                 // Logout / token-version bumps must reach live sockets, not
                 // just the next HTTP request.
                 if let Some(session) = session
@@ -157,6 +150,8 @@ async fn connection(socket: WebSocket, state: AppState, uid: UserId, session: Op
                     break;
                 }
             }
+            // Process shutdown: close so axum's graceful drain completes.
+            () = crate::shutdown_started() => break,
         }
     }
 
@@ -169,13 +164,13 @@ async fn connection(socket: WebSocket, state: AppState, uid: UserId, session: Op
         .await;
 }
 
-async fn open_streams(state: &AppState) -> Result<SelectAll<ByteStream>, EventError> {
-    let chat = state.realtime.subscribe("portal.chat").await?;
-    let ephemeral = state.realtime.subscribe(WS_TOPIC).await?;
+async fn open_streams(state: &AppState) -> SelectAll<ByteStream> {
+    let chat = state.realtime.subscribe("portal.chat").await;
+    let ephemeral = state.realtime.subscribe(WS_TOPIC).await;
     // Revocation planes: deactivation closes the socket, membership changes re-validate subscriptions (see `on_domain_event`).
-    let user = state.realtime.subscribe("portal.user").await?;
-    let group = state.realtime.subscribe("portal.group").await?;
-    Ok(stream::select_all(vec![chat, ephemeral, user, group]))
+    let user = state.realtime.subscribe("portal.user").await;
+    let group = state.realtime.subscribe("portal.group").await;
+    stream::select_all(vec![chat, ephemeral, user, group])
 }
 
 /// Handles one client frame. Returns `false` when the connection should close.
@@ -193,7 +188,7 @@ async fn on_client_frame(
             return send(
                 sink,
                 &ServerFrame::Error {
-                    code: "bad_frame".to_owned(),
+                    code: WsErrorCode::BadFrame,
                     message: e.to_string(),
                 },
             )
@@ -215,7 +210,7 @@ async fn on_client_frame(
                     send(
                         sink,
                         &ServerFrame::Error {
-                            code: "forbidden".to_owned(),
+                            code: WsErrorCode::Forbidden,
                             message: "not a member of that channel".to_owned(),
                         },
                     )
@@ -226,7 +221,7 @@ async fn on_client_frame(
                     send(
                         sink,
                         &ServerFrame::Error {
-                            code: "subscribe_failed".to_owned(),
+                            code: WsErrorCode::SubscribeFailed,
                             message: "could not verify channel access".to_owned(),
                         },
                     )
@@ -251,7 +246,7 @@ async fn on_client_frame(
                 return send(
                     sink,
                     &ServerFrame::Error {
-                        code: "bad_frame".to_owned(),
+                        code: WsErrorCode::BadFrame,
                         message: e.to_string(),
                     },
                 )
@@ -263,7 +258,7 @@ async fn on_client_frame(
                 return send(
                     sink,
                     &ServerFrame::Error {
-                        code: "rate_limited".to_owned(),
+                        code: WsErrorCode::RateLimited,
                         message: "too many messages, slow down".to_owned(),
                     },
                 )
@@ -281,7 +276,7 @@ async fn on_client_frame(
                     send(
                         sink,
                         &ServerFrame::Error {
-                            code: "send_failed".to_owned(),
+                            code: WsErrorCode::SendFailed,
                             message: e.to_string(),
                         },
                     )

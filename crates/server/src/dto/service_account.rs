@@ -1,3 +1,5 @@
+//! Domain <-> wire projections for service accounts.
+
 use domain::model;
 
 use application::{permissions::ServiceAccountScope, service::CreatedServiceAccount};
@@ -5,8 +7,6 @@ use shared::dto::service_account::{
     CreatedServiceAccountDto, ServiceAccountDto, ServiceAccountScope as WireServiceAccountScope,
     ServiceAccountStatus as WireServiceAccountStatus,
 };
-
-use super::{service_account_id, user_id};
 
 #[must_use]
 pub fn service_account_status_dto(status: model::ServiceAccountStatus) -> WireServiceAccountStatus {
@@ -28,10 +28,10 @@ pub fn service_account_scope_domain(scope: WireServiceAccountScope) -> ServiceAc
 #[must_use]
 pub fn service_account_dto(account: &model::ServiceAccount) -> ServiceAccountDto {
     ServiceAccountDto {
-        id: service_account_id(account.id),
+        id: super::service_account_id(account.id),
         name: account.name.clone(),
         status: service_account_status_dto(account.status),
-        created_by: user_id(account.created_by),
+        created_by: super::user_id(account.created_by),
         revoked_at: account.revoked_at,
         created_at: account.created_at,
     }

@@ -117,7 +117,7 @@ impl OvertimeRepository for PgOvertimeRepo {
         &self,
         user: UserId,
         year: i32,
-        month: u32,
+        month: u8,
     ) -> Result<f64, RepositoryError> {
         let (first, last) = mappers::month_bounds(year, month)?;
         let row = sqlx::query!(
@@ -193,8 +193,8 @@ impl OvertimeRepository for PgOvertimeRepo {
             r#"INSERT INTO attendance.overtime
                  (id, requester_user_id, work_date, hours, reason, status,
                   leader_user_id, leader_decided_at, hr_user_id, hr_decided_at,
-                  decision_note, created_at, updated_at)
-               VALUES ($1, $2, $3, $4::float8::numeric, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                  decision_note, created_at)
+               VALUES ($1, $2, $3, $4::float8::numeric, $5, $6, $7, $8, $9, $10, $11, $12)
                ON CONFLICT (id) DO UPDATE SET
                  work_date         = EXCLUDED.work_date,
                  hours             = EXCLUDED.hours,
@@ -204,8 +204,7 @@ impl OvertimeRepository for PgOvertimeRepo {
                  leader_decided_at = EXCLUDED.leader_decided_at,
                  hr_user_id        = EXCLUDED.hr_user_id,
                  hr_decided_at     = EXCLUDED.hr_decided_at,
-                 decision_note     = EXCLUDED.decision_note,
-                 updated_at        = EXCLUDED.updated_at"#,
+                 decision_note     = EXCLUDED.decision_note"#,
             overtime.id.0,
             overtime.requester_user_id.0,
             overtime.work_date,
@@ -218,7 +217,6 @@ impl OvertimeRepository for PgOvertimeRepo {
             overtime.hr_decided_at,
             overtime.decision_note,
             overtime.created_at,
-            overtime.updated_at,
         )
         .execute(&self.pool)
         .await

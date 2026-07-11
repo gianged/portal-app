@@ -11,7 +11,7 @@ pub enum AvatarSize {
 }
 
 impl AvatarSize {
-    fn dimension(self) -> &'static str {
+    pub(crate) fn dimension(self) -> &'static str {
         match self {
             Self::Sm => "24px",
             Self::Md => "32px",
@@ -19,7 +19,7 @@ impl AvatarSize {
         }
     }
 
-    fn font_size(self) -> &'static str {
+    pub(crate) fn font_size(self) -> &'static str {
         match self {
             Self::Sm => typography::TEXT_COUNT,
             Self::Md => typography::TEXT_CAPTION,

@@ -20,6 +20,8 @@ pub fn ChatView() -> impl IntoView {
         .selected_channel;
     let messages: RwSignal<Vec<MessageDto>> = RwSignal::new(Vec::new());
     let typing = RwSignal::new(false);
+    // Presence-only memo keeps the thread and composer mounted across channel switches.
+    let has_channel = Memo::new(move |_| channel.get().is_some());
 
     let frame = theme::class(format!(
         "display: flex; height: calc(100vh - 180px); min-height: 420px; \
@@ -46,7 +48,12 @@ pub fn ChatView() -> impl IntoView {
             </div>
             <div class=right>
                 {move || {
-                    if channel.get().is_none() {
+                    if has_channel.get() {
+                        view! {
+                            <MessageThread channel=channel messages=messages typing=typing />
+                            <Composer channel=channel messages=messages />
+                        }.into_any()
+                    } else {
                         view! {
                             <div class=empty_wrap.clone()>
                                 <EmptyState
@@ -55,11 +62,6 @@ pub fn ChatView() -> impl IntoView {
                                     description="Choose a conversation on the left, or start a DM."
                                 />
                             </div>
-                        }.into_any()
-                    } else {
-                        view! {
-                            <MessageThread channel=channel messages=messages typing=typing />
-                            <Composer channel=channel messages=messages />
                         }.into_any()
                     }
                 }}

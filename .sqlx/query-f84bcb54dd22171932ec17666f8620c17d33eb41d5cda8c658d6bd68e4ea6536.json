@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO attendance.daily_report_entries\n                     (id, daily_report_id, kind, description, request_id, hours, created_at)\n                   SELECT u.id, u.daily_report_id, u.kind, u.description, u.request_id,\n                          u.hours::numeric, u.created_at\n                   FROM UNNEST($1::uuid[], $2::uuid[], $3::attendance.daily_report_entry_kind[],\n                               $4::text[], $5::uuid[], $6::float8[], $7::timestamptz[])\n                     AS u(id, daily_report_id, kind, description, request_id, hours, created_at)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "UuidArray",
+        {
+          "Custom": {
+            "name": "attendance.daily_report_entry_kind[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "attendance.daily_report_entry_kind",
+                  "kind": {
+                    "Enum": [
+                      "request_work",
+                      "learning",
+                      "other"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "TextArray",
+        "UuidArray",
+        "Float8Array",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f84bcb54dd22171932ec17666f8620c17d33eb41d5cda8c658d6bd68e4ea6536"
+}

@@ -31,10 +31,12 @@ pub fn series_color(i: usize) -> &'static str {
     PALETTE[i % PALETTE.len()]
 }
 
-fn n(v: f64) -> String {
+fn fmt_coord(v: f64) -> String {
     format!("{v:.1}")
 }
 
+#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::cast_precision_loss)]
 #[component]
 pub fn LineChart(
     series: Vec<Series>,
@@ -74,7 +76,7 @@ pub fn LineChart(
         .filter(|(i, _)| i % 2 == 0)
         .map(|(i, l)| {
             view! {
-                <text x=n(xf(i)) y=n(h - 8.0) text-anchor="middle" font-size="11" fill=color::TEXT_MUTED>
+                <text x=fmt_coord(xf(i)) y=fmt_coord(h - 8.0) text-anchor="middle" font-size="11" fill=color::TEXT_MUTED>
                     {l.clone()}
                 </text>
             }
@@ -115,8 +117,8 @@ pub fn LineChart(
     view! {
         <div>
             <svg class=svg_cls viewBox=vb preserveAspectRatio="xMidYMid meet">
-                <line x1=n(PAD) y1=n(axis_y) x2=n(VB_W - PAD) y2=n(axis_y) stroke=color::BORDER stroke-width="1" />
-                <line x1=n(PAD) y1=n(axis_y) x2=n(PAD) y2=n(PAD) stroke=color::BORDER stroke-width="1" />
+                <line x1=fmt_coord(PAD) y1=fmt_coord(axis_y) x2=fmt_coord(VB_W - PAD) y2=fmt_coord(axis_y) stroke=color::BORDER stroke-width="1" />
+                <line x1=fmt_coord(PAD) y1=fmt_coord(axis_y) x2=fmt_coord(PAD) y2=fmt_coord(PAD) stroke=color::BORDER stroke-width="1" />
                 {lines}
                 {labels}
             </svg>
@@ -125,6 +127,8 @@ pub fn LineChart(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::cast_precision_loss)]
 #[component]
 pub fn BarChart(data: Vec<(String, f64)>, #[prop(optional)] height: Option<u32>) -> impl IntoView {
     let h = f64::from(height.unwrap_or(200));
@@ -147,11 +151,11 @@ pub fn BarChart(data: Vec<(String, f64)>, #[prop(optional)] height: Option<u32>)
             let by = axis_y - bh;
             let cx = PAD + i as f64 * slot + slot / 2.0;
             view! {
-                <rect x=n(bx) y=n(by) width=n(bar_w) height=n(bh) rx="2" fill=color::ACCENT />
-                <text x=n(cx) y=n(by - 3.0) text-anchor="middle" font-size="10" fill=color::TEXT>
+                <rect x=fmt_coord(bx) y=fmt_coord(by) width=fmt_coord(bar_w) height=fmt_coord(bh) rx="2" fill=color::ACCENT />
+                <text x=fmt_coord(cx) y=fmt_coord(by - 3.0) text-anchor="middle" font-size="10" fill=color::TEXT>
                     {fmt_int(*v)}
                 </text>
-                <text x=n(cx) y=n(h - 8.0) text-anchor="middle" font-size="9" fill=color::TEXT_MUTED>
+                <text x=fmt_coord(cx) y=fmt_coord(h - 8.0) text-anchor="middle" font-size="9" fill=color::TEXT_MUTED>
                     {truncate(label, 10)}
                 </text>
             }
@@ -162,7 +166,7 @@ pub fn BarChart(data: Vec<(String, f64)>, #[prop(optional)] height: Option<u32>)
     let vb = format!("0 0 {VB_W} {h}");
     view! {
         <svg class=svg_cls viewBox=vb preserveAspectRatio="xMidYMid meet">
-            <line x1=n(PAD) y1=n(axis_y) x2=n(VB_W - PAD) y2=n(axis_y) stroke=color::BORDER stroke-width="1" />
+            <line x1=fmt_coord(PAD) y1=fmt_coord(axis_y) x2=fmt_coord(VB_W - PAD) y2=fmt_coord(axis_y) stroke=color::BORDER stroke-width="1" />
             {bars}
         </svg>
     }
@@ -181,6 +185,7 @@ pub fn ProgressBar(#[prop(into)] value: Signal<u8>) -> impl IntoView {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn fmt_int(v: f64) -> String {
     format!("{}", v.round() as i64)
 }

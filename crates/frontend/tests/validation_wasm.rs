@@ -6,21 +6,24 @@
 //! (a normal workspace dep) rather than the crate's own items.
 #![cfg(target_arch = "wasm32")]
 
-use shared::validation::ticket::{validate_ticket_description, validate_ticket_title};
+use shared::validation::ticket;
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
 #[wasm_bindgen_test]
 fn ticket_title_rules_hold_in_wasm() {
-    assert!(validate_ticket_title("").is_err(), "empty title is invalid");
     assert!(
-        validate_ticket_title("Printer is on fire").is_ok(),
+        ticket::validate_ticket_title("").is_err(),
+        "empty title is invalid"
+    );
+    assert!(
+        ticket::validate_ticket_title("Printer is on fire").is_ok(),
         "a reasonable title is valid"
     );
 }
 
 #[wasm_bindgen_test]
 fn ticket_description_allows_empty() {
-    assert!(validate_ticket_description("").is_ok());
+    assert!(ticket::validate_ticket_description("").is_ok());
 }

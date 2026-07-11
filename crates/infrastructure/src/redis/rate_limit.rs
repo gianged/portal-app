@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use redis::{Script, aio::ConnectionManager};
 use time::OffsetDateTime;
 
-use domain::{error::RepositoryError, ports::rate_limit::RateLimit};
+use domain::{error::RateLimitError, ports::rate_limit::RateLimit};
 
-use crate::redis::connect_manager;
+use super::connect;
 
 /// Fixed-window rate limiter backed by `INCR` + `EXPIRE`.
 ///
@@ -28,8 +28,8 @@ static INCR_WITH_TTL: LazyLock<Script> = LazyLock::new(|| {
 });
 
 impl RateLimiter {
-    pub async fn new(url: &str) -> Result<Self, RepositoryError> {
-        let conn = connect_manager(url).await.map_err(backend)?;
+    pub async fn new(url: &str) -> Result<Self, RateLimitError> {
+        let conn = connect::connect_manager(url).await.map_err(backend)?;
         Ok(Self {
             conn,
             window_secs: 60,
@@ -47,7 +47,7 @@ impl RateLimiter {
 #[async_trait]
 impl RateLimit for RateLimiter {
     #[tracing::instrument(skip_all)]
-    async fn incr(&self, bucket: &str) -> Result<u64, RepositoryError> {
+    async fn incr(&self, bucket: &str) -> Result<u64, RateLimitError> {
         let now = OffsetDateTime::now_utc().unix_timestamp();
         let window = now / self.window_secs;
         let key = rate_limit_key(bucket, window);
@@ -68,6 +68,6 @@ fn rate_limit_key(bucket: &str, window: i64) -> String {
     format!("portal:ratelimit:{bucket}:{window}")
 }
 
-fn backend<E: Display>(e: E) -> RepositoryError {
-    RepositoryError::Backend(e.to_string())
+fn backend<E: Display>(e: E) -> RateLimitError {
+    RateLimitError::Backend(e.to_string())
 }

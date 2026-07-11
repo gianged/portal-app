@@ -16,6 +16,7 @@ use shared::validation::daily_report;
 use crate::features::daily_reports::api;
 use crate::features::groups::api as groups_api;
 use crate::features::requests::api as requests_api;
+use crate::features::ui;
 use crate::primitives::badge::{Badge, BadgeVariant};
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
@@ -25,7 +26,7 @@ use crate::primitives::stack::{Gap, Stack};
 use crate::primitives::textarea::Textarea;
 use crate::state::toast::ToastState;
 use crate::theme::{self, color, space, typography};
-use crate::util::date::{days_ago_iso, today_iso};
+use crate::util::date;
 use crate::util::load::{self, Loadable};
 
 // --- editor draft state ---
@@ -38,22 +39,6 @@ struct EntryDraft {
     request_id: String,
     hours: String,
     progress: String,
-}
-
-fn kind_str(kind: DailyReportEntryKind) -> &'static str {
-    match kind {
-        DailyReportEntryKind::RequestWork => "request_work",
-        DailyReportEntryKind::Learning => "learning",
-        DailyReportEntryKind::Other => "other",
-    }
-}
-
-fn kind_from_str(s: &str) -> DailyReportEntryKind {
-    match s {
-        "request_work" => DailyReportEntryKind::RequestWork,
-        "learning" => DailyReportEntryKind::Learning,
-        _ => DailyReportEntryKind::Other,
-    }
 }
 
 fn parse_opt_f64(s: &str, field: &str) -> Result<Option<f64>, String> {
@@ -76,82 +61,90 @@ fn parse_opt_u8(s: &str, field: &str) -> Result<Option<u8>, String> {
         .map_err(|_| format!("{field} must be a whole number 0-100"))
 }
 
-fn build_request(
-    summary: RwSignal<String>,
-    entries: RwSignal<Vec<EntryDraft>>,
-) -> Result<UpsertDailyReportRequest, String> {
-    let mut out = Vec::new();
-    for d in entries.get_untracked() {
-        let kind = kind_from_str(&d.kind);
-        let request_id = if kind == DailyReportEntryKind::RequestWork {
-            let raw = d.request_id.trim();
-            if raw.is_empty() {
-                return Err("Pick a request for request-work entries".into());
-            }
-            Some(RequestId(
-                Uuid::parse_str(raw).map_err(|_| "Invalid request selection".to_string())?,
-            ))
-        } else {
-            None
-        };
-        out.push(UpsertDailyReportEntry {
-            kind,
-            description: d.description,
-            request_id,
-            hours: parse_opt_f64(&d.hours, "Hours")?,
-            progress: parse_opt_u8(&d.progress, "Progress")?,
-        });
-    }
-    Ok(UpsertDailyReportRequest {
-        summary: summary.get_untracked(),
-        entries: out,
-    })
-}
-
-/// Replaces the editor's signals from a freshly loaded / saved report.
-fn seed_from(
-    dto: &DailyReportDto,
+/// Signal bundle backing the "My day" editor; `Copy` so every closure shares the same instance.
+#[derive(Clone, Copy)]
+struct ReportEditor {
     summary: RwSignal<String>,
     entries: RwSignal<Vec<EntryDraft>>,
     status: RwSignal<Option<DailyReportStatus>>,
     report_id: RwSignal<Option<DailyReportId>>,
     next_key: RwSignal<usize>,
-) {
-    summary.set(dto.summary.clone());
-    status.set(Some(dto.status));
-    report_id.set(Some(dto.id));
-    let mut start = next_key.get_untracked();
-    let drafts = dto
-        .entries
-        .iter()
-        .map(|e| {
-            let key = start;
-            start += 1;
-            EntryDraft {
-                key,
-                kind: kind_str(e.kind).to_owned(),
-                description: e.description.clone(),
-                request_id: e.request_id.map(|r| r.0.to_string()).unwrap_or_default(),
-                hours: e.hours.map(|h| h.to_string()).unwrap_or_default(),
-                // progress is a transient hint, never persisted on an entry.
-                progress: String::new(),
-            }
-        })
-        .collect();
-    next_key.set(start);
-    entries.set(drafts);
 }
 
-fn blank(
-    summary: RwSignal<String>,
-    entries: RwSignal<Vec<EntryDraft>>,
-    status: RwSignal<Option<DailyReportStatus>>,
-    report_id: RwSignal<Option<DailyReportId>>,
-) {
-    summary.set(String::new());
-    entries.set(Vec::new());
-    status.set(None);
-    report_id.set(None);
+impl ReportEditor {
+    fn new() -> Self {
+        Self {
+            summary: RwSignal::new(String::new()),
+            entries: RwSignal::new(Vec::new()),
+            status: RwSignal::new(None),
+            report_id: RwSignal::new(None),
+            next_key: RwSignal::new(0),
+        }
+    }
+
+    fn build_request(&self) -> Result<UpsertDailyReportRequest, String> {
+        let mut out = Vec::new();
+        for d in self.entries.get_untracked() {
+            let kind =
+                DailyReportEntryKind::from_wire(&d.kind).unwrap_or(DailyReportEntryKind::Other);
+            let request_id = if kind == DailyReportEntryKind::RequestWork {
+                let raw = d.request_id.trim();
+                if raw.is_empty() {
+                    return Err("Pick a request for request-work entries".into());
+                }
+                Some(RequestId(
+                    Uuid::parse_str(raw).map_err(|_| "Invalid request selection".to_string())?,
+                ))
+            } else {
+                None
+            };
+            out.push(UpsertDailyReportEntry {
+                kind,
+                description: d.description,
+                request_id,
+                hours: parse_opt_f64(&d.hours, "Hours")?,
+                progress: parse_opt_u8(&d.progress, "Progress")?,
+            });
+        }
+        Ok(UpsertDailyReportRequest {
+            summary: self.summary.get_untracked(),
+            entries: out,
+        })
+    }
+
+    /// Replaces the editor's signals from a freshly loaded / saved report.
+    fn seed_from(&self, dto: &DailyReportDto) {
+        self.summary.set(dto.summary.clone());
+        self.status.set(Some(dto.status));
+        self.report_id.set(Some(dto.id));
+        let mut start = self.next_key.get_untracked();
+        let drafts = dto
+            .entries
+            .iter()
+            .map(|e| {
+                let key = start;
+                start += 1;
+                EntryDraft {
+                    key,
+                    kind: e.kind.as_str().to_owned(),
+                    description: e.description.clone(),
+                    request_id: e.request_id.map(|r| r.0.to_string()).unwrap_or_default(),
+                    hours: e.hours.map(|h| h.to_string()).unwrap_or_default(),
+                    // progress is a transient hint, never persisted on an entry.
+                    progress: String::new(),
+                }
+            })
+            .collect();
+        self.next_key.set(start);
+        self.entries.set(drafts);
+    }
+
+    fn blank(&self) {
+        self.summary.set(String::new());
+        self.entries.set(Vec::new());
+        self.status.set(None);
+        self.report_id.set(None);
+    }
 }
 
 // --- "My day" editor ---
@@ -160,12 +153,8 @@ fn blank(
 pub fn MyDay() -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
 
-    let date = RwSignal::new(today_iso());
-    let summary = RwSignal::new(String::new());
-    let entries: RwSignal<Vec<EntryDraft>> = RwSignal::new(Vec::new());
-    let status: RwSignal<Option<DailyReportStatus>> = RwSignal::new(None);
-    let report_id: RwSignal<Option<DailyReportId>> = RwSignal::new(None);
-    let next_key = RwSignal::new(0usize);
+    let date = RwSignal::new(date::today_iso());
+    let editor = ReportEditor::new();
     let err = RwSignal::new(None::<String>);
     let saving = RwSignal::new(false);
 
@@ -190,10 +179,8 @@ pub fn MyDay() -> impl IntoView {
         err.set(None);
         task::spawn_local(async move {
             match api::get_for_date(&d).await {
-                Ok(Some(dto)) => {
-                    seed_from(&dto, summary, entries, status, report_id, next_key);
-                }
-                Ok(None) => blank(summary, entries, status, report_id),
+                Ok(Some(dto)) => editor.seed_from(&dto),
+                Ok(None) => editor.blank(),
                 Err(e) => err.set(Some(e.to_string())),
             }
         });
@@ -201,18 +188,18 @@ pub fn MyDay() -> impl IntoView {
 
     let editable = move || {
         !matches!(
-            status.get(),
+            editor.status.get(),
             Some(DailyReportStatus::Submitted | DailyReportStatus::Approved)
         )
     };
 
     let add_entry = move |_| {
-        let key = next_key.get_untracked();
-        next_key.set(key + 1);
-        entries.update(|v| {
+        let key = editor.next_key.get_untracked();
+        editor.next_key.set(key + 1);
+        editor.entries.update(|v| {
             v.push(EntryDraft {
                 key,
-                kind: "other".to_owned(),
+                kind: DailyReportEntryKind::Other.as_str().to_owned(),
                 description: String::new(),
                 request_id: String::new(),
                 hours: String::new(),
@@ -226,7 +213,7 @@ pub fn MyDay() -> impl IntoView {
             return;
         }
         err.set(None);
-        let req = match build_request(summary, entries) {
+        let req = match editor.build_request() {
             Ok(r) => r,
             Err(m) => {
                 err.set(Some(m));
@@ -243,7 +230,7 @@ pub fn MyDay() -> impl IntoView {
             match api::upsert(&d, &req).await {
                 Ok(dto) => {
                     toast.success("Draft saved");
-                    seed_from(&dto, summary, entries, status, report_id, next_key);
+                    editor.seed_from(&dto);
                 }
                 Err(e) => {
                     toast.error_from(&e);
@@ -259,7 +246,7 @@ pub fn MyDay() -> impl IntoView {
             return;
         }
         err.set(None);
-        let req = match build_request(summary, entries) {
+        let req = match editor.build_request() {
             Ok(r) => r,
             Err(m) => {
                 err.set(Some(m));
@@ -278,12 +265,12 @@ pub fn MyDay() -> impl IntoView {
                 Ok(dto) => match api::submit(dto.id).await {
                     Ok(s) => {
                         toast.success("Submitted for review");
-                        seed_from(&s, summary, entries, status, report_id, next_key);
+                        editor.seed_from(&s);
                     }
                     Err(e) => {
                         toast.error_from(&e);
                         err.set(Some(e.to_string()));
-                        seed_from(&dto, summary, entries, status, report_id, next_key);
+                        editor.seed_from(&dto);
                     }
                 },
                 Err(e) => {
@@ -305,34 +292,34 @@ pub fn MyDay() -> impl IntoView {
         <Stack gap=Gap::Lg>
             <div class=head>
                 <div class=date_box.clone()>
-                    <FieldLabel for_id="dr-date".to_string()>"Date"</FieldLabel>
+                    <FieldLabel for_id="dr-date">"Date"</FieldLabel>
                     <Input
                         value=date
                         on_input=Callback::new(move |v| date.set(v))
-                        type_="date".to_string()
+                        type_="date"
                     />
                 </div>
-                {move || status.get().map(|s| view! { <StatusPill status=s /> })}
+                {move || editor.status.get().map(|s| view! { <StatusPill status=s /> })}
             </div>
 
             <Card>
                 <Stack gap=Gap::Md>
-                    <FieldLabel for_id="dr-summary".to_string()>"Summary"</FieldLabel>
+                    <FieldLabel for_id="dr-summary">"Summary"</FieldLabel>
                     <Textarea
-                        value=summary
-                        on_input=Callback::new(move |v| summary.set(v))
-                        placeholder="What did you work on today?".to_string()
+                        value=editor.summary
+                        on_input=Callback::new(move |v| editor.summary.set(v))
+                        placeholder="What did you work on today?"
                         rows=3
                     />
                 </Stack>
             </Card>
 
             <Stack gap=Gap::Sm>
-                <SectionTitle title="Entries" />
-                <For each=move || entries.get() key=|e| e.key let:entry>
+                {ui::eyebrow_title("Entries")}
+                <For each=move || editor.entries.get() key=|e| e.key let:entry>
                     {
                         let key = entry.key;
-                        view! { <EntryRow key=key entries=entries requests=requests /> }
+                        view! { <EntryRow key=key entries=editor.entries requests=requests /> }
                     }
                 </For>
                 <div>
@@ -347,10 +334,10 @@ pub fn MyDay() -> impl IntoView {
             {move || if editable() {
                 view! {
                     <div class=theme::class(format!("display: flex; gap: {g};", g = space::D2))>
-                        <Button variant=ButtonVariant::Secondary on_click=save disabled=Signal::derive(move || saving.get())>
+                        <Button variant=ButtonVariant::Secondary on_click=save disabled=saving>
                             {move || if saving.get() { "Saving…" } else { "Save draft" }}
                         </Button>
-                        <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || saving.get())>
+                        <Button variant=ButtonVariant::Primary on_click=submit disabled=saving>
                             "Submit"
                         </Button>
                     </div>
@@ -381,44 +368,23 @@ fn EntryRow(
     let hours = field(|d| d.hours.clone());
     let progress = field(|d| d.progress.clone());
 
-    let set_kind = Callback::new(move |v: String| {
-        entries.update(|s| {
-            if let Some(e) = s.iter_mut().find(|e| e.key == key) {
-                e.kind = v;
-            }
-        });
-    });
-    let set_description = Callback::new(move |v: String| {
-        entries.update(|s| {
-            if let Some(e) = s.iter_mut().find(|e| e.key == key) {
-                e.description = v;
-            }
-        });
-    });
-    let set_request = Callback::new(move |v: String| {
-        entries.update(|s| {
-            if let Some(e) = s.iter_mut().find(|e| e.key == key) {
-                e.request_id = v;
-            }
-        });
-    });
-    let set_hours = Callback::new(move |v: String| {
-        entries.update(|s| {
-            if let Some(e) = s.iter_mut().find(|e| e.key == key) {
-                e.hours = v;
-            }
-        });
-    });
-    let set_progress = Callback::new(move |v: String| {
-        entries.update(|s| {
-            if let Some(e) = s.iter_mut().find(|e| e.key == key) {
-                e.progress = v;
-            }
-        });
-    });
+    let set = move |apply: fn(&mut EntryDraft, String)| {
+        Callback::new(move |v: String| {
+            entries.update(|s| {
+                if let Some(e) = s.iter_mut().find(|e| e.key == key) {
+                    apply(e, v);
+                }
+            });
+        })
+    };
+    let set_kind = set(|e, v| e.kind = v);
+    let set_description = set(|e, v| e.description = v);
+    let set_request = set(|e, v| e.request_id = v);
+    let set_hours = set(|e, v| e.hours = v);
+    let set_progress = set(|e, v| e.progress = v);
     let remove = move |_| entries.update(|s| s.retain(|e| e.key != key));
 
-    let is_request_work = move || kind.get() == "request_work";
+    let is_request_work = move || kind.get() == DailyReportEntryKind::RequestWork.as_str();
 
     let grid = theme::class(format!(
         "display: grid; grid-template-columns: 150px 1fr 90px auto; gap: {g}; align-items: end;",
@@ -430,20 +396,20 @@ fn EntryRow(
             <Stack gap=Gap::Sm>
                 <div class=grid.clone()>
                     <div>
-                        <FieldLabel for_id="dr-kind".to_string()>"Kind"</FieldLabel>
+                        <FieldLabel for_id="dr-kind">"Kind"</FieldLabel>
                         <Select value=kind on_change=set_kind>
-                            <option value="request_work">"Request work"</option>
-                            <option value="learning">"Learning"</option>
-                            <option value="other">"Other"</option>
+                            {DailyReportEntryKind::ALL.into_iter().map(|k| view! {
+                                <option value=k.as_str()>{k.label()}</option>
+                            }).collect_view()}
                         </Select>
                     </div>
                     <div>
-                        <FieldLabel for_id="dr-desc".to_string()>"Description"</FieldLabel>
+                        <FieldLabel for_id="dr-desc">"Description"</FieldLabel>
                         <Input value=description on_input=set_description />
                     </div>
                     <div>
-                        <FieldLabel for_id="dr-hours".to_string()>"Hours"</FieldLabel>
-                        <Input value=hours on_input=set_hours type_="number".to_string() />
+                        <FieldLabel for_id="dr-hours">"Hours"</FieldLabel>
+                        <Input value=hours on_input=set_hours type_="number" />
                     </div>
                     <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm on_click=Callback::new(remove)>
                         "Remove"
@@ -457,7 +423,7 @@ fn EntryRow(
                     view! {
                         <div class=req_grid>
                             <div>
-                                <FieldLabel for_id="dr-req".to_string()>"Request"</FieldLabel>
+                                <FieldLabel for_id="dr-req">"Request"</FieldLabel>
                                 <Select value=request_id on_change=set_request>
                                     <option value="">"— select request —"</option>
                                     {move || requests.get().into_iter().map(|(id, title)| {
@@ -466,8 +432,8 @@ fn EntryRow(
                                 </Select>
                             </div>
                             <div>
-                                <FieldLabel for_id="dr-prog".to_string()>"Progress %"</FieldLabel>
-                                <Input value=progress on_input=set_progress type_="number".to_string() />
+                                <FieldLabel for_id="dr-prog">"Progress %"</FieldLabel>
+                                <Input value=progress on_input=set_progress type_="number" />
                             </div>
                         </div>
                     }
@@ -493,9 +459,9 @@ pub fn TeamReports() -> impl IntoView {
     });
 
     let group = RwSignal::new(String::new());
-    let from = RwSignal::new(days_ago_iso(7.0));
-    let to = RwSignal::new(today_iso());
-    let reports: Loadable<Vec<DailyReportDto>> = RwSignal::new(None);
+    let from = RwSignal::new(date::days_ago_iso(7.0));
+    let to = RwSignal::new(date::today_iso());
+    let reports: Loadable<Vec<DailyReportDto>> = Loadable::new();
     // Bumped after a review to force a reload.
     let tick = RwSignal::new(0u32);
 
@@ -525,7 +491,7 @@ pub fn TeamReports() -> impl IntoView {
         <Stack gap=Gap::Lg>
             <div class=head>
                 <div class=theme::class("min-width: 220px;")>
-                    <FieldLabel for_id="dr-group".to_string()>"Group"</FieldLabel>
+                    <FieldLabel for_id="dr-group">"Group"</FieldLabel>
                     <Select value=group on_change=Callback::new(move |v| group.set(v))>
                         <option value="">"— select group —"</option>
                         {move || groups.get().into_iter().map(|g| {
@@ -534,12 +500,12 @@ pub fn TeamReports() -> impl IntoView {
                     </Select>
                 </div>
                 <div class=small.clone()>
-                    <FieldLabel for_id="dr-from".to_string()>"From"</FieldLabel>
-                    <Input value=from on_input=Callback::new(move |v| from.set(v)) type_="date".to_string() />
+                    <FieldLabel for_id="dr-from">"From"</FieldLabel>
+                    <Input value=from on_input=Callback::new(move |v| from.set(v)) type_="date" />
                 </div>
                 <div class=small.clone()>
-                    <FieldLabel for_id="dr-to".to_string()>"To"</FieldLabel>
-                    <Input value=to on_input=Callback::new(move |v| to.set(v)) type_="date".to_string() />
+                    <FieldLabel for_id="dr-to">"To"</FieldLabel>
+                    <Input value=to on_input=Callback::new(move |v| to.set(v)) type_="date" />
                 </div>
             </div>
 
@@ -617,7 +583,7 @@ fn ReviewCard(report: DailyReportDto, on_reviewed: Callback<()>) -> impl IntoVie
     let entries = report.entries.clone();
     let summary = report.summary.clone();
     let owner = report.user.full_name.clone();
-    let date = report.report_date.clone();
+    let date = date::to_iso(report.report_date);
     let status = report.status;
 
     view! {
@@ -645,15 +611,15 @@ fn ReviewCard(report: DailyReportDto, on_reviewed: Callback<()>) -> impl IntoVie
                             <Input
                                 value=note
                                 on_input=Callback::new(move |v| note.set(v))
-                                placeholder="Review note (optional)".to_string()
+                                placeholder="Review note (optional)"
                             />
                             <div class=theme::class(format!("display: flex; gap: {g};", g = space::D2))>
                                 <Button variant=ButtonVariant::Primary size=ButtonSize::Sm
-                                    on_click=Callback::new(move |_| approve(true)) disabled=Signal::derive(move || busy.get())>
+                                    on_click=Callback::new(move |_| approve(true)) disabled=busy>
                                     "Approve"
                                 </Button>
                                 <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm
-                                    on_click=Callback::new(move |_| approve(false)) disabled=Signal::derive(move || busy.get())>
+                                    on_click=Callback::new(move |_| approve(false)) disabled=busy>
                                     "Return"
                                 </Button>
                             </div>
@@ -676,19 +642,4 @@ fn StatusPill(status: DailyReportStatus) -> impl IntoView {
         DailyReportStatus::Returned => BadgeVariant::Danger,
     };
     view! { <Badge variant=variant>{status.label()}</Badge> }
-}
-
-fn section_title_cls() -> String {
-    theme::class(format!(
-        "font-size: {fs}; font-weight: {fw}; color: {c}; text-transform: uppercase; \
-         letter-spacing: 0.04em;",
-        fs = typography::TEXT_LABEL,
-        fw = typography::WEIGHT_SEMIBOLD,
-        c = color::TEXT_MUTED,
-    ))
-}
-
-#[component]
-fn SectionTitle(title: &'static str) -> impl IntoView {
-    view! { <div class=section_title_cls()>{title}</div> }
 }

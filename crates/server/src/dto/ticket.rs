@@ -10,8 +10,6 @@ use shared::dto::{
     },
 };
 
-use super::ticket_id;
-
 #[must_use]
 pub fn ticket_status_dto(status: model::TicketStatus) -> WireTicketStatus {
     match status {
@@ -73,7 +71,7 @@ pub fn ticket_dto(
     assignee: Option<UserSummaryDto>,
 ) -> TicketDto {
     TicketDto {
-        id: ticket_id(ticket.id),
+        id: super::ticket_id(ticket.id),
         requester,
         assignee,
         title: ticket.title.clone(),

@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 use axum::{
     body::{self, Body},
     extract::ConnectInfo,
-    http::{Request, StatusCode, header},
+    http::{HeaderValue, Request, StatusCode, header},
     response::Response,
 };
 use serde::de::DeserializeOwned;
@@ -24,11 +24,9 @@ use shared::dto::{
 };
 
 use server::{
-    app::{cors_layer, router},
+    app,
     middleware::{ip_allowlist::IpAllowlist, rate_limit::RateLimits},
 };
-
-use common::{active_user, default_test_app, test_app};
 
 async fn decode<T: DeserializeOwned>(response: Response) -> T {
     let bytes = body::to_bytes(response.into_body(), usize::MAX)
@@ -64,8 +62,11 @@ fn get_from(uri: &str, peer: &str) -> Request<Body> {
 
 #[tokio::test]
 async fn healthz_returns_ok() {
-    let app = default_test_app();
-    let response = router(app.state).oneshot(get("/healthz")).await.unwrap();
+    let app = common::default_test_app();
+    let response = app::router(app.state)
+        .oneshot(get("/healthz"))
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let bytes = body::to_bytes(response.into_body(), usize::MAX)
         .await
@@ -75,8 +76,11 @@ async fn healthz_returns_ok() {
 
 #[tokio::test]
 async fn protected_route_without_cookie_is_401() {
-    let app = default_test_app();
-    let response = router(app.state).oneshot(get("/api/v1/me")).await.unwrap();
+    let app = common::default_test_app();
+    let response = app::router(app.state)
+        .oneshot(get("/api/v1/me"))
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let body: ApiError = decode(response).await;
     assert_eq!(body.code, ErrorCode::Unauthenticated);
@@ -84,8 +88,8 @@ async fn protected_route_without_cookie_is_401() {
 
 #[tokio::test]
 async fn protected_route_with_garbage_cookie_is_401() {
-    let app = default_test_app();
-    let response = router(app.state)
+    let app = common::default_test_app();
+    let response = app::router(app.state)
         .oneshot(authed_get("/api/v1/me", "not-a-jwt"))
         .await
         .unwrap();
@@ -96,7 +100,7 @@ async fn protected_route_with_garbage_cookie_is_401() {
 
 #[tokio::test]
 async fn login_with_unknown_email_is_401_invalid_credentials() {
-    let app = default_test_app();
+    let app = common::default_test_app();
     let payload = LoginRequest {
         email: "nobody@example.com".to_owned(),
         password: "whatever".to_owned(),
@@ -107,7 +111,7 @@ async fn login_with_unknown_email_is_401_invalid_credentials() {
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(serde_json::to_vec(&payload).unwrap()))
         .unwrap();
-    let response = router(app.state).oneshot(request).await.unwrap();
+    let response = app::router(app.state).oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let body: ApiError = decode(response).await;
     assert_eq!(body.code, ErrorCode::InvalidCredentials);
@@ -115,9 +119,9 @@ async fn login_with_unknown_email_is_401_invalid_credentials() {
 
 #[tokio::test]
 async fn me_with_valid_cookie_but_missing_user_is_404() {
-    let app = default_test_app();
+    let app = common::default_test_app();
     let token = app.state.token.issue(UserId(Uuid::now_v7()), 0);
-    let response = router(app.state)
+    let response = app::router(app.state)
         .oneshot(authed_get("/api/v1/me", &token))
         .await
         .unwrap();
@@ -128,15 +132,15 @@ async fn me_with_valid_cookie_but_missing_user_is_404() {
 
 #[tokio::test]
 async fn me_with_valid_cookie_and_seeded_user_is_200() {
-    let app = default_test_app();
+    let app = common::default_test_app();
     let uid = UserId(Uuid::now_v7());
     app.users
         .users
         .lock()
         .unwrap()
-        .push(active_user(uid, "me@example.com"));
+        .push(common::active_user(uid, "me@example.com"));
     let token = app.state.token.issue(uid, 0);
-    let response = router(app.state)
+    let response = app::router(app.state)
         .oneshot(authed_get("/api/v1/me", &token))
         .await
         .unwrap();
@@ -147,15 +151,15 @@ async fn me_with_valid_cookie_and_seeded_user_is_200() {
 
 #[tokio::test]
 async fn replaying_a_token_after_logout_is_401() {
-    let app = default_test_app();
+    let app = common::default_test_app();
     let uid = UserId(Uuid::now_v7());
     app.users
         .users
         .lock()
         .unwrap()
-        .push(active_user(uid, "replay@example.com"));
+        .push(common::active_user(uid, "replay@example.com"));
     let token = app.state.token.issue(uid, 0);
-    let service = router(app.state);
+    let service = app::router(app.state);
 
     // Logout with the cookie attached denylists its jti server-side.
     let logout = Request::builder()
@@ -178,19 +182,19 @@ async fn replaying_a_token_after_logout_is_401() {
 
 #[tokio::test]
 async fn token_minted_before_a_version_bump_is_401() {
-    let app = default_test_app();
+    let app = common::default_test_app();
     let uid = UserId(Uuid::now_v7());
     app.users
         .users
         .lock()
         .unwrap()
-        .push(active_user(uid, "bumped@example.com"));
+        .push(common::active_user(uid, "bumped@example.com"));
     let token = app.state.token.issue(uid, 0);
 
     // A bump (deactivation, password change) outdates every version-0 token.
     app.revocation.versions.lock().unwrap().insert(uid, 1);
 
-    let response = router(app.state)
+    let response = app::router(app.state)
         .oneshot(authed_get("/api/v1/me", &token))
         .await
         .unwrap();
@@ -202,7 +206,7 @@ async fn token_minted_before_a_version_bump_is_401() {
 #[tokio::test]
 async fn per_user_rate_limit_returns_429() {
     // api ceiling 0: the per-user limiter trips on the first authenticated call.
-    let app = test_app(RateLimits {
+    let app = common::test_app(RateLimits {
         auth: 1000,
         auth_ip: 1000,
         api: 0,
@@ -211,7 +215,7 @@ async fn per_user_rate_limit_returns_429() {
         ext_ip: 1000,
     });
     let token = app.state.token.issue(UserId(Uuid::now_v7()), 0);
-    let response = router(app.state)
+    let response = app::router(app.state)
         .oneshot(authed_get("/api/v1/me", &token))
         .await
         .unwrap();
@@ -222,8 +226,8 @@ async fn per_user_rate_limit_returns_429() {
 
 #[tokio::test]
 async fn unknown_route_is_404() {
-    let app = default_test_app();
-    let response = router(app.state)
+    let app = common::default_test_app();
+    let response = app::router(app.state)
         .oneshot(get("/api/v1/does-not-exist"))
         .await
         .unwrap();
@@ -232,13 +236,13 @@ async fn unknown_route_is_404() {
 
 #[tokio::test]
 async fn allowlisted_peer_passes_gate() {
-    let mut app = default_test_app();
+    let mut app = common::default_test_app();
     app.state.ip_allowlist = IpAllowlist {
         enabled: true,
         nets: ["10.0.0.0/8".parse().unwrap()].into(),
         trusted_proxies: [].into(),
     };
-    let response = router(app.state)
+    let response = app::router(app.state)
         .oneshot(get_from("/healthz", "10.1.2.3:5000"))
         .await
         .unwrap();
@@ -247,13 +251,13 @@ async fn allowlisted_peer_passes_gate() {
 
 #[tokio::test]
 async fn out_of_range_peer_is_403() {
-    let mut app = default_test_app();
+    let mut app = common::default_test_app();
     app.state.ip_allowlist = IpAllowlist {
         enabled: true,
         nets: ["10.0.0.0/8".parse().unwrap()].into(),
         trusted_proxies: [].into(),
     };
-    let response = router(app.state)
+    let response = app::router(app.state)
         .oneshot(get_from("/healthz", "203.0.113.5:5000"))
         .await
         .unwrap();
@@ -265,20 +269,25 @@ async fn out_of_range_peer_is_403() {
 #[tokio::test]
 async fn enabled_gate_without_peer_addr_is_403() {
     // Fail closed: with the gate on and no ConnectInfo, the client is rejected.
-    let mut app = default_test_app();
+    let mut app = common::default_test_app();
     app.state.ip_allowlist = IpAllowlist {
         enabled: true,
         nets: ["10.0.0.0/8".parse().unwrap()].into(),
         trusted_proxies: [].into(),
     };
-    let response = router(app.state).oneshot(get("/healthz")).await.unwrap();
+    let response = app::router(app.state)
+        .oneshot(get("/healthz"))
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
 async fn cors_preflight_reflects_allowed_origin() {
-    let app = default_test_app();
-    let service = router(app.state).layer(cors_layer(&["http://localhost:8080".to_owned()]));
+    let app = common::default_test_app();
+    let service = app::router(app.state).layer(app::cors_layer(&[HeaderValue::from_static(
+        "http://localhost:8080",
+    )]));
     let request = Request::builder()
         .method("OPTIONS")
         .uri("/api/v1/me")

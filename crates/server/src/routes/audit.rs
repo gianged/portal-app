@@ -45,10 +45,7 @@ async fn feed(
         ),
         None => None,
     };
-    let logs = state
-        .audit_service
-        .list_recent(auth.user_id, limit, before)
-        .await?;
+    let logs = state.audit.list_recent(auth.user_id, limit, before).await?;
     Ok(Json(project(&state, &logs).await?))
 }
 
@@ -67,7 +64,7 @@ async fn for_entity(
 ) -> Result<Json<Vec<AuditLogDto>>, AppError> {
     let limit = q.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let logs = state
-        .audit_service
+        .audit
         .list_for_entity(
             auth.user_id,
             &q.entity_schema,

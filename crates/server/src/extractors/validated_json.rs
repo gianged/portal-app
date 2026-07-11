@@ -1,17 +1,15 @@
 //! `ValidatedJson`: a `Json` body extractor that also runs the DTO's
 //! `shared::validation::Validate` impl, so handlers cannot skip validation.
-//! Body rejections keep axum's status (400/413/415/422) but reject with the
-//! same `{ code, message }` body as a validation failure.
+//! Body rejections are mapped by the underlying [`AppJson`], keeping axum's
+//! status (400/413/415/422) with the same `{ code, message }` body as a
+//! validation failure.
 
-use axum::{
-    Json,
-    extract::{FromRequest, Request},
-};
+use axum::extract::{FromRequest, Request};
 use serde::de::DeserializeOwned;
 
 use shared::validation::Validate;
 
-use crate::error::AppError;
+use crate::{error::AppError, extractors::app_json::AppJson};
 
 /// A JSON body that deserialized AND passed its `Validate` impl.
 #[derive(Debug)]
@@ -25,9 +23,7 @@ where
     type Rejection = AppError;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let Json(body) = Json::<T>::from_request(req, state)
-            .await
-            .map_err(|e| AppError::JsonRejection(e.status(), e.body_text()))?;
+        let AppJson(body) = AppJson::<T>::from_request(req, state).await?;
         body.validate()
             .map_err(|e| AppError::Validation(e.to_string()))?;
         Ok(Self(body))

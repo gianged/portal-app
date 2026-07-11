@@ -125,25 +125,25 @@ impl LeaveBalanceRepository for PgLeaveBalanceRepo {
 
     #[tracing::instrument(skip_all, fields(grant = ?grant.id))]
     async fn upsert_grant(&self, grant: &LeaveGrant) -> Result<(), RepositoryError> {
+        let grant_year = i16::try_from(grant.grant_year)
+            .map_err(|_| RepositoryError::Backend("grant_year out of range".into()))?;
         sqlx::query!(
             r#"INSERT INTO attendance.leave_grants
                  (id, user_id, grant_year, days_granted, days_remaining, expires_on,
-                  created_by_user_id, created_at, updated_at)
-               VALUES ($1, $2, $3, $4::float8::numeric, $5::float8::numeric, $6, $7, $8, $9)
+                  created_by_user_id, created_at)
+               VALUES ($1, $2, $3, $4::float8::numeric, $5::float8::numeric, $6, $7, $8)
                ON CONFLICT (id) DO UPDATE SET
                  days_granted   = EXCLUDED.days_granted,
                  days_remaining = EXCLUDED.days_remaining,
-                 expires_on     = EXCLUDED.expires_on,
-                 updated_at     = EXCLUDED.updated_at"#,
+                 expires_on     = EXCLUDED.expires_on"#,
             grant.id.0,
             grant.user_id.0,
-            i16::try_from(grant.grant_year).unwrap_or(i16::MAX),
+            grant_year,
             grant.days_granted,
             grant.days_remaining,
             grant.expires_on,
             grant.created_by.map(|u| u.0),
             grant.created_at,
-            grant.updated_at,
         )
         .execute(&self.pool)
         .await
@@ -159,38 +159,56 @@ impl LeaveBalanceRepository for PgLeaveBalanceRepo {
     ) -> Result<(), RepositoryError> {
         let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
 
-        for (grant_id, delta) in grant_deltas {
+        if !grant_deltas.is_empty() {
+            let ids: Vec<Uuid> = grant_deltas.iter().map(|(g, _)| g.0).collect();
+            let deltas: Vec<f64> = grant_deltas.iter().map(|(_, d)| *d).collect();
             sqlx::query!(
-                r#"UPDATE attendance.leave_grants
-                   SET days_remaining = days_remaining + $1::float8::numeric,
-                       updated_at = NOW()
-                   WHERE id = $2"#,
-                *delta,
-                grant_id.0,
+                r#"UPDATE attendance.leave_grants g
+                   SET days_remaining = g.days_remaining + u.delta::numeric
+                   FROM UNNEST($1::uuid[], $2::float8[]) AS u(id, delta)
+                   WHERE g.id = u.id"#,
+                &ids,
+                &deltas,
             )
             .execute(&mut *tx)
             .await
             .map_err(mappers::map_pg_error)?;
         }
 
-        for t in txns {
-            let kind = SqlLeaveTxnKind::from(t.kind);
+        if !txns.is_empty() {
+            let ids: Vec<Uuid> = txns.iter().map(|t| t.id.0).collect();
+            let user_ids: Vec<Uuid> = txns.iter().map(|t| t.user_id.0).collect();
+            let grant_ids: Vec<Uuid> = txns.iter().map(|t| t.grant_id.0).collect();
+            let kinds: Vec<SqlLeaveTxnKind> = txns.iter().map(|t| t.kind.into()).collect();
+            let deltas: Vec<f64> = txns.iter().map(|t| t.delta).collect();
+            let dayoff_ids: Vec<Option<Uuid>> =
+                txns.iter().map(|t| t.dayoff_id.map(|d| d.0)).collect();
+            let work_pcts: Vec<Option<f64>> = txns.iter().map(|t| t.work_pct).collect();
+            let reasons: Vec<String> = txns.iter().map(|t| t.reason.clone()).collect();
+            let created_bys: Vec<Option<Uuid>> =
+                txns.iter().map(|t| t.created_by.map(|u| u.0)).collect();
+            let created: Vec<OffsetDateTime> = txns.iter().map(|t| t.created_at).collect();
             sqlx::query!(
                 r#"INSERT INTO attendance.leave_transactions
                      (id, user_id, grant_id, kind, delta, dayoff_id, work_pct, reason,
                       created_by_user_id, created_at)
-                   VALUES ($1, $2, $3, $4, $5::float8::numeric, $6,
-                           $7::float8::numeric, $8, $9, $10)"#,
-                t.id.0,
-                t.user_id.0,
-                t.grant_id.0,
-                kind as SqlLeaveTxnKind,
-                t.delta,
-                t.dayoff_id.map(|d| d.0),
-                t.work_pct,
-                t.reason,
-                t.created_by.map(|u| u.0),
-                t.created_at,
+                   SELECT u.id, u.user_id, u.grant_id, u.kind, u.delta::numeric, u.dayoff_id,
+                          u.work_pct::numeric, u.reason, u.created_by_user_id, u.created_at
+                   FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[],
+                               $4::attendance.leave_txn_kind[], $5::float8[], $6::uuid[],
+                               $7::float8[], $8::text[], $9::uuid[], $10::timestamptz[])
+                     AS u(id, user_id, grant_id, kind, delta, dayoff_id, work_pct, reason,
+                          created_by_user_id, created_at)"#,
+                &ids,
+                &user_ids,
+                &grant_ids,
+                kinds as Vec<SqlLeaveTxnKind>,
+                &deltas,
+                dayoff_ids as Vec<Option<Uuid>>,
+                work_pcts as Vec<Option<f64>>,
+                &reasons,
+                created_bys as Vec<Option<Uuid>>,
+                &created,
             )
             .execute(&mut *tx)
             .await

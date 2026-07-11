@@ -29,7 +29,8 @@ pub fn validate_email(email: &str) -> Result<(), SharedError> {
     Ok(())
 }
 
-/// Lightweight client-side password length check (measured in bytes).
+/// Lightweight client-side password length check (counts `char`s, like the
+/// other length validators).
 ///
 /// # Errors
 ///
@@ -39,12 +40,13 @@ pub fn validate_password(password: &str) -> Result<(), SharedError> {
     if password.is_empty() {
         return Err(SharedError::Validation("Password is required".into()));
     }
-    if password.len() < PASSWORD_MIN {
+    let len = password.chars().count();
+    if len < PASSWORD_MIN {
         return Err(SharedError::Validation(format!(
             "Password must be at least {PASSWORD_MIN} characters"
         )));
     }
-    if password.len() > PASSWORD_MAX {
+    if len > PASSWORD_MAX {
         return Err(SharedError::Validation(format!(
             "Password must be at most {PASSWORD_MAX} characters"
         )));

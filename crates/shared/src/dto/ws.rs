@@ -75,9 +75,23 @@ pub enum ServerFrame {
     /// Transport-level error inside the socket (distinct from the HTTP
     /// `ApiError` body); structurally identical so the UI can reuse one path.
     Error {
-        code: String,
+        code: WsErrorCode,
         message: String,
     },
+}
+
+/// Machine-readable code of a [`ServerFrame::Error`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WsErrorCode {
+    BadFrame,
+    Forbidden,
+    SubscribeFailed,
+    RateLimited,
+    SendFailed,
+    /// Forward compatibility: any code this build does not know.
+    #[serde(other)]
+    Unknown,
 }
 
 #[cfg(test)]
@@ -107,5 +121,15 @@ mod tests {
             serde_json::to_string(&ServerFrame::Pong).unwrap(),
             "{\"type\":\"pong\"}"
         );
+    }
+
+    #[test]
+    fn error_code_snake_case_with_unknown_fallback() {
+        assert_eq!(
+            serde_json::to_string(&WsErrorCode::RateLimited).unwrap(),
+            "\"rate_limited\""
+        );
+        let unknown: WsErrorCode = serde_json::from_str("\"brand_new_code\"").unwrap();
+        assert_eq!(unknown, WsErrorCode::Unknown);
     }
 }

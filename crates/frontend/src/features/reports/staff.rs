@@ -2,11 +2,12 @@ use leptos::prelude::*;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use shared::dto::ids::UserId;
 use shared::dto::report::StaffMonthlyReportDto;
 use shared::dto::user::UserRole;
 
 use crate::features::reports::api;
-use crate::features::reports::routes::{metric, month_name, section_title};
+use crate::features::reports::components::{metric, month_name, section_title};
 use crate::primitives::card::Card;
 use crate::primitives::chart::{BarChart, ProgressBar};
 use crate::primitives::cluster::Cluster;
@@ -30,7 +31,7 @@ pub fn StaffMonthlyTab() -> impl IntoView {
         .with_untracked(|u| u.as_ref().map(|u| u.id.0.to_string()))
         .unwrap_or_default();
     let user_input = RwSignal::new(self_id);
-    let report: Loadable<StaffMonthlyReportDto> = RwSignal::new(None);
+    let report: Loadable<StaffMonthlyReportDto> = Loadable::new();
 
     // Leaders / HR / Directors may pull another user's report; the server gates it regardless.
     let can_pick = Signal::derive(move || {
@@ -50,7 +51,7 @@ pub fn StaffMonthlyTab() -> impl IntoView {
     Effect::new(move |_| {
         let (y, m) = (year.get(), month.get());
         match Uuid::parse_str(user_input.get().trim()) {
-            Ok(uid) => load::load(report, api::staff_monthly(uid, y, m)),
+            Ok(uid) => load::load(report, api::staff_monthly(UserId(uid), y, m)),
             Err(_) => report.set(None),
         }
     });

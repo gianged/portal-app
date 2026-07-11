@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::theme::{self, color, radius, space, typography};
+use crate::theme::{self, color, effect, radius, space, typography};
 
 /// Bordered, rounded container for a [`Table`] (and optional [`TableToolbar`] /
 /// footer). Clips the table's corners via `overflow: hidden`.
@@ -12,7 +12,7 @@ pub fn TableWrap(children: Children) -> impl IntoView {
         bg = color::BG_ELEVATED,
         b = color::BORDER,
         r = radius::LG,
-        s = typography::SHADOW_XS,
+        s = effect::SHADOW_XS,
     ));
     view! { <div class=cls>{children()}</div> }
 }

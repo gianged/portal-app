@@ -93,6 +93,12 @@ pub struct MessageDto {
     pub created_at: OffsetDateTime,
 }
 
+/// Body of `POST /chat/direct`: opens (or returns) the DM with `user_id`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct OpenDirectRequest {
+    pub user_id: UserId,
+}
+
 /// Maps to `application::commands::PostMessageCommand` (channel from the path).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendMessageRequest {

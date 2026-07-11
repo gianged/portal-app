@@ -3,6 +3,7 @@
 use uuid::Uuid;
 
 use shared::dto::audit::AuditLogDto;
+use shared::dto::ids::{ProjectId, RequestId, TicketId};
 
 use crate::api::client;
 use crate::api::error::FrontendError;
@@ -32,14 +33,14 @@ async fn for_entity(
     client::get_json(&format!("/audit{q}")).await
 }
 
-pub async fn request_trail(id: Uuid, limit: u32) -> Result<Vec<AuditLogDto>, FrontendError> {
-    for_entity("project", "requests", id, limit).await
+pub async fn request_trail(id: RequestId, limit: u32) -> Result<Vec<AuditLogDto>, FrontendError> {
+    for_entity("project", "requests", id.0, limit).await
 }
 
-pub async fn ticket_trail(id: Uuid, limit: u32) -> Result<Vec<AuditLogDto>, FrontendError> {
-    for_entity("ticket", "tickets", id, limit).await
+pub async fn ticket_trail(id: TicketId, limit: u32) -> Result<Vec<AuditLogDto>, FrontendError> {
+    for_entity("ticket", "tickets", id.0, limit).await
 }
 
-pub async fn project_trail(id: Uuid, limit: u32) -> Result<Vec<AuditLogDto>, FrontendError> {
-    for_entity("project", "projects", id, limit).await
+pub async fn project_trail(id: ProjectId, limit: u32) -> Result<Vec<AuditLogDto>, FrontendError> {
+    for_entity("project", "projects", id.0, limit).await
 }

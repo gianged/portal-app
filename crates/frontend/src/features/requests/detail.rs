@@ -1,7 +1,7 @@
 //! Work-request detail: status-gated lifecycle actions, the assignee picker, and attachment upload, plus the comment thread and audit trail.
 
 use futures::{FutureExt, future::LocalBoxFuture};
-use leptos::{ev::MouseEvent, html::Input as HtmlInputEl, prelude::*, task};
+use leptos::{ev::MouseEvent, prelude::*, task};
 use web_sys::{Blob, FormData};
 
 use shared::dto::ids::{RequestId, UserId};
@@ -11,33 +11,20 @@ use crate::api::error::FrontendError;
 use crate::features::audit::components::{AuditTrailPanel, TrailKind};
 use crate::features::comments::{CommentTarget, CommentThread};
 use crate::features::requests::api;
-use crate::features::requests::components::{heading, subtle};
-use crate::features::ui;
+use crate::features::ui::{self, ProgressEditor};
 use crate::features::users::picker::UserPicker;
 use crate::primitives::badge::Badge;
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
-use crate::primitives::chart::ProgressBar;
 use crate::primitives::cluster::Cluster;
 use crate::primitives::dialog::{Dialog, DialogBody, DialogFooter, DialogHeader};
 use crate::primitives::icon::{Icon, IconName};
-use crate::primitives::input::Input;
 use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
 use crate::state::toast::ToastState;
 use crate::theme::{self, color, space, typography};
 use crate::util::format;
 use crate::util::load::{self, Loadable};
-
-fn human_size(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{bytes} B")
-    } else if bytes < 1024 * 1024 {
-        format!("{:.0} KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    }
-}
 
 /// What the signed-in viewer is to this request; drives which lifecycle
 /// actions render. The server stays authoritative.
@@ -77,13 +64,13 @@ fn action_future(
 pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
     let auth = use_context::<AuthState>().expect("AuthState context");
-    let detail: Loadable<RequestDetailDto> = RwSignal::new(None);
+    let detail: Loadable<RequestDetailDto> = Loadable::new();
     let reload = RwSignal::new(0u32);
     let assign_open = RwSignal::new(false);
     let assign_target = RwSignal::new(None::<UserId>);
     let assign_busy = RwSignal::new(false);
     let busy = RwSignal::new(false);
-    let file_ref: NodeRef<HtmlInputEl> = NodeRef::new();
+    let file_ref: NodeRef<leptos::html::Input> = NodeRef::new();
 
     Effect::new(move |_| {
         let _ = reload.get();
@@ -153,6 +140,7 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
         };
         let form = FormData::new().expect("FormData is constructible in the browser");
         let blob: &Blob = file.as_ref();
+        // append on a fresh FormData cannot fail
         let _ = form.append_with_blob_and_filename("file", blob, &file.name());
         task::spawn_local(async move {
             match api::upload_attachment(rid, form).await {
@@ -183,9 +171,9 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                     let status = r.status;
                     let priority = r.priority;
                     let progress = r.progress;
-                    let title_v = title_block(&r.title);
+                    let title_v = ui::page_title(&r.title);
                     let meta_v = meta_line(r);
-                    let desc_v = desc_block(&r.description);
+                    let desc_v = ui::desc_block(&r.description);
                     let caps = auth.user.with_untracked(|u| ViewerCaps {
                         is_creator: u.as_ref().map(|x| x.id) == Some(r.creator.id),
                         is_assignee: u.as_ref().map(|x| x.id)
@@ -196,7 +184,21 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                     let attach_v = attachments_card(&d, pick_file, upload, file_ref);
                     let progress_editor = if caps.is_assignee && status == RequestStatus::InProgress {
                         if let Some(rid) = id.get_untracked() {
-                            view! { <ProgressEditor id=rid initial=progress reload=reload /> }.into_any()
+                            let saving = RwSignal::new(false);
+                            let on_save = Callback::new(move |p: u8| {
+                                saving.set(true);
+                                task::spawn_local(async move {
+                                    match api::set_progress(rid, p).await {
+                                        Ok(_) => {
+                                            toast.success("Progress updated");
+                                            reload.update(|n| *n += 1);
+                                        }
+                                        Err(e) => toast.error_from(&e),
+                                    }
+                                    saving.set(false);
+                                });
+                            });
+                            view! { <ProgressEditor initial=progress on_save=on_save saving=saving /> }.into_any()
                         } else {
                             ().into_any()
                         }
@@ -215,7 +217,7 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                                         </Cluster>
                                     </Cluster>
                                     {meta_v}
-                                    {progress_row(progress)}
+                                    {ui::progress_row(progress)}
                                     {desc_v}
                                 </Stack>
                             </Card>
@@ -368,7 +370,7 @@ fn attachments_card(
     detail: &RequestDetailDto,
     pick_file: Callback<MouseEvent>,
     upload: Callback<()>,
-    file_ref: NodeRef<HtmlInputEl>,
+    file_ref: NodeRef<leptos::html::Input>,
 ) -> AnyView {
     let hidden_input = theme::class("display: none;");
     let rows = detail
@@ -398,7 +400,7 @@ fn attachments_card(
                 <div class=row>
                     <Icon name=IconName::Paperclip size=14 />
                     <span class=name>{a.filename.clone()}</span>
-                    <span class=meta>{human_size(a.size_bytes)}</span>
+                    <span class=meta>{format::human_size(a.size_bytes)}</span>
                 </div>
             }
         })
@@ -409,7 +411,7 @@ fn attachments_card(
         <Card>
             <Stack gap=Gap::Md>
                 <Cluster gap=Gap::Sm justify="space-between".to_string()>
-                    {heading("Attachments")}
+                    {ui::section_heading("Attachments")}
                     <Button variant=ButtonVariant::Secondary size=ButtonSize::Sm on_click=pick_file>
                         <Icon name=IconName::Paperclip size=14 /> "Upload"
                     </Button>
@@ -417,7 +419,7 @@ fn attachments_card(
                 {if has {
                     view! { <div>{rows}</div> }.into_any()
                 } else {
-                    subtle("No attachments yet.")
+                    ui::subtle("No attachments yet.")
                 }}
                 <input
                     type="file"
@@ -429,18 +431,6 @@ fn attachments_card(
         </Card>
     }
     .into_any()
-}
-
-fn title_block(title: &str) -> AnyView {
-    let cls = theme::class(format!(
-        "font-family: {ff}; font-size: {fs}; font-weight: {fw}; color: {c}; margin: 0; \
-         letter-spacing: -0.015em;",
-        ff = typography::FONT_SANS,
-        fs = typography::TEXT_H2,
-        fw = typography::WEIGHT_SEMIBOLD,
-        c = color::TEXT_STRONG,
-    ));
-    view! { <h2 class=cls>{title.to_owned()}</h2> }.into_any()
 }
 
 fn meta_line(r: &RequestDto) -> AnyView {
@@ -460,86 +450,4 @@ fn meta_line(r: &RequestDto) -> AnyView {
         <div class=cls>{format!("Created by {creator} · {created} · Assignee: {assignee}")}</div>
     }
     .into_any()
-}
-
-fn progress_row(progress: u8) -> AnyView {
-    let wrap = theme::class("display: flex; align-items: center; gap: 12px;");
-    let label = theme::class(format!(
-        "font-family: {ff}; font-size: {fs}; color: {c}; white-space: nowrap;",
-        ff = typography::FONT_SANS,
-        fs = typography::TEXT_CAPTION,
-        c = color::TEXT_MUTED,
-    ));
-    let bar = theme::class("flex: 1; max-width: 260px;");
-    view! {
-        <div class=wrap>
-            <span class=label>{format!("Progress {progress}%")}</span>
-            <div class=bar>
-                <ProgressBar value=Signal::derive(move || progress) />
-            </div>
-        </div>
-    }
-    .into_any()
-}
-
-#[component]
-fn ProgressEditor(id: RequestId, initial: u8, reload: RwSignal<u32>) -> impl IntoView {
-    let toast = use_context::<ToastState>().expect("ToastState context");
-    let value = RwSignal::new(initial.to_string());
-    let saving = RwSignal::new(false);
-    let on_input = Callback::new(move |v: String| value.set(v));
-    let save = Callback::new(move |_| {
-        if saving.get_untracked() {
-            return;
-        }
-        let Ok(p) = value.get_untracked().trim().parse::<u8>() else {
-            toast.error("Progress must be a whole number between 0 and 100.");
-            return;
-        };
-        if p > 100 {
-            toast.error("Progress must be between 0 and 100.");
-            return;
-        }
-        saving.set(true);
-        task::spawn_local(async move {
-            match api::set_progress(id, p).await {
-                Ok(_) => {
-                    toast.success("Progress updated");
-                    reload.update(|n| *n += 1);
-                }
-                Err(e) => toast.error_from(&e),
-            }
-            saving.set(false);
-        });
-    });
-    let input_wrap = theme::class("width: 110px;");
-    view! {
-        <Card>
-            <Stack gap=Gap::Sm>
-                <Cluster gap=Gap::Sm>
-                    <div class=input_wrap>
-                        <Input value=value on_input=on_input placeholder="0-100" />
-                    </div>
-                    <Button
-                        variant=ButtonVariant::Primary
-                        size=ButtonSize::Sm
-                        on_click=save
-                        disabled=Signal::derive(move || saving.get())
-                    >
-                        "Save progress"
-                    </Button>
-                </Cluster>
-            </Stack>
-        </Card>
-    }
-}
-
-fn desc_block(description: &str) -> AnyView {
-    let cls = theme::class(format!(
-        "font-family: {ff}; font-size: {fs}; color: {c}; line-height: 1.55; white-space: pre-wrap;",
-        ff = typography::FONT_SANS,
-        fs = typography::TEXT_SMALL,
-        c = color::TEXT,
-    ));
-    view! { <p class=cls>{description.to_owned()}</p> }.into_any()
 }

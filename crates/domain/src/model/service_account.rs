@@ -33,7 +33,7 @@ impl ServiceAccountStatus {
     pub const fn try_revoke(self) -> Result<Self, TransitionError> {
         match self {
             Self::Active => Ok(Self::Revoked),
-            Self::Revoked => Err(TransitionError::invalid("revoked", "revoke")),
+            Self::Revoked => Err(TransitionError::invalid("revoked", "revoked")),
         }
     }
 }

@@ -79,6 +79,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::case_sensitive_file_extension_comparisons)]
     fn long_names_keep_their_extension() {
         let long = format!("{}.tar.gz", "a".repeat(300));
         let out = super::sanitize_filename(&long).unwrap();

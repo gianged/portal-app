@@ -1,11 +1,10 @@
 //! Chat REST wrappers: channel list, DM open, message history, and send/edit fallbacks; live delivery is over the WebSocket ([`crate::api::ws`]).
 
-use serde::Serialize;
 use web_sys::FormData;
 
 use shared::dto::chat::{
     ChannelDto, ChannelSummaryDto, ChatAttachmentDto, EditMessageRequest, MessageDto,
-    SendMessageRequest,
+    OpenDirectRequest, SendMessageRequest,
 };
 use shared::dto::ids::{ChannelId, MessageId, UserId};
 
@@ -17,14 +16,9 @@ pub async fn channels() -> Result<Vec<ChannelSummaryDto>, FrontendError> {
     client::get_json("/chat/channels").await
 }
 
-#[derive(Serialize)]
-struct OpenDirect {
-    user_id: UserId,
-}
-
 /// Open (or fetch) the direct channel with another user.
 pub async fn open_direct(user: UserId) -> Result<ChannelDto, FrontendError> {
-    client::post_json("/chat/direct", &OpenDirect { user_id: user }).await
+    client::post_json("/chat/direct", &OpenDirectRequest { user_id: user }).await
 }
 
 /// A page of message history, newest first. `before` pages backwards.
@@ -53,6 +47,7 @@ pub async fn send(
     client::post_json(&format!("/chat/channels/{}/messages", channel.0), req).await
 }
 
+/// Edit one of the caller's own messages.
 pub async fn edit(
     channel: ChannelId,
     message: MessageId,
@@ -65,6 +60,7 @@ pub async fn edit(
     .await
 }
 
+/// Delete one of the caller's own messages.
 pub async fn delete(channel: ChannelId, message: MessageId) -> Result<(), FrontendError> {
     client::del(&format!(
         "/chat/channels/{}/messages/{}",
@@ -73,6 +69,7 @@ pub async fn delete(channel: ChannelId, message: MessageId) -> Result<(), Fronte
     .await
 }
 
+/// Mark the channel read up to now.
 pub async fn mark_read(channel: ChannelId) -> Result<(), FrontendError> {
     client::post_no_content(&format!("/chat/channels/{}/read", channel.0)).await
 }

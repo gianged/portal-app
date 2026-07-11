@@ -4,7 +4,7 @@ use time::OffsetDateTime;
 use shared::dto::report::YearlyReportDto;
 
 use crate::features::reports::api;
-use crate::features::reports::routes::{metric, month_abbr, section_title};
+use crate::features::reports::components::{metric, month_abbr, section_title};
 use crate::primitives::button::{Button, ButtonSize, ButtonVariant};
 use crate::primitives::card::Card;
 use crate::primitives::chart::{LineChart, Series, series_color};
@@ -16,12 +16,13 @@ use crate::state::toast::ToastState;
 use crate::theme::{self, color, typography};
 use crate::util::load::{self, Loadable};
 
+/// `refresh` is bumped after a successful PDF generation so the archive reloads.
 #[component]
-pub fn YearlyTab() -> impl IntoView {
+pub fn YearlyTab(refresh: RwSignal<u32>) -> impl IntoView {
     let toast = use_context::<ToastState>().expect("ToastState context");
     let now = OffsetDateTime::now_utc();
     let year = RwSignal::new(now.year());
-    let report: Loadable<YearlyReportDto> = RwSignal::new(None);
+    let report: Loadable<YearlyReportDto> = Loadable::new();
     let download = RwSignal::new(None::<String>);
     let generating = RwSignal::new(false);
 
@@ -49,7 +50,10 @@ pub fn YearlyTab() -> impl IntoView {
         let y = year.get_untracked();
         task::spawn_local(async move {
             match api::generate_yearly(y).await {
-                Ok(summary) => download.set(Some(summary.download_url)),
+                Ok(summary) => {
+                    download.set(Some(summary.download_url));
+                    refresh.update(|n| *n += 1);
+                }
                 Err(e) => toast.error_from(&e),
             }
             generating.set(false);
@@ -105,6 +109,7 @@ fn month_labels() -> Vec<String> {
     (1..=12u8).map(|m| month_abbr(m).to_owned()).collect()
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn yearly_view(data: &YearlyReportDto) -> AnyView {
     let totals = data.totals;
     let labels = month_labels();

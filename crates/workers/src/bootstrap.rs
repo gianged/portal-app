@@ -31,7 +31,7 @@ use infrastructure::{
         EmailEnvelope, NotificationEnvelope,
     },
     local_storage::LocalStorage,
-    mailer::{LogMailer, SmtpMailer, SmtpTls},
+    mailer::{LogMailer, SmtpMailer},
     openfga::{self, OpenFgaAuthzClient},
     postgres::{
         self, PgAuditRepo, PgChatAttachmentRepo, PgDayOffRepo, PgFlexRepo, PgGroupRepo,
@@ -211,30 +211,25 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     let audit: Arc<dyn AuditRepository> = Arc::new(PgAuditRepo::new(pool.clone()));
     let audit_projector = Arc::new(AuditProjector::new(audit));
 
-    // SMTP when enabled, log-only otherwise (config validated host/from).
-    let mailer: Arc<dyn Mailer> = if cfg.email_enabled {
-        let tls = match cfg.smtp_tls.as_str() {
-            "none" => SmtpTls::None,
-            _ => SmtpTls::StartTls,
-        };
-        Arc::new(
+    // SMTP when configured, log-only otherwise.
+    let mailer: Arc<dyn Mailer> = match &cfg.email {
+        Some(smtp) => Arc::new(
             SmtpMailer::new(
-                cfg.smtp_host.as_deref().unwrap_or_default(),
-                cfg.smtp_port,
-                cfg.smtp_username.as_deref(),
-                cfg.smtp_password.as_deref(),
-                cfg.smtp_from.as_deref().unwrap_or_default(),
-                tls,
+                &smtp.host,
+                smtp.port,
+                smtp.username.as_deref(),
+                smtp.password.as_deref(),
+                &smtp.from,
+                smtp.tls,
             )
             .context("building smtp mailer")?,
-        )
-    } else {
-        Arc::new(LogMailer)
+        ),
+        None => Arc::new(LogMailer),
     };
     let notifier = Arc::new(EmailNotifier::new(
         users.clone(),
         Arc::new(ApalisEmailQueue::new(email_store.clone())),
-        cfg.portal_base_url.clone(),
+        &cfg.portal_base_url,
     ));
     // Dedicated queue handle for the report scheduler's email fan-out.
     let email_queue: Arc<dyn JobQueue> = Arc::new(ApalisEmailQueue::new(email_store.clone()));

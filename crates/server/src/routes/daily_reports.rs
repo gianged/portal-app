@@ -7,14 +7,15 @@ use axum::{
     routing,
 };
 use serde::Deserialize;
-use uuid::Uuid;
+use time::Date;
 
 use domain::{
     ids::{DailyReportId, GroupId, UserId},
     model::DailyReport,
 };
-use shared::dto::daily_report::{
-    DailyReportDto, ReviewDailyReportRequest, UpsertDailyReportRequest,
+use shared::dto::{
+    daily_report::{DailyReportDto, ReviewDailyReportRequest, UpsertDailyReportRequest},
+    ids as wire,
 };
 
 use crate::{
@@ -22,7 +23,7 @@ use crate::{
     dto,
     error::AppError,
     extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
-    resolve, routes,
+    resolve,
 };
 
 pub fn router() -> Router<AppState> {
@@ -39,8 +40,8 @@ pub fn router() -> Router<AppState> {
 
 #[derive(Deserialize)]
 struct RangeQuery {
-    from: String,
-    to: String,
+    from: Date,
+    to: Date,
 }
 
 async fn list_mine(
@@ -48,9 +49,10 @@ async fn list_mine(
     auth: AuthUser,
     Query(q): Query<RangeQuery>,
 ) -> Result<Json<Vec<DailyReportDto>>, AppError> {
-    let from = routes::parse_date(&q.from)?;
-    let to = routes::parse_date(&q.to)?;
-    let reports = state.daily_report.list_mine(auth.user_id, from, to).await?;
+    let reports = state
+        .daily_report
+        .list_mine(auth.user_id, q.from, q.to)
+        .await?;
     Ok(Json(many(&state, reports).await?))
 }
 
@@ -59,9 +61,8 @@ async fn list_mine(
 async fn get_by_date(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(date): Path<String>,
+    Path(date): Path<Date>,
 ) -> Result<Json<Option<DailyReportDto>>, AppError> {
-    let date = routes::parse_date(&date)?;
     let report = state
         .daily_report
         .list_mine(auth.user_id, date, date)
@@ -77,10 +78,9 @@ async fn get_by_date(
 async fn upsert(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(date): Path<String>,
+    Path(date): Path<Date>,
     ValidatedJson(body): ValidatedJson<UpsertDailyReportRequest>,
 ) -> Result<Json<DailyReportDto>, AppError> {
-    let date = routes::parse_date(&date)?;
     let cmd = dto::upsert_daily_report_command(date, body);
     let report = state.daily_report.upsert_draft(auth.user_id, cmd).await?;
     Ok(Json(single(&state, &report).await?))
@@ -89,11 +89,11 @@ async fn upsert(
 async fn submit(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::DailyReportId>,
 ) -> Result<Json<DailyReportDto>, AppError> {
     let report = state
         .daily_report
-        .submit(auth.user_id, DailyReportId(id))
+        .submit(auth.user_id, DailyReportId(id.0))
         .await?;
     Ok(Json(single(&state, &report).await?))
 }
@@ -101,14 +101,14 @@ async fn submit(
 async fn review(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::DailyReportId>,
     ValidatedJson(body): ValidatedJson<ReviewDailyReportRequest>,
 ) -> Result<Json<DailyReportDto>, AppError> {
     let report = state
         .daily_report
         .review(
             auth.user_id,
-            DailyReportId(id),
+            DailyReportId(id.0),
             dto::review_daily_report_command(body),
         )
         .await?;
@@ -118,14 +118,12 @@ async fn review(
 async fn list_for_group(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::GroupId>,
     Query(q): Query<RangeQuery>,
 ) -> Result<Json<Vec<DailyReportDto>>, AppError> {
-    let from = routes::parse_date(&q.from)?;
-    let to = routes::parse_date(&q.to)?;
     let reports = state
         .daily_report
-        .list_for_group(auth.user_id, GroupId(id), from, to)
+        .list_for_group(auth.user_id, GroupId(id.0), q.from, q.to)
         .await?;
     Ok(Json(many(&state, reports).await?))
 }

@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::{
     commands::day_off::{CreateDayOffCommand, DecideDayOffCommand},
-    error::{Error, Result},
+    error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
     service::leave_balance::LeaveBalanceService,
@@ -80,7 +80,7 @@ impl DayOffService {
         if cmd.kind.consumes_balance() {
             let available = self.leave.available(actor, today).await?;
             if available + f64::EPSILON < days {
-                return Err(Error::Conflict("insufficient_leave_balance".into()));
+                return Err(Error::Conflict(ConflictCode::InsufficientLeaveBalance));
             }
         }
 
@@ -161,7 +161,7 @@ impl DayOffService {
         self.perms.require_hr(actor).await?;
         let mut day_off = self.load(id).await?;
         if day_off.status != DayOffStatus::LeaderApproved {
-            return Err(Error::Conflict("not_awaiting_hr".into()));
+            return Err(Error::Conflict(ConflictCode::NotAwaitingHr));
         }
         let now = OffsetDateTime::now_utc();
         if cmd.approve {
@@ -180,10 +180,10 @@ impl DayOffService {
     }
 
     /// Requester cancels their own non-terminal request, refunding any consumed
-    /// balance.
+    /// balance. Emits `DayOffCancelled`.
     ///
     /// # Errors
-    /// Returns `NotFound` if the request is missing, `Forbidden` if the actor is not the requester, `Transition` if the request is terminal, or a repository error if the datastore is unavailable.
+    /// Returns `NotFound` if the request is missing, `Forbidden` if the actor is not the requester, `Transition` if the request is terminal, or a repository / event error if a backend is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, id = ?id))]
     pub async fn cancel(&self, actor: UserId, id: DayOffId) -> Result<DayOff> {
         let mut day_off = self.load(id).await?;
@@ -198,6 +198,13 @@ impl DayOffService {
             self.leave.refund(day_off.id).await?;
         }
         self.dayoffs.save(&day_off).await?;
+        self.events
+            .emit(DomainEvent::DayOffCancelled {
+                dayoff_id: day_off.id,
+                user_id: day_off.requester_user_id,
+                at: now,
+            })
+            .await?;
         Ok(day_off)
     }
 

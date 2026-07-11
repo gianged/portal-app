@@ -3,7 +3,10 @@ use std::{env, net::SocketAddr, path::PathBuf};
 use anyhow::Context;
 use time::Duration;
 
-use infrastructure::telemetry::{LogFormat, TelemetryConfig};
+use infrastructure::{
+    mailer::SmtpTls,
+    telemetry::{LogFormat, TelemetryConfig},
+};
 
 /// Telemetry settings, read separately so the log sinks stand up before the rest
 /// of config is parsed.
@@ -14,6 +17,7 @@ pub fn telemetry_config() -> TelemetryConfig {
         file_prefix: "workers".to_owned(),
         service_name: "portal-workers".to_owned(),
         format: LogFormat::from_env(&optional("LOG_FORMAT", "tree")),
+        filter: env::var("RUST_LOG").ok().filter(|s| !s.is_empty()),
         otlp_endpoint: env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
             .ok()
             .filter(|s| !s.is_empty()),
@@ -51,17 +55,9 @@ pub struct Config {
     pub ticket_autoclose_window: Duration,
     /// How often the ticket auto-close sweep runs.
     pub ticket_autoclose_interval: std::time::Duration,
-    /// When false (the dev default) emails are logged, not sent, and no SMTP
-    /// settings are needed.
-    pub email_enabled: bool,
-    pub smtp_host: Option<String>,
-    pub smtp_port: u16,
-    pub smtp_username: Option<String>,
-    pub smtp_password: Option<String>,
-    /// From address; required when email is enabled.
-    pub smtp_from: Option<String>,
-    /// `starttls` (default) or `none` for plain in-network relays.
-    pub smtp_tls: String,
+    /// SMTP settings when email sending is enabled; `None` (the dev default)
+    /// means emails are logged, not sent.
+    pub email: Option<SmtpConfig>,
     /// Public frontend origin used for the links inside emails.
     pub portal_base_url: String,
     /// When false, the monthly report scheduler does not run.
@@ -82,6 +78,17 @@ pub struct Config {
     pub flex_recon_interval: std::time::Duration,
 }
 
+/// SMTP settings, fully validated at parse time.
+pub struct SmtpConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    /// From address on outgoing mail.
+    pub from: String,
+    pub tls: SmtpTls,
+}
+
 /// Parses worker configuration from the process environment.
 ///
 /// # Errors
@@ -97,22 +104,16 @@ pub fn from_env() -> anyhow::Result<Config> {
     let retention_days: i64 = optional("NOTIFICATION_RETENTION_DAYS", "30")
         .parse()
         .context("invalid NOTIFICATION_RETENTION_DAYS")?;
-    let cleanup_interval_hours: u64 = optional("CLEANUP_INTERVAL_HOURS", "24")
-        .parse()
-        .context("invalid CLEANUP_INTERVAL_HOURS")?;
+    let cleanup_interval = interval_hours("CLEANUP_INTERVAL_HOURS", "24")?;
     let upload_grace_hours: i64 = optional("UPLOAD_ORPHAN_GRACE_HOURS", "24")
         .parse()
         .context("invalid UPLOAD_ORPHAN_GRACE_HOURS")?;
-    let upload_sweep_interval_hours: u64 = optional("UPLOAD_SWEEP_INTERVAL_HOURS", "6")
-        .parse()
-        .context("invalid UPLOAD_SWEEP_INTERVAL_HOURS")?;
+    let upload_sweep_interval = interval_hours("UPLOAD_SWEEP_INTERVAL_HOURS", "6")?;
     // Default mirrors the domain's 7-day reopen window (Ticket::reopen).
     let ticket_autoclose_days: i64 = optional("TICKET_AUTOCLOSE_DAYS", "7")
         .parse()
         .context("invalid TICKET_AUTOCLOSE_DAYS")?;
-    let ticket_autoclose_interval_hours: u64 = optional("TICKET_AUTOCLOSE_INTERVAL_HOURS", "1")
-        .parse()
-        .context("invalid TICKET_AUTOCLOSE_INTERVAL_HOURS")?;
+    let ticket_autoclose_interval = interval_hours("TICKET_AUTOCLOSE_INTERVAL_HOURS", "1")?;
 
     let report_enabled: bool = optional("REPORT_ENABLED", "true")
         .parse()
@@ -120,12 +121,14 @@ pub fn from_env() -> anyhow::Result<Config> {
     let report_schedule_day: u8 = optional("REPORT_SCHEDULE_DAY", "1")
         .parse()
         .context("invalid REPORT_SCHEDULE_DAY")?;
-    let report_schedule_interval_hours: u64 = optional("REPORT_SCHEDULE_INTERVAL_HOURS", "24")
-        .parse()
-        .context("invalid REPORT_SCHEDULE_INTERVAL_HOURS")?;
+    let report_schedule_interval = interval_hours("REPORT_SCHEDULE_INTERVAL_HOURS", "24")?;
     let health_probe_interval_secs: u64 = optional("HEALTH_PROBE_INTERVAL_SECS", "5")
         .parse()
         .context("invalid HEALTH_PROBE_INTERVAL_SECS")?;
+    anyhow::ensure!(
+        health_probe_interval_secs > 0,
+        "HEALTH_PROBE_INTERVAL_SECS must be > 0"
+    );
 
     // OpenFGA wiring for the leave service; mirrors the server's store/model resolution.
     let openfga_bearer_token = env::var("OPENFGA_BEARER_TOKEN")
@@ -143,9 +146,7 @@ pub fn from_env() -> anyhow::Result<Config> {
     let leave_expiry_enabled: bool = optional("LEAVE_EXPIRY_ENABLED", "true")
         .parse()
         .context("invalid LEAVE_EXPIRY_ENABLED (expected true/false)")?;
-    let leave_expiry_interval_hours: u64 = optional("LEAVE_EXPIRY_INTERVAL_HOURS", "24")
-        .parse()
-        .context("invalid LEAVE_EXPIRY_INTERVAL_HOURS")?;
+    let leave_expiry_interval = interval_hours("LEAVE_EXPIRY_INTERVAL_HOURS", "24")?;
 
     let grpc_addr: SocketAddr = optional("WORKERS_GRPC_ADDR", "0.0.0.0:50052")
         .parse()
@@ -154,25 +155,9 @@ pub fn from_env() -> anyhow::Result<Config> {
     let flex_recon_enabled: bool = optional("FLEX_RECON_ENABLED", "true")
         .parse()
         .context("invalid FLEX_RECON_ENABLED (expected true/false)")?;
-    let flex_recon_interval_hours: u64 = optional("FLEX_RECON_INTERVAL_HOURS", "24")
-        .parse()
-        .context("invalid FLEX_RECON_INTERVAL_HOURS")?;
+    let flex_recon_interval = interval_hours("FLEX_RECON_INTERVAL_HOURS", "24")?;
 
-    let email_enabled: bool = optional("EMAIL_ENABLED", "false")
-        .parse()
-        .context("invalid EMAIL_ENABLED (expected true/false)")?;
-    let smtp_host = env::var("SMTP_HOST").ok().filter(|s| !s.is_empty());
-    let smtp_from = env::var("SMTP_FROM").ok().filter(|s| !s.is_empty());
-    let smtp_tls = optional("SMTP_TLS", "starttls");
-    if !matches!(smtp_tls.as_str(), "starttls" | "none") {
-        anyhow::bail!("invalid SMTP_TLS (expected starttls or none)");
-    }
-    if email_enabled && smtp_host.is_none() {
-        anyhow::bail!("EMAIL_ENABLED=true requires SMTP_HOST");
-    }
-    if email_enabled && smtp_from.is_none() {
-        anyhow::bail!("EMAIL_ENABLED=true requires SMTP_FROM");
-    }
+    let email = smtp_from_env()?;
 
     Ok(Config {
         database_url: required("DATABASE_URL")?,
@@ -195,34 +180,62 @@ pub fn from_env() -> anyhow::Result<Config> {
         grpc_addr,
         internal_grpc_token: required_secret("INTERNAL_GRPC_TOKEN")?,
         notification_retention: Duration::days(retention_days),
-        cleanup_interval: std::time::Duration::from_secs(cleanup_interval_hours * 3600),
+        cleanup_interval,
         upload_grace: Duration::hours(upload_grace_hours),
-        upload_sweep_interval: std::time::Duration::from_secs(upload_sweep_interval_hours * 3600),
+        upload_sweep_interval,
         ticket_autoclose_window: Duration::days(ticket_autoclose_days),
-        ticket_autoclose_interval: std::time::Duration::from_secs(
-            ticket_autoclose_interval_hours * 3600,
-        ),
-        email_enabled,
-        smtp_host,
-        smtp_port: optional("SMTP_PORT", "587")
-            .parse()
-            .context("invalid SMTP_PORT")?,
-        smtp_username: env::var("SMTP_USERNAME").ok().filter(|s| !s.is_empty()),
-        smtp_password: env::var("SMTP_PASSWORD").ok().filter(|s| !s.is_empty()),
-        smtp_from,
-        smtp_tls,
+        ticket_autoclose_interval,
+        email,
         portal_base_url: optional("PORTAL_BASE_URL", "http://localhost:8081"),
         report_enabled,
         report_schedule_day,
-        report_schedule_interval: std::time::Duration::from_secs(
-            report_schedule_interval_hours * 3600,
-        ),
+        report_schedule_interval,
         health_probe_interval: std::time::Duration::from_secs(health_probe_interval_secs),
         leave_expiry_enabled,
-        leave_expiry_interval: std::time::Duration::from_secs(leave_expiry_interval_hours * 3600),
+        leave_expiry_interval,
         flex_recon_enabled,
-        flex_recon_interval: std::time::Duration::from_secs(flex_recon_interval_hours * 3600),
+        flex_recon_interval,
     })
+}
+
+/// Parses the SMTP settings; `None` when `EMAIL_ENABLED` is false.
+fn smtp_from_env() -> anyhow::Result<Option<SmtpConfig>> {
+    let enabled: bool = optional("EMAIL_ENABLED", "false")
+        .parse()
+        .context("invalid EMAIL_ENABLED (expected true/false)")?;
+    let tls = match optional("SMTP_TLS", "starttls").as_str() {
+        "starttls" => SmtpTls::StartTls,
+        "none" => SmtpTls::None,
+        _ => anyhow::bail!("invalid SMTP_TLS (expected starttls or none)"),
+    };
+    if !enabled {
+        return Ok(None);
+    }
+    Ok(Some(SmtpConfig {
+        host: env::var("SMTP_HOST")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .context("EMAIL_ENABLED=true requires SMTP_HOST")?,
+        port: optional("SMTP_PORT", "587")
+            .parse()
+            .context("invalid SMTP_PORT")?,
+        username: env::var("SMTP_USERNAME").ok().filter(|s| !s.is_empty()),
+        password: env::var("SMTP_PASSWORD").ok().filter(|s| !s.is_empty()),
+        from: env::var("SMTP_FROM")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .context("EMAIL_ENABLED=true requires SMTP_FROM")?,
+        tls,
+    }))
+}
+
+/// Hours-valued sweep interval; rejects zero, which would panic `tokio::time::interval`.
+fn interval_hours(key: &str, default: &str) -> anyhow::Result<std::time::Duration> {
+    let hours: u64 = optional(key, default)
+        .parse()
+        .with_context(|| format!("invalid {key}"))?;
+    anyhow::ensure!(hours > 0, "{key} must be > 0");
+    Ok(std::time::Duration::from_secs(hours * 3600))
 }
 
 fn required(key: &str) -> anyhow::Result<String> {
@@ -238,7 +251,7 @@ fn required_secret(key: &str) -> anyhow::Result<String> {
     let value = required(key)?;
     if value.len() < 32 || value.starts_with("change-me") {
         anyhow::bail!(
-            "{key} must be a random secret of at least 32 bytes — generate one with \
+            "{key} must be a random secret of at least 32 bytes; generate one with \
              `openssl rand -hex 32`"
         );
     }

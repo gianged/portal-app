@@ -64,7 +64,7 @@ pub fn Tab(
         }
     };
     view! {
-        <button class=cls role="tab" on:click=handle>
+        <button class=cls role="tab" aria-selected=move || active.get().to_string() on:click=handle>
             {children()}
             {count.map(|n| view! { <span class=count_cls.clone()>{n}</span> })}
         </button>

@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use uuid::Uuid;
-
 use domain::{
     ids::{ProjectId, RequestId},
     model::{MonthlyReportData, Project, Request, YearlyReportData},
@@ -16,16 +14,37 @@ use crate::{
 const DEFAULT_LIMIT: u32 = 100;
 const MAX_LIMIT: u32 = 500;
 
-/// One keyset page; `next_cursor` is the last item's id when the page came
-/// back full, i.e. more rows may remain.
-pub struct Page<T> {
-    pub items: Vec<T>,
-    pub next_cursor: Option<Uuid>,
+/// Keyset identity of a listable entity: which id newtype cursors a page of
+/// `Self`, so a request cursor cannot be fed into a project listing.
+pub trait Keyed {
+    type Id: Copy;
+    fn key(&self) -> Self::Id;
 }
 
-fn page<T>(items: Vec<T>, limit: u32, id_of: impl Fn(&T) -> Uuid) -> Page<T> {
+impl Keyed for Project {
+    type Id = ProjectId;
+    fn key(&self) -> ProjectId {
+        self.id
+    }
+}
+
+impl Keyed for Request {
+    type Id = RequestId;
+    fn key(&self) -> RequestId {
+        self.id
+    }
+}
+
+/// One keyset page; `next_cursor` is the last item's id when the page came
+/// back full, i.e. more rows may remain.
+pub struct Page<T: Keyed> {
+    pub items: Vec<T>,
+    pub next_cursor: Option<T::Id>,
+}
+
+fn page<T: Keyed>(items: Vec<T>, limit: u32) -> Page<T> {
     let next_cursor = if items.len() == limit as usize {
-        items.last().map(id_of)
+        items.last().map(Keyed::key)
     } else {
         None
     };
@@ -75,7 +94,7 @@ impl ReadPlaneService {
     ) -> Result<Page<Project>> {
         let limit = clamp_limit(limit);
         let rows = self.projects.list_page(after, limit).await?;
-        Ok(page(rows, limit, |p| p.id.0))
+        Ok(page(rows, limit))
     }
 
     /// # Errors
@@ -101,7 +120,7 @@ impl ReadPlaneService {
     ) -> Result<Page<Request>> {
         let limit = clamp_limit(limit);
         let rows = self.requests.list_page(project, after, limit).await?;
-        Ok(page(rows, limit, |r| r.id.0))
+        Ok(page(rows, limit))
     }
 
     /// # Errors
@@ -118,13 +137,13 @@ impl ReadPlaneService {
     /// Returns `Validation` for an invalid month, or a repository error.
     #[tracing::instrument(skip_all, fields(year, month))]
     pub async fn monthly_report(&self, year: i32, month: u8) -> Result<MonthlyReportData> {
-        self.report.monthly_stats(year, month).await
+        self.report.monthly_stats_unscoped(year, month).await
     }
 
     /// # Errors
     /// Returns `Validation` for an invalid year, or a repository error.
     #[tracing::instrument(skip_all, fields(year))]
     pub async fn yearly_report(&self, year: i32) -> Result<YearlyReportData> {
-        self.report.yearly_stats(year).await
+        self.report.yearly_stats_unscoped(year).await
     }
 }

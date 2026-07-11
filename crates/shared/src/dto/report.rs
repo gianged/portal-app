@@ -9,12 +9,12 @@ use crate::dto::{
 /// Mirrors `domain::model::ReportKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ReportKindDto {
+pub enum ReportKind {
     Monthly,
     Yearly,
 }
 
-impl ReportKindDto {
+impl ReportKind {
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -153,7 +153,7 @@ pub struct StaffMonthlyReportDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReportSummaryDto {
     pub id: ReportId,
-    pub kind: ReportKindDto,
+    pub kind: ReportKind,
     #[serde(with = "time::serde::rfc3339")]
     pub period_start: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]

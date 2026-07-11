@@ -2,13 +2,9 @@ use std::sync::{Arc, LazyLock};
 
 use argon2::{
     Argon2,
-    password_hash::{
-        Error as PwHashError, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
-        rand_core::OsRng,
-    },
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use domain::{
-    error::RepositoryError,
     ids::UserId,
     model::{ChannelKind, GroupRole, RequestStatus, User, UserStatus},
     ports::token_revocation::TokenRevocation,
@@ -20,7 +16,7 @@ use uuid::Uuid;
 
 use crate::{
     commands::user::{CreateUserCommand, UpdateProfileCommand},
-    error::{Error, Result},
+    error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
 };
@@ -86,16 +82,16 @@ impl UserService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not HR, `Conflict` if the email is
-    /// already in use, a repository error if the datastore or authz backend is
-    /// unavailable or password hashing fails, or an event error if the event bus
-    /// fails.
+    /// already in use, `Internal` if password hashing fails, a repository error
+    /// if the datastore or authz backend is unavailable, or an event error if
+    /// the event bus fails.
     #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn create_user(&self, actor: UserId, cmd: CreateUserCommand) -> Result<User> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
 
         if self.users.find_by_email(&cmd.email).await?.is_some() {
-            return Err(Error::Conflict("email_already_in_use".into()));
+            return Err(Error::Conflict(ConflictCode::EmailAlreadyInUse));
         }
 
         let password_hash = hash_password(cmd.password).await?;
@@ -168,10 +164,11 @@ impl UserService {
     /// (via [`Self::complete_first_login`]) and returned activated.
     ///
     /// # Errors
-    /// Returns a repository error if the datastore is unavailable or the stored
-    /// password hash cannot be parsed or verified, and propagates the errors of
-    /// first-login activation when a `Pending` user is promoted. Unknown email,
-    /// wrong password, and deactivated accounts yield `Ok(None)`, not an error.
+    /// Returns a repository error if the datastore is unavailable, `Internal` if
+    /// the stored password hash cannot be parsed or verified, and propagates the
+    /// errors of first-login activation when a `Pending` user is promoted.
+    /// Unknown email, wrong password, and deactivated accounts yield `Ok(None)`,
+    /// not an error.
     #[tracing::instrument(skip_all)]
     pub async fn login(&self, email: &str, password: &str) -> Result<Option<User>> {
         let Some(user) = self.users.find_by_email(email).await? else {
@@ -193,13 +190,14 @@ impl UserService {
     }
 
     /// Deactivates a user, dropping their memberships and org-role tuples.
+    /// Retry-safe: an already deactivated target re-runs the remaining cleanup.
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the target does
     /// not exist, `Conflict` if the target still leads a group or has open
-    /// requests assigned, `Transition` if the user cannot be deactivated from its
-    /// current state, a repository error if the datastore or authz backend is
-    /// unavailable, or an event error if the event bus fails.
+    /// requests assigned, `Transition` if the target is still `Pending`, a
+    /// repository error if the datastore or authz backend is unavailable, or an
+    /// event error if the event bus fails.
     #[tracing::instrument(skip_all, fields(actor = ?actor, target = ?target))]
     pub async fn deactivate_user(&self, actor: UserId, target: UserId) -> Result<()> {
         self.perms.require_hr(actor).await?;
@@ -213,7 +211,7 @@ impl UserService {
 
         let memberships = self.groups.list_active_memberships_for_user(target).await?;
         if memberships.iter().any(|m| m.role == GroupRole::Leader) {
-            return Err(Error::Conflict("transfer_leadership_first".into()));
+            return Err(Error::Conflict(ConflictCode::TransferLeadershipFirst));
         }
         for status in OPEN_REQUEST_STATUSES {
             let open = self
@@ -221,12 +219,16 @@ impl UserService {
                 .list_for_assignee(target, Some(*status), None)
                 .await?;
             if !open.is_empty() {
-                return Err(Error::Conflict("reassign_open_requests".into()));
+                return Err(Error::Conflict(ConflictCode::ReassignOpenRequests));
             }
         }
 
-        user.deactivate(now)?;
-        self.users.save(&user).await?;
+        // An already-deactivated target skips the transition so a partially
+        // failed run can resume; every cleanup step below is idempotent.
+        if user.status != UserStatus::Deactivated {
+            user.deactivate(now)?;
+            self.users.save(&user).await?;
+        }
         // Invalidate every session token the user still holds; status checks
         // alone leave read endpoints open until token expiry.
         self.revocation.bump_version(target).await?;
@@ -350,7 +352,8 @@ impl UserService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not active, `Validation` if the
-    /// current password is wrong, `NotFound` if the actor row is missing, or a
+    /// current password is wrong, `NotFound` if the actor row is missing,
+    /// `Internal` if password hashing or verification fails, or a
     /// repository/event error from the backends.
     #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn change_password(
@@ -389,7 +392,8 @@ impl UserService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the target
-    /// does not exist, or a repository/event error from the backends.
+    /// does not exist, `Internal` if password hashing fails, or a
+    /// repository/event error from the backends.
     #[tracing::instrument(skip_all, fields(actor = ?actor, target = ?target))]
     pub async fn admin_reset_password(
         &self,
@@ -437,15 +441,6 @@ impl UserService {
         Ok(self.users.find_by_ids(ids).await?)
     }
 
-    /// Looks up a user by email, returning `None` if it does not exist.
-    ///
-    /// # Errors
-    /// Returns a repository error if the datastore is unavailable.
-    #[tracing::instrument(skip_all)]
-    pub async fn find_by_email(&self, email: &str) -> Result<Option<User>> {
-        Ok(self.users.find_by_email(email).await?)
-    }
-
     /// Lists active users with pagination; `q` filters by name/email substring.
     ///
     /// # Errors
@@ -464,20 +459,12 @@ async fn hash_password(password: impl Into<String>) -> Result<String> {
         let salt = SaltString::generate(&mut OsRng);
         let hash = Argon2::default()
             .hash_password(password.as_bytes(), &salt)
-            .map_err(|e| {
-                Error::Repository(RepositoryError::Backend(format!(
-                    "password hash failed: {e}"
-                )))
-            })?
+            .map_err(|e| Error::Internal(format!("password hash failed: {e}")))?
             .to_string();
         Ok(hash)
     })
     .await
-    .map_err(|e| {
-        Error::Repository(RepositoryError::Backend(format!(
-            "password hash task failed: {e}"
-        )))
-    })?
+    .map_err(|e| Error::Internal(format!("password hash task failed: {e}")))?
 }
 
 /// Burns an argon2 verification against a fixed decoy hash so the unknown-email
@@ -507,24 +494,15 @@ async fn verify_password(hash: impl Into<String>, password: impl Into<String>) -
     let hash = hash.into();
     let password = password.into();
     task::spawn_blocking(move || {
-        let parsed = PasswordHash::new(&hash).map_err(|e| {
-            Error::Repository(RepositoryError::Backend(format!(
-                "invalid stored password hash: {e}"
-            )))
-        })?;
+        let parsed = PasswordHash::new(&hash)
+            .map_err(|e| Error::Internal(format!("invalid stored password hash: {e}")))?;
         match Argon2::default().verify_password(password.as_bytes(), &parsed) {
             Ok(()) => Ok(true),
             // A mismatch is the expected "wrong password" path, not an error.
-            Err(PwHashError::Password) => Ok(false),
-            Err(e) => Err(Error::Repository(RepositoryError::Backend(format!(
-                "password verify failed: {e}"
-            )))),
+            Err(argon2::password_hash::Error::Password) => Ok(false),
+            Err(e) => Err(Error::Internal(format!("password verify failed: {e}"))),
         }
     })
     .await
-    .map_err(|e| {
-        Error::Repository(RepositoryError::Backend(format!(
-            "password verify task failed: {e}"
-        )))
-    })?
+    .map_err(|e| Error::Internal(format!("password verify task failed: {e}")))?
 }

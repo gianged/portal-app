@@ -21,6 +21,16 @@ use time::OffsetDateTime;
 
 use crate::error::Result;
 
+// Topic names shared by `DomainEvent::topic` and the routing arrays below.
+const TOPIC_USER: &str = "portal.user";
+const TOPIC_GROUP: &str = "portal.group";
+const TOPIC_PROJECT: &str = "portal.project";
+const TOPIC_REQUEST: &str = "portal.request";
+const TOPIC_TICKET: &str = "portal.ticket";
+const TOPIC_CHAT: &str = "portal.chat";
+const TOPIC_ANNOUNCEMENT: &str = "portal.announcement";
+const TOPIC_ATTENDANCE: &str = "portal.attendance";
+
 /// A business fact emitted by an application service after a successful state change.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -331,6 +341,11 @@ pub enum DomainEvent {
         actor: UserId,
         at: OffsetDateTime,
     },
+    DayOffCancelled {
+        dayoff_id: DayOffId,
+        user_id: UserId,
+        at: OffsetDateTime,
+    },
 
     OvertimeRequested {
         overtime_id: OvertimeId,
@@ -342,6 +357,11 @@ pub enum DomainEvent {
         requester: UserId,
         status: OvertimeStatus,
         actor: UserId,
+        at: OffsetDateTime,
+    },
+    OvertimeCancelled {
+        overtime_id: OvertimeId,
+        requester: UserId,
         at: OffsetDateTime,
     },
 
@@ -357,12 +377,17 @@ pub enum DomainEvent {
         actor: UserId,
         at: OffsetDateTime,
     },
+    FlexCancelled {
+        flex_id: FlexHoursId,
+        user_id: UserId,
+        at: OffsetDateTime,
+    },
     /// System warning that a user's approved flex hours do not net to the monthly
     /// expected total; no actor.
     FlexMonthUnreconciled {
         user_id: UserId,
         year: i32,
-        month: u32,
+        month: u8,
         at: OffsetDateTime,
     },
 }
@@ -377,43 +402,43 @@ impl DomainEvent {
             | Self::UserReactivated { .. }
             | Self::UserProfileUpdated { .. }
             | Self::UserPasswordChanged { .. }
-            | Self::UserPasswordReset { .. } => "portal.user",
+            | Self::UserPasswordReset { .. } => TOPIC_USER,
             Self::GroupCreated { .. }
             | Self::GroupDeleted { .. }
             | Self::GroupMetadataUpdated { .. }
             | Self::MembershipAdded { .. }
             | Self::MembershipRoleChanged { .. }
             | Self::MembershipDeactivated { .. }
-            | Self::LeadershipTransferred { .. } => "portal.group",
+            | Self::LeadershipTransferred { .. } => TOPIC_GROUP,
             Self::ProjectCreated { .. }
             | Self::ProjectMetadataUpdated { .. }
             | Self::ProjectStatusChanged { .. }
             | Self::ProjectInviteSent { .. }
             | Self::ProjectInviteResponded { .. }
-            | Self::ProjectCollaboratorRemoved { .. } => "portal.project",
+            | Self::ProjectCollaboratorRemoved { .. } => TOPIC_PROJECT,
             Self::RequestCreated { .. }
             | Self::RequestMetadataUpdated { .. }
             | Self::RequestAssigned { .. }
             | Self::RequestStatusChanged { .. }
-            | Self::RequestProgressUpdated { .. } => "portal.request",
+            | Self::RequestProgressUpdated { .. } => TOPIC_REQUEST,
             Self::TicketRaised { .. }
             | Self::TicketTriaged { .. }
             | Self::TicketAssigned { .. }
             | Self::TicketStatusChanged { .. }
-            | Self::TicketAutoClosed { .. } => "portal.ticket",
+            | Self::TicketAutoClosed { .. } => TOPIC_TICKET,
             // Comments route by parent, reusing its already-notified/audited topic.
             Self::CommentAdded { entity, .. }
             | Self::CommentEdited { entity, .. }
             | Self::CommentDeleted { entity, .. } => match entity {
-                CommentEntity::Request { .. } => "portal.request",
-                CommentEntity::Ticket { .. } => "portal.ticket",
+                CommentEntity::Request { .. } => TOPIC_REQUEST,
+                CommentEntity::Ticket { .. } => TOPIC_TICKET,
             },
             Self::MessagePosted { .. }
             | Self::MessageEdited { .. }
-            | Self::MessageDeleted { .. } => "portal.chat",
+            | Self::MessageDeleted { .. } => TOPIC_CHAT,
             Self::AnnouncementPosted { .. }
             | Self::AnnouncementEdited { .. }
-            | Self::AnnouncementDeleted { .. } => "portal.announcement",
+            | Self::AnnouncementDeleted { .. } => TOPIC_ANNOUNCEMENT,
             Self::AttendancePolicyUpdated { .. }
             | Self::DailyReportSubmitted { .. }
             | Self::DailyReportReviewed { .. }
@@ -421,11 +446,14 @@ impl DomainEvent {
             | Self::LeaveBalanceExpiring { .. }
             | Self::DayOffRequested { .. }
             | Self::DayOffDecided { .. }
+            | Self::DayOffCancelled { .. }
             | Self::OvertimeRequested { .. }
             | Self::OvertimeDecided { .. }
+            | Self::OvertimeCancelled { .. }
             | Self::FlexRequested { .. }
             | Self::FlexDecided { .. }
-            | Self::FlexMonthUnreconciled { .. } => "portal.attendance",
+            | Self::FlexCancelled { .. }
+            | Self::FlexMonthUnreconciled { .. } => TOPIC_ATTENDANCE,
         }
     }
 }
@@ -433,21 +461,21 @@ impl DomainEvent {
 /// Topics whose events are mirrored onto the durable job queue for the worker to
 /// fan out as notifications.
 const NOTIFY_TOPICS: &[&str] = &[
-    "portal.ticket",
-    "portal.announcement",
-    "portal.request",
-    "portal.project",
-    "portal.chat",
+    TOPIC_TICKET,
+    TOPIC_ANNOUNCEMENT,
+    TOPIC_REQUEST,
+    TOPIC_PROJECT,
+    TOPIC_CHAT,
 ];
 
 /// Topics whose events are projected into the immutable audit log (Postgres-backed
 /// entities only; `portal.chat` / `portal.announcement` live in Scylla).
 const AUDIT_TOPICS: &[&str] = &[
-    "portal.user",
-    "portal.group",
-    "portal.project",
-    "portal.request",
-    "portal.ticket",
+    TOPIC_USER,
+    TOPIC_GROUP,
+    TOPIC_PROJECT,
+    TOPIC_REQUEST,
+    TOPIC_TICKET,
 ];
 
 /// Dispatches every [`DomainEvent`] to a broadcast publisher (Redis pub/sub) and a

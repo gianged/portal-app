@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use time::{Date, OffsetDateTime};
 
 use crate::dto::{
     common::UserSummaryDto,
@@ -38,6 +38,9 @@ pub enum DailyReportEntryKind {
 }
 
 impl DailyReportEntryKind {
+    /// Every variant, for building select options.
+    pub const ALL: [Self; 3] = [Self::RequestWork, Self::Learning, Self::Other];
+
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -45,6 +48,22 @@ impl DailyReportEntryKind {
             Self::Learning => "Learning",
             Self::Other => "Other",
         }
+    }
+
+    /// Canonical wire string (the serde `snake_case` tag).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RequestWork => "request_work",
+            Self::Learning => "learning",
+            Self::Other => "other",
+        }
+    }
+
+    /// Parses a wire string produced by [`Self::as_str`].
+    #[must_use]
+    pub fn from_wire(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|v| v.as_str() == s)
     }
 }
 
@@ -65,7 +84,7 @@ pub struct DailyReportEntryDto {
 pub struct DailyReportDto {
     pub id: DailyReportId,
     pub user: UserSummaryDto,
-    pub report_date: String,
+    pub report_date: Date,
     pub status: DailyReportStatus,
     pub summary: String,
     pub entries: Vec<DailyReportEntryDto>,
@@ -103,5 +122,22 @@ pub struct UpsertDailyReportRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewDailyReportRequest {
     pub approve: bool,
+    #[serde(default)]
     pub note: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DailyReportEntryKind;
+
+    #[test]
+    fn wire_helpers_match_serde() {
+        for k in DailyReportEntryKind::ALL {
+            assert_eq!(
+                serde_json::to_string(&k).unwrap(),
+                format!("\"{}\"", k.as_str())
+            );
+            assert_eq!(DailyReportEntryKind::from_wire(k.as_str()), Some(k));
+        }
+    }
 }

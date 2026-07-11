@@ -102,6 +102,16 @@ impl PolicyRepository for PgPolicyRepo {
         updated_by: UserId,
     ) -> Result<(), RepositoryError> {
         let expiry = SqlBalanceExpiryPolicy::from(policy.balance_expiry_policy);
+        let flex_max_segments = i16::try_from(policy.flex_max_segments)
+            .map_err(|_| RepositoryError::Backend("flex_max_segments out of range".into()))?;
+        let flex_max_per_month = i16::try_from(policy.flex_max_per_month)
+            .map_err(|_| RepositoryError::Backend("flex_max_per_month out of range".into()))?;
+        let balance_carry_years = i16::try_from(policy.balance_carry_years)
+            .map_err(|_| RepositoryError::Backend("balance_carry_years out of range".into()))?;
+        let balance_expiry_warn_days =
+            i16::try_from(policy.balance_expiry_warn_days).map_err(|_| {
+                RepositoryError::Backend("balance_expiry_warn_days out of range".into())
+            })?;
         let result = sqlx::query!(
             r#"UPDATE attendance.policy SET
                  workday_start                = $1,
@@ -128,12 +138,12 @@ impl PolicyRepository for PgPolicyRepo {
             policy.flex_daily_max,
             policy.flex_earliest_start,
             policy.flex_latest_end,
-            i16::try_from(policy.flex_max_segments).unwrap_or(i16::MAX),
-            i16::try_from(policy.flex_max_per_month).unwrap_or(i16::MAX),
+            flex_max_segments,
+            flex_max_per_month,
             policy.overtime_max_hours_per_month,
-            i16::try_from(policy.balance_carry_years).unwrap_or(i16::MAX),
+            balance_carry_years,
             expiry as SqlBalanceExpiryPolicy,
-            i16::try_from(policy.balance_expiry_warn_days).unwrap_or(i16::MAX),
+            balance_expiry_warn_days,
             updated_by.0,
         )
         .execute(&self.pool)

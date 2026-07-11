@@ -4,12 +4,6 @@
 use domain::model;
 use shared::dto::notification::{NotificationDto, NotificationPayloadDto};
 
-use super::{
-    channel_id_wire, comment_id, message_id, notification_id, project_id, project_invite_id,
-    project_invite_status_dto, request_id, request_status_dto, ticket_id, ticket_status_dto,
-    user_id,
-};
-
 #[must_use]
 pub fn notification_payload_dto(payload: &model::NotificationPayload) -> NotificationPayloadDto {
     match payload {
@@ -17,26 +11,26 @@ pub fn notification_payload_dto(payload: &model::NotificationPayload) -> Notific
             announcement_id,
             channel_id,
         } => NotificationPayloadDto::Announcement {
-            announcement_id: message_id(*announcement_id),
-            channel_id: channel_id_wire(*channel_id),
+            announcement_id: super::message_id(*announcement_id),
+            channel_id: super::channel_id(*channel_id),
         },
         model::NotificationPayload::Mention {
             message_id: msg,
             channel_id,
             mentioned_by,
         } => NotificationPayloadDto::Mention {
-            message_id: message_id(*msg),
-            channel_id: channel_id_wire(*channel_id),
-            mentioned_by: user_id(*mentioned_by),
+            message_id: super::message_id(*msg),
+            channel_id: super::channel_id(*channel_id),
+            mentioned_by: super::user_id(*mentioned_by),
         },
         model::NotificationPayload::TicketUrgent { ticket_id: tid } => {
             NotificationPayloadDto::TicketUrgent {
-                ticket_id: ticket_id(*tid),
+                ticket_id: super::ticket_id(*tid),
             }
         }
         model::NotificationPayload::RequestAssigned { request_id: rid } => {
             NotificationPayloadDto::RequestAssigned {
-                request_id: request_id(*rid),
+                request_id: super::request_id(*rid),
             }
         }
         model::NotificationPayload::RequestStatusChange {
@@ -44,20 +38,20 @@ pub fn notification_payload_dto(payload: &model::NotificationPayload) -> Notific
             from,
             to,
         } => NotificationPayloadDto::RequestStatusChange {
-            request_id: request_id(*rid),
-            from: request_status_dto(*from),
-            to: request_status_dto(*to),
+            request_id: super::request_id(*rid),
+            from: super::request_status_dto(*from),
+            to: super::request_status_dto(*to),
         },
         model::NotificationPayload::ProjectInvite {
             invite_id,
             project_id: pid,
         } => NotificationPayloadDto::ProjectInvite {
-            invite_id: project_invite_id(*invite_id),
-            project_id: project_id(*pid),
+            invite_id: super::project_invite_id(*invite_id),
+            project_id: super::project_id(*pid),
         },
         model::NotificationPayload::TicketAssigned { ticket_id: tid } => {
             NotificationPayloadDto::TicketAssigned {
-                ticket_id: ticket_id(*tid),
+                ticket_id: super::ticket_id(*tid),
             }
         }
         model::NotificationPayload::TicketStatusChange {
@@ -65,37 +59,37 @@ pub fn notification_payload_dto(payload: &model::NotificationPayload) -> Notific
             from,
             to,
         } => NotificationPayloadDto::TicketStatusChange {
-            ticket_id: ticket_id(*tid),
-            from: ticket_status_dto(*from),
-            to: ticket_status_dto(*to),
+            ticket_id: super::ticket_id(*tid),
+            from: super::ticket_status_dto(*from),
+            to: super::ticket_status_dto(*to),
         },
         model::NotificationPayload::ProjectInviteResponse {
             invite_id,
             project_id: pid,
             status,
         } => NotificationPayloadDto::ProjectInviteResponse {
-            invite_id: project_invite_id(*invite_id),
-            project_id: project_id(*pid),
-            status: project_invite_status_dto(*status),
+            invite_id: super::project_invite_id(*invite_id),
+            project_id: super::project_id(*pid),
+            status: super::project_invite_status_dto(*status),
         },
         model::NotificationPayload::TicketRaised { ticket_id: tid } => {
             NotificationPayloadDto::TicketRaised {
-                ticket_id: ticket_id(*tid),
+                ticket_id: super::ticket_id(*tid),
             }
         }
         model::NotificationPayload::RequestComment {
             request_id: rid,
             comment_id: cid,
         } => NotificationPayloadDto::RequestComment {
-            request_id: request_id(*rid),
-            comment_id: comment_id(*cid),
+            request_id: super::request_id(*rid),
+            comment_id: super::comment_id(*cid),
         },
         model::NotificationPayload::TicketComment {
             ticket_id: tid,
             comment_id: cid,
         } => NotificationPayloadDto::TicketComment {
-            ticket_id: ticket_id(*tid),
-            comment_id: comment_id(*cid),
+            ticket_id: super::ticket_id(*tid),
+            comment_id: super::comment_id(*cid),
         },
         model::NotificationPayload::System { message } => NotificationPayloadDto::System {
             message: message.clone(),
@@ -106,7 +100,7 @@ pub fn notification_payload_dto(payload: &model::NotificationPayload) -> Notific
 #[must_use]
 pub fn notification_dto(notification: &model::Notification) -> NotificationDto {
     NotificationDto {
-        id: notification_id(notification.id),
+        id: super::notification_id(notification.id),
         payload: notification_payload_dto(&notification.payload),
         read: notification.read_at.is_some(),
         created_at: notification.created_at,

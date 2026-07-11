@@ -46,4 +46,14 @@ pub trait GroupRepository: Send + Sync {
     ) -> Result<Vec<Membership>, RepositoryError>;
 
     async fn save_membership(&self, membership: &Membership) -> Result<(), RepositoryError>;
+
+    /// Persists a batch of memberships in order. Default loops `save_membership`;
+    /// transactional backends override so the rows commit or fail as one unit
+    /// (backs multi-row role changes like leadership transfer).
+    async fn save_memberships(&self, memberships: &[Membership]) -> Result<(), RepositoryError> {
+        for membership in memberships {
+            self.save_membership(membership).await?;
+        }
+        Ok(())
+    }
 }

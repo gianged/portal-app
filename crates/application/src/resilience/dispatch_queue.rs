@@ -64,16 +64,16 @@ impl DispatchQueue {
         queue: &str,
         payload: &[u8],
     ) -> bool {
-        if !breaker.acquire() {
+        let Some(permit) = breaker.acquire() else {
             return false;
-        }
+        };
         match queue_impl.enqueue(queue, payload).await {
             Ok(()) => {
-                breaker.record_success();
+                permit.record_success();
                 true
             }
             Err(e) => {
-                breaker.record_failure();
+                permit.record_failure();
                 tracing::warn!(hop, queue, error = %e, "job dispatch hop failed");
                 false
             }
@@ -162,7 +162,7 @@ mod tests {
             Ok(())
         }
 
-        async fn drain(&self, _max: usize) -> Result<Vec<SpoolEntry>, SpoolError> {
+        async fn peek(&self, _max: usize) -> Result<Vec<SpoolEntry>, SpoolError> {
             Ok(Vec::new())
         }
 

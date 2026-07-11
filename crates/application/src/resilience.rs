@@ -10,7 +10,7 @@ mod health_registry;
 mod supervisor;
 
 pub use backoff::Backoff;
-pub use circuit::{CircuitBreaker, CircuitConfig};
+pub use circuit::{CircuitBreaker, CircuitConfig, Permit};
 pub use dispatch_queue::{DispatchQueue, SpooledJob};
 pub use drainer::{Drainer, DrainerConfig};
 pub use health_registry::HealthRegistry;

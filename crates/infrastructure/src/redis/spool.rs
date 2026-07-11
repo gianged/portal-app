@@ -8,7 +8,7 @@ use domain::{
     ports::spool::{Spool, SpoolEntry, SpoolId},
 };
 
-use crate::redis::connect_manager;
+use super::connect;
 
 /// Namespaced key holding one spool's backlog list.
 fn spool_key(name: &str) -> String {
@@ -19,7 +19,7 @@ fn spool_key(name: &str) -> String {
 /// `LTRIM` to drop acked entries. Redis is the chosen backend because it stays up
 /// while the Postgres/Scylla outage being guarded against is in progress.
 ///
-/// Assumes a single drainer: [`Spool::drain`] returns head-relative ids and
+/// Assumes a single drainer: [`Spool::peek`] returns head-relative ids and
 /// [`Spool::ack`] trims that many entries off the head, which is only correct
 /// when one consumer drains and acks a contiguous head prefix.
 #[derive(Clone)]
@@ -30,7 +30,7 @@ pub struct RedisSpool {
 
 impl RedisSpool {
     pub async fn new(url: &str, name: &str) -> Result<Self, SpoolError> {
-        let conn = connect_manager(url).await.map_err(backend)?;
+        let conn = connect::connect_manager(url).await.map_err(backend)?;
         Ok(Self {
             conn,
             key: spool_key(name),
@@ -53,7 +53,7 @@ impl Spool for RedisSpool {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn drain(&self, max: usize) -> Result<Vec<SpoolEntry>, SpoolError> {
+    async fn peek(&self, max: usize) -> Result<Vec<SpoolEntry>, SpoolError> {
         if max == 0 {
             return Ok(Vec::new());
         }

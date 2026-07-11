@@ -180,7 +180,7 @@ impl FlexHoursRepository for PgFlexRepo {
         &self,
         user: UserId,
         year: i32,
-        month: u32,
+        month: u8,
     ) -> Result<u32, RepositoryError> {
         let (first, last) = mappers::month_bounds(year, month)?;
         let row = sqlx::query!(
@@ -205,7 +205,7 @@ impl FlexHoursRepository for PgFlexRepo {
         &self,
         user: UserId,
         year: i32,
-        month: u32,
+        month: u8,
     ) -> Result<f64, RepositoryError> {
         let (first, last) = mappers::month_bounds(year, month)?;
         let row = sqlx::query!(
@@ -257,7 +257,7 @@ impl FlexHoursRepository for PgFlexRepo {
     async fn users_with_approved_flex_in_month(
         &self,
         year: i32,
-        month: u32,
+        month: u8,
     ) -> Result<Vec<UserId>, RepositoryError> {
         let (first, last) = mappers::month_bounds(year, month)?;
         let rows = sqlx::query!(
@@ -283,15 +283,14 @@ impl FlexHoursRepository for PgFlexRepo {
         sqlx::query!(
             r#"INSERT INTO attendance.flex_hours
                  (id, user_id, work_date, status, leader_user_id, decided_at,
-                  decision_note, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                  decision_note, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                ON CONFLICT (id) DO UPDATE SET
                  work_date      = EXCLUDED.work_date,
                  status         = EXCLUDED.status,
                  leader_user_id = EXCLUDED.leader_user_id,
                  decided_at     = EXCLUDED.decided_at,
-                 decision_note  = EXCLUDED.decision_note,
-                 updated_at     = EXCLUDED.updated_at"#,
+                 decision_note  = EXCLUDED.decision_note"#,
             flex.id.0,
             flex.user_id.0,
             flex.work_date,
@@ -300,7 +299,6 @@ impl FlexHoursRepository for PgFlexRepo {
             flex.decided_at,
             flex.decision_note,
             flex.created_at,
-            flex.updated_at,
         )
         .execute(&mut *tx)
         .await
@@ -314,15 +312,29 @@ impl FlexHoursRepository for PgFlexRepo {
         .await
         .map_err(mappers::map_pg_error)?;
 
-        for seg in &flex.segments {
+        if !flex.segments.is_empty() {
+            let ids: Vec<Uuid> = flex.segments.iter().map(|s| s.id.0).collect();
+            let flex_ids: Vec<Uuid> = flex.segments.iter().map(|s| s.flex_id.0).collect();
+            let seqs: Vec<i16> = flex
+                .segments
+                .iter()
+                .map(|s| {
+                    i16::try_from(s.seq)
+                        .map_err(|_| RepositoryError::Backend("seq out of range".into()))
+                })
+                .collect::<Result<_, _>>()?;
+            let starts: Vec<Time> = flex.segments.iter().map(|s| s.start).collect();
+            let ends: Vec<Time> = flex.segments.iter().map(|s| s.end).collect();
             sqlx::query!(
                 r#"INSERT INTO attendance.flex_segments (id, flex_id, seq, start_at, end_at)
-                   VALUES ($1, $2, $3, $4, $5)"#,
-                seg.id.0,
-                seg.flex_id.0,
-                i16::try_from(seg.seq).unwrap_or(i16::MAX),
-                seg.start,
-                seg.end,
+                   SELECT u.id, u.flex_id, u.seq, u.start_at, u.end_at
+                   FROM UNNEST($1::uuid[], $2::uuid[], $3::int2[], $4::time[], $5::time[])
+                     AS u(id, flex_id, seq, start_at, end_at)"#,
+                &ids,
+                &flex_ids,
+                &seqs,
+                &starts,
+                &ends,
             )
             .execute(&mut *tx)
             .await

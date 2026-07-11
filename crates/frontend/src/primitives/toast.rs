@@ -2,7 +2,7 @@ use leptos::prelude::*;
 
 use crate::primitives::icon::{Icon, IconName};
 use crate::state::toast::{ToastKind, ToastState};
-use crate::theme::{self, color, radius, space, typography};
+use crate::theme::{self, color, effect, radius, space, typography};
 
 /// Renders the toast stack from [`ToastState`] in the bottom-right corner.
 /// Mounted once at the app root, above the routed content.
@@ -36,7 +36,7 @@ pub fn ToastHost() -> impl IntoView {
                         py = space::D3,
                         px = space::D4,
                         r = radius::MD,
-                        s = typography::SHADOW_MD,
+                        s = effect::SHADOW_MD,
                         ff = typography::FONT_SANS,
                         fs = typography::TEXT_SMALL,
                     ));

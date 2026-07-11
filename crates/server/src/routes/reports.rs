@@ -1,4 +1,6 @@
-//! Company report endpoints (Director/HR only, gated inside `ReportService`).
+//! Company report endpoints, gated inside `ReportService`: Director/HR for the
+//! company-wide stats, archive, and generate endpoints; self / leader / admin
+//! for the per-staff report.
 //!
 //! Stats endpoints back the in-app dashboard; the `generate` endpoints render and
 //! store a PDF and return a signed download URL (the same `/files` mechanism the
@@ -12,11 +14,11 @@ use axum::{
     routing,
 };
 use serde::Deserialize;
-use uuid::Uuid;
 
 use domain::{ids::UserId, model::Report, ports::file_storage::FileStorage};
-use shared::dto::report::{
-    MonthlyReportDto, ReportSummaryDto, StaffMonthlyReportDto, YearlyReportDto,
+use shared::dto::{
+    ids as wire,
+    report::{MonthlyReportDto, ReportSummaryDto, StaffMonthlyReportDto, YearlyReportDto},
 };
 
 use crate::{app::AppState, dto, error::AppError, extractors::auth_user::AuthUser};
@@ -59,7 +61,7 @@ struct YearlyQuery {
 #[derive(Deserialize)]
 struct StaffMonthlyQuery {
     year: i32,
-    month: u32,
+    month: u8,
 }
 
 async fn list(
@@ -67,9 +69,8 @@ async fn list(
     auth: AuthUser,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<ReportSummaryDto>>, AppError> {
-    state.perms.require_admin(auth.user_id).await?;
     let limit = q.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let reports = state.report.list_reports(limit).await?;
+    let reports = state.report.list_reports(auth.user_id, limit).await?;
     let mut out = Vec::with_capacity(reports.len());
     for report in &reports {
         out.push(summary(&state, report, auth.user_id).await?);
@@ -82,8 +83,10 @@ async fn monthly_stats(
     auth: AuthUser,
     Query(q): Query<MonthlyQuery>,
 ) -> Result<Json<MonthlyReportDto>, AppError> {
-    state.perms.require_admin(auth.user_id).await?;
-    let data = state.report.monthly_stats(q.year, q.month).await?;
+    let data = state
+        .report
+        .monthly_stats(auth.user_id, q.year, q.month)
+        .await?;
     Ok(Json(dto::monthly_report_dto(&data)))
 }
 
@@ -92,8 +95,7 @@ async fn yearly_stats(
     auth: AuthUser,
     Query(q): Query<YearlyQuery>,
 ) -> Result<Json<YearlyReportDto>, AppError> {
-    state.perms.require_admin(auth.user_id).await?;
-    let data = state.report.yearly_stats(q.year).await?;
+    let data = state.report.yearly_stats(auth.user_id, q.year).await?;
     Ok(Json(dto::yearly_report_dto(&data)))
 }
 
@@ -102,12 +104,12 @@ async fn yearly_stats(
 async fn staff_monthly(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(user_id): Path<Uuid>,
+    Path(user_id): Path<wire::UserId>,
     Query(q): Query<StaffMonthlyQuery>,
 ) -> Result<Json<StaffMonthlyReportDto>, AppError> {
     let data = state
         .report
-        .staff_monthly(auth.user_id, UserId(user_id), q.year, q.month)
+        .staff_monthly(auth.user_id, UserId(user_id.0), q.year, q.month)
         .await?;
     Ok(Json(dto::staff_monthly_report_dto(&data)))
 }
@@ -117,10 +119,9 @@ async fn generate_monthly(
     auth: AuthUser,
     Query(q): Query<MonthlyQuery>,
 ) -> Result<Json<ReportSummaryDto>, AppError> {
-    state.perms.require_admin(auth.user_id).await?;
     let report = state
         .report
-        .generate_monthly(q.year, q.month, Some(auth.user_id))
+        .generate_monthly(auth.user_id, q.year, q.month)
         .await?;
     Ok(Json(summary(&state, &report, auth.user_id).await?))
 }
@@ -130,11 +131,7 @@ async fn generate_yearly(
     auth: AuthUser,
     Query(q): Query<YearlyQuery>,
 ) -> Result<Json<ReportSummaryDto>, AppError> {
-    state.perms.require_admin(auth.user_id).await?;
-    let report = state
-        .report
-        .generate_yearly(q.year, Some(auth.user_id))
-        .await?;
+    let report = state.report.generate_yearly(auth.user_id, q.year).await?;
     Ok(Json(summary(&state, &report, auth.user_id).await?))
 }
 

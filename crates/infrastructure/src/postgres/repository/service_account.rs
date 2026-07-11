@@ -55,8 +55,8 @@ impl ServiceAccountRepository for PgServiceAccountRepo {
     async fn create(&self, account: &ServiceAccount) -> Result<(), RepositoryError> {
         sqlx::query!(
             r#"INSERT INTO auth.service_accounts
-                 (id, name, key_hash, status, created_by, revoked_at, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
+                 (id, name, key_hash, status, created_by, revoked_at, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
             account.id.0,
             account.name,
             account.key_hash,
@@ -64,7 +64,6 @@ impl ServiceAccountRepository for PgServiceAccountRepo {
             account.created_by.0,
             account.revoked_at,
             account.created_at,
-            account.updated_at,
         )
         .execute(&self.pool)
         .await
@@ -152,14 +151,12 @@ impl ServiceAccountRepository for PgServiceAccountRepo {
             r#"UPDATE auth.service_accounts
                SET name = $2,
                    status = $3,
-                   revoked_at = $4,
-                   updated_at = $5
+                   revoked_at = $4
                WHERE id = $1"#,
             account.id.0,
             account.name,
             SqlServiceAccountStatus::from(account.status) as SqlServiceAccountStatus,
             account.revoked_at,
-            account.updated_at,
         )
         .execute(&self.pool)
         .await

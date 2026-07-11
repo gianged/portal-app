@@ -32,7 +32,7 @@ pub trait FlexHoursRepository: Send + Sync {
         &self,
         user: UserId,
         year: i32,
-        month: u32,
+        month: u8,
     ) -> Result<u32, RepositoryError>;
 
     /// Sum of approved flex hours (summed segment durations) for the user in the month.
@@ -40,7 +40,7 @@ pub trait FlexHoursRepository: Send + Sync {
         &self,
         user: UserId,
         year: i32,
-        month: u32,
+        month: u8,
     ) -> Result<f64, RepositoryError>;
 
     /// Pending requests from active members of `group` (leader review queue).
@@ -53,7 +53,7 @@ pub trait FlexHoursRepository: Send + Sync {
     async fn users_with_approved_flex_in_month(
         &self,
         year: i32,
-        month: u32,
+        month: u8,
     ) -> Result<Vec<UserId>, RepositoryError>;
 
     /// Upserts the request and replaces its segments transactionally.

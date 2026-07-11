@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use domain::{
     error::{AuthzError, RepositoryError},
@@ -8,7 +8,7 @@ use domain::{
     repository::{GroupRepository, UserRepository},
 };
 
-use crate::error::{Error, Result};
+use crate::error::{ConflictCode, Error, Result};
 
 // OpenFGA relation strings; MUST match the relations in
 // infra/openfga/authorization-model.json exactly or checks silently deny.
@@ -262,16 +262,19 @@ impl Permissions {
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
     pub async fn is_leader_of_member(&self, actor: UserId, member: UserId) -> Result<bool> {
-        let memberships = self.groups.list_active_memberships_for_user(member).await?;
-        for m in memberships {
-            if matches!(
-                self.group_role(actor, m.group_id).await?,
-                Some(GroupRole::Leader)
-            ) {
-                return Ok(true);
-            }
+        let member_groups = self.groups.list_active_memberships_for_user(member).await?;
+        if member_groups.is_empty() {
+            return Ok(false);
         }
-        Ok(false)
+        let led: HashSet<GroupId> = self
+            .groups
+            .list_active_memberships_for_user(actor)
+            .await?
+            .into_iter()
+            .filter(|m| m.role == GroupRole::Leader)
+            .map(|m| m.group_id)
+            .collect();
+        Ok(member_groups.iter().any(|m| led.contains(&m.group_id)))
     }
 
     /// Verifies the actor is active and the leader of at least one of `member`'s groups.
@@ -342,7 +345,7 @@ impl Permissions {
     ///
     /// # Errors
     /// Returns a repository error if the authz backend is unavailable.
-    pub async fn user_can_view_project(&self, actor: UserId, project: ProjectId) -> Result<bool> {
+    pub async fn can_view_project(&self, actor: UserId, project: ProjectId) -> Result<bool> {
         Ok(self
             .authz
             .check(actor, REL_VIEWER, &obj_project(project))
@@ -354,7 +357,7 @@ impl Permissions {
     /// # Errors
     /// Returns `Forbidden` if the actor cannot view the project, or a repository error if the authz backend is unavailable.
     pub async fn require_can_view_project(&self, actor: UserId, project: ProjectId) -> Result<()> {
-        if self.user_can_view_project(actor, project).await? {
+        if self.can_view_project(actor, project).await? {
             Ok(())
         } else {
             Err(Error::Forbidden)
@@ -459,11 +462,7 @@ impl Permissions {
     ///
     /// # Errors
     /// Returns a repository error if the datastore is unavailable.
-    pub async fn user_is_channel_moderator(
-        &self,
-        actor: UserId,
-        channel: &Channel,
-    ) -> Result<bool> {
+    pub async fn is_channel_moderator(&self, actor: UserId, channel: &Channel) -> Result<bool> {
         match channel {
             Channel::Group(c) => Ok(matches!(
                 self.group_role(actor, c.group_id).await?,
@@ -758,7 +757,7 @@ impl Permissions {
 /// write, not a domain authz failure) so it isn't surfaced as 403 to the caller.
 fn map_authz_write(err: AuthzError) -> Error {
     match err {
-        AuthzError::Denied => Error::Conflict("authz_write_denied".into()),
+        AuthzError::Denied => Error::Conflict(ConflictCode::AuthzWriteDenied),
         AuthzError::Backend(msg) => Error::Repository(RepositoryError::Backend(msg)),
     }
 }

@@ -3,9 +3,11 @@ use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
     str::FromStr,
+    time::Duration,
 };
 
 use anyhow::Context;
+use axum::http::HeaderValue;
 use ipnet::IpNet;
 
 use infrastructure::telemetry::{LogFormat, TelemetryConfig};
@@ -21,6 +23,7 @@ pub fn telemetry_config() -> TelemetryConfig {
         file_prefix: "server".to_owned(),
         service_name: "portal-server".to_owned(),
         format: LogFormat::from_env(&optional("LOG_FORMAT", "tree")),
+        filter: env::var("RUST_LOG").ok().filter(|s| !s.is_empty()),
         otlp_endpoint: env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
             .ok()
             .filter(|s| !s.is_empty()),
@@ -72,11 +75,12 @@ pub struct Config {
     pub ext_ip_rate_limit: u64,
     pub rate_limit_window_secs: i64,
     /// Origins allowed to call the API with credentials (the WASM frontend).
-    /// Credentialed CORS forbids a wildcard, so these are enumerated.
-    pub cors_allowed_origins: Vec<String>,
+    /// Credentialed CORS forbids a wildcard, so these are enumerated; a
+    /// malformed entry fails startup.
+    pub cors_allowed_origins: Vec<HeaderValue>,
     /// How often the health prober pings each backend to drive its breaker and
     /// the `/readyz` snapshot.
-    pub health_probe_interval: std::time::Duration,
+    pub health_probe_interval: Duration,
     /// Network gate: when `true`, only clients whose peer IP falls in
     /// `ip_allowlist` reach the API; others get 403. Toggle via
     /// `IP_ALLOWLIST_ENABLED` (default on).
@@ -90,6 +94,7 @@ pub struct Config {
     pub trusted_proxies: Vec<IpNet>,
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn from_env() -> anyhow::Result<Config> {
     let host = optional("SERVER_HOST", "0.0.0.0");
     let port = optional("SERVER_PORT", "8090");
@@ -128,9 +133,14 @@ pub fn from_env() -> anyhow::Result<Config> {
 
     let cors_allowed_origins = optional("CORS_ALLOWED_ORIGINS", "http://localhost:8090")
         .split(',')
-        .map(|s| s.trim().to_string())
+        .map(str::trim)
         .filter(|s| !s.is_empty())
-        .collect();
+        .map(|origin| {
+            origin
+                .parse::<HeaderValue>()
+                .with_context(|| format!("invalid CORS_ALLOWED_ORIGINS entry: {origin}"))
+        })
+        .collect::<anyhow::Result<Vec<HeaderValue>>>()?;
 
     let ip_allowlist_enabled: bool = optional("IP_ALLOWLIST_ENABLED", "true")
         .parse()
@@ -187,7 +197,7 @@ pub fn from_env() -> anyhow::Result<Config> {
             .parse()
             .context("invalid RATE_LIMIT_WINDOW_SECS")?,
         cors_allowed_origins,
-        health_probe_interval: std::time::Duration::from_secs(
+        health_probe_interval: Duration::from_secs(
             optional("HEALTH_PROBE_INTERVAL_SECS", "5")
                 .parse()
                 .context("invalid HEALTH_PROBE_INTERVAL_SECS")?,
@@ -230,7 +240,7 @@ fn required_secret(key: &str) -> anyhow::Result<String> {
     let value = required(key)?;
     if value.len() < 32 || value.starts_with("change-me") {
         anyhow::bail!(
-            "{key} must be a random secret of at least 32 bytes — generate one with \
+            "{key} must be a random secret of at least 32 bytes; generate one with \
              `openssl rand -hex 32`"
         );
     }

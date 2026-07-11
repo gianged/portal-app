@@ -7,6 +7,10 @@ pub enum TransitionError {
         current: &'static str,
         target: &'static str,
     },
+    #[error("{entity} is past its edit grace period")]
+    EditGraceExpired { entity: &'static str },
+    #[error("ticket closed past its reopen window")]
+    ReopenWindowExpired,
 }
 
 impl TransitionError {
@@ -82,6 +86,24 @@ pub enum HealthError {
 
 #[derive(Debug, Error)]
 pub enum SpoolError {
+    #[error("backend error: {0}")]
+    Backend(String),
+}
+
+#[derive(Debug, Error)]
+pub enum PresenceError {
+    #[error("backend error: {0}")]
+    Backend(String),
+}
+
+#[derive(Debug, Error)]
+pub enum RateLimitError {
+    #[error("backend error: {0}")]
+    Backend(String),
+}
+
+#[derive(Debug, Error)]
+pub enum TokenRevocationError {
     #[error("backend error: {0}")]
     Backend(String),
 }

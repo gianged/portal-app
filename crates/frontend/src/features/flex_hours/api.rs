@@ -18,7 +18,7 @@ pub async fn list_mine(from: &str, to: &str) -> Result<Vec<FlexHoursDto>, Fronte
     client::get_json(&format!("/flex-hours{q}")).await
 }
 
-pub async fn month_delta(year: i32, month: u32) -> Result<FlexMonthDeltaDto, FrontendError> {
+pub async fn month_delta(year: i32, month: u8) -> Result<FlexMonthDeltaDto, FrontendError> {
     let q = client::query(&[("year", &year.to_string()), ("month", &month.to_string())]);
     client::get_json(&format!("/flex-hours/month-delta{q}")).await
 }

@@ -25,7 +25,7 @@ pub trait DayOffRepository: Send + Sync {
         &self,
         user: UserId,
         year: i32,
-        month: u32,
+        month: u8,
     ) -> Result<f64, RepositoryError>;
 
     /// Pending requests from active members of `group` (leader review queue).

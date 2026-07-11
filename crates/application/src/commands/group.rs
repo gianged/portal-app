@@ -3,6 +3,7 @@ use domain::{
     model::{GroupKind, GroupRole},
 };
 
+/// Input to create a group.
 #[derive(Debug, Clone)]
 pub struct CreateGroupCommand {
     pub name: String,
@@ -10,6 +11,7 @@ pub struct CreateGroupCommand {
     pub kind: GroupKind,
 }
 
+/// Input to add a user to a group with a role.
 #[derive(Debug, Clone)]
 pub struct AddMembershipCommand {
     pub group_id: GroupId,

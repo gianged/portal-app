@@ -4,6 +4,7 @@ use leptos::prelude::*;
 use uuid::Uuid;
 
 use shared::dto::audit::{AuditAction, AuditLogDto};
+use shared::dto::ids::{ProjectId, RequestId, TicketId};
 use shared::dto::user::UserRole;
 
 use crate::features::audit::api;
@@ -35,7 +36,7 @@ fn action_variant(action: AuditAction) -> BadgeVariant {
 
 #[component]
 pub fn AuditLogIndex() -> impl IntoView {
-    let items: Loadable<Vec<AuditLogDto>> = RwSignal::new(None);
+    let items: Loadable<Vec<AuditLogDto>> = Loadable::new();
     load::load(items, api::feed(PAGE));
 
     view! {
@@ -78,7 +79,7 @@ pub fn AuditTrailPanel(
     #[prop(into)] refresh: Signal<u32>,
 ) -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");
-    let items: Loadable<Vec<AuditLogDto>> = RwSignal::new(None);
+    let items: Loadable<Vec<AuditLogDto>> = Loadable::new();
 
     let is_admin = Signal::derive(move || {
         auth.user.with(|u| {
@@ -94,9 +95,15 @@ pub fn AuditTrailPanel(
         }
         if let Some(eid) = id.get() {
             match kind {
-                TrailKind::Request => load::load(items, api::request_trail(eid, TRAIL_PAGE)),
-                TrailKind::Ticket => load::load(items, api::ticket_trail(eid, TRAIL_PAGE)),
-                TrailKind::Project => load::load(items, api::project_trail(eid, TRAIL_PAGE)),
+                TrailKind::Request => {
+                    load::load(items, api::request_trail(RequestId(eid), TRAIL_PAGE));
+                }
+                TrailKind::Ticket => {
+                    load::load(items, api::ticket_trail(TicketId(eid), TRAIL_PAGE));
+                }
+                TrailKind::Project => {
+                    load::load(items, api::project_trail(ProjectId(eid), TRAIL_PAGE));
+                }
             }
         }
     });

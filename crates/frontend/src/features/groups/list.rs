@@ -23,16 +23,9 @@ use crate::state::toast::ToastState;
 use crate::theme::{self, color, space, typography};
 use crate::util::load::{self, Loadable};
 
-fn kind_wire(k: GroupKind) -> &'static str {
-    match k {
-        GroupKind::Standard => "standard",
-        GroupKind::It => "it",
-    }
-}
-
 #[component]
 pub fn GroupsIndex() -> impl IntoView {
-    let groups: Loadable<Vec<GroupDto>> = RwSignal::new(None);
+    let groups: Loadable<Vec<GroupDto>> = Loadable::new();
     let reload = RwSignal::new(0u32);
     let create_open = RwSignal::new(false);
 
@@ -125,13 +118,9 @@ fn CreateGroupDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl Int
     let on_close = Callback::new(move |()| open.set(false));
     let cancel = Callback::new(move |_| open.set(false));
     let on_kind = Callback::new(move |v: String| {
-        kind.set(if v == "it" {
-            GroupKind::It
-        } else {
-            GroupKind::Standard
-        });
+        kind.set(GroupKind::from_wire(&v).unwrap_or(GroupKind::Standard));
     });
-    let kind_value = Signal::derive(move || kind_wire(kind.get()).to_owned());
+    let kind_value = Signal::derive(move || kind.get().as_str().to_owned());
 
     let submit = Callback::new(move |_| {
         if submitting.get_untracked() {
@@ -192,15 +181,16 @@ fn CreateGroupDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl Int
                     <div>
                         <FieldLabel for_id="gr-kind">"Kind"</FieldLabel>
                         <Select value=kind_value on_change=on_kind>
-                            <option value="standard">"Standard"</option>
-                            <option value="it">"IT"</option>
+                            {GroupKind::ALL.into_iter().map(|k| view! {
+                                <option value=k.as_str()>{k.label()}</option>
+                            }).collect_view()}
                         </Select>
                     </div>
                 </Stack>
             </DialogBody>
             <DialogFooter>
                 <Button variant=ButtonVariant::Ghost on_click=cancel>"Cancel"</Button>
-                <Button variant=ButtonVariant::Primary on_click=submit disabled=Signal::derive(move || submitting.get())>
+                <Button variant=ButtonVariant::Primary on_click=submit disabled=submitting>
                     {move || if submitting.get() { "Creating…" } else { "Create group" }}
                 </Button>
             </DialogFooter>

@@ -1,14 +1,12 @@
-use leptos::{prelude::*, task};
+use leptos::prelude::*;
 use leptos_router::components::A;
 use shared::dto::{
     chat::ChannelSummaryDto, group::GroupDto, request::RequestDto, ticket::TicketDto,
 };
 
-use crate::features::home::api as home_api;
+use crate::features::home::api;
 use crate::features::home::components::{Hero, Wordmark};
-use crate::features::home::panels::{
-    ChannelsPanel, Loadable, RequestsPanel, StatTiles, TicketsPanel,
-};
+use crate::features::home::panels::{ChannelsPanel, RequestsPanel, StatTiles, TicketsPanel};
 use crate::primitives::card::Card;
 use crate::primitives::center::Center;
 use crate::primitives::empty_state::EmptyState;
@@ -17,6 +15,7 @@ use crate::primitives::stack::{Gap, Stack};
 use crate::state::auth::AuthState;
 use crate::state::title;
 use crate::theme::{self, color, space, typography};
+use crate::util::load::{self, Loadable};
 
 #[component]
 pub fn LandingPage() -> impl IntoView {
@@ -80,20 +79,20 @@ fn DashboardContent() -> impl IntoView {
     let auth = use_context::<AuthState>().expect("AuthState context");
 
     // Each loadable starts None and is filled by a one-shot fetch; RequireAuth guarantees auth.user is present.
-    let requests: Loadable<Vec<RequestDto>> = RwSignal::new(None);
-    let tickets: Loadable<Vec<TicketDto>> = RwSignal::new(None);
-    let channels: Loadable<Vec<ChannelSummaryDto>> = RwSignal::new(None);
-    let groups: Loadable<Vec<GroupDto>> = RwSignal::new(None);
+    let requests: Loadable<Vec<RequestDto>> = Loadable::new();
+    let tickets: Loadable<Vec<TicketDto>> = Loadable::new();
+    let channels: Loadable<Vec<ChannelSummaryDto>> = Loadable::new();
+    let groups: Loadable<Vec<GroupDto>> = Loadable::new();
 
-    task::spawn_local(async move { requests.set(Some(home_api::my_requests().await)) });
-    task::spawn_local(async move { tickets.set(Some(home_api::my_tickets().await)) });
-    task::spawn_local(async move { channels.set(Some(home_api::channels().await)) });
-    task::spawn_local(async move { groups.set(Some(home_api::groups().await)) });
+    load::load(requests, api::my_requests());
+    load::load(tickets, api::my_tickets());
+    load::load(channels, api::channels());
+    load::load(groups, api::groups());
 
     let greeting = auth.user.with(|u| {
         u.as_ref().map_or_else(
             || "Welcome back.".to_owned(),
-            |user| format!("Welcome back, {}.", first_name(&user.name)),
+            |user| format!("Welcome back, {}.", first_name(&user.full_name)),
         )
     });
 

@@ -1,21 +1,19 @@
 //! Domain -> wire projections for the reporting feature.
 
 use domain::model::{
-    GroupKind, GroupReportRow, GrowthPoint, GrowthSeries, MonthlyReportData, Report, ReportKind,
+    self, GroupKind, GroupReportRow, GrowthPoint, GrowthSeries, MonthlyReportData, Report,
     StaffMonthlyReport, StaffSummary, TicketCategory, TicketStats, TicketStatus, YearlyReportData,
 };
 use shared::dto::report::{
-    GroupHeadcountDto, GroupReportRowDto, GrowthPointDto, GrowthSeriesDto, LabeledCountDto,
-    MonthlyReportDto, ReportKindDto, ReportSummaryDto, StaffLeaveDaysDto, StaffMonthlyReportDto,
-    StaffSummaryDto, TicketSummaryDto, YearlyReportDto, YearlyTotalsDto,
+    self, GroupHeadcountDto, GroupReportRowDto, GrowthPointDto, GrowthSeriesDto, LabeledCountDto,
+    MonthlyReportDto, ReportSummaryDto, StaffLeaveDaysDto, StaffMonthlyReportDto, StaffSummaryDto,
+    TicketSummaryDto, YearlyReportDto, YearlyTotalsDto,
 };
 
-use super::{day_off_kind_dto, group_id, report_id, user_id};
-
-fn report_kind_dto(kind: ReportKind) -> ReportKindDto {
+fn report_kind_dto(kind: model::ReportKind) -> report::ReportKind {
     match kind {
-        ReportKind::Monthly => ReportKindDto::Monthly,
-        ReportKind::Yearly => ReportKindDto::Yearly,
+        model::ReportKind::Monthly => report::ReportKind::Monthly,
+        model::ReportKind::Yearly => report::ReportKind::Yearly,
     }
 }
 
@@ -42,7 +40,7 @@ fn ticket_category_label(c: TicketCategory) -> &'static str {
 
 fn group_row_dto(row: &GroupReportRow) -> GroupReportRowDto {
     GroupReportRowDto {
-        group_id: group_id(row.group_id),
+        group_id: super::group_id(row.group_id),
         group_name: row.group_name.clone(),
         is_it: matches!(row.group_kind, GroupKind::It),
         projects_total: row.projects_total,
@@ -92,7 +90,7 @@ fn staff_summary_dto(s: &StaffSummary) -> StaffSummaryDto {
             .per_group
             .iter()
             .map(|(gid, name, headcount)| GroupHeadcountDto {
-                group_id: group_id(*gid),
+                group_id: super::group_id(*gid),
                 group_name: name.clone(),
                 headcount: *headcount,
             })
@@ -152,30 +150,31 @@ pub fn yearly_report_dto(data: &YearlyReportData) -> YearlyReportDto {
 #[must_use]
 pub fn staff_monthly_report_dto(data: &StaffMonthlyReport) -> StaffMonthlyReportDto {
     StaffMonthlyReportDto {
-        user_id: user_id(data.user_id),
+        user_id: super::user_id(data.user_id),
         year: data.period.start.year(),
         month: u8::from(data.period.start.month()),
-        days_reported: data.days_reported,
-        hours_request_work: data.hours_request_work,
-        hours_learning: data.hours_learning,
-        hours_other: data.hours_other,
+        days_reported: data.stats.days_reported,
+        hours_request_work: data.stats.hours_request_work,
+        hours_learning: data.stats.hours_learning,
+        hours_other: data.stats.hours_other,
         leave_days_by_kind: data
+            .stats
             .leave_days_by_kind
             .iter()
             .map(|(kind, days)| StaffLeaveDaysDto {
-                kind: day_off_kind_dto(*kind),
+                kind: super::day_off_kind_dto(*kind),
                 days: *days,
             })
             .collect(),
-        overtime_hours: data.overtime_hours,
-        flex_days: data.flex_days,
+        overtime_hours: data.stats.overtime_hours,
+        flex_days: data.stats.flex_days,
         flex_month_delta: data.flex_month_delta,
         work_percentage: data.work_percentage,
         balance_remaining: data.balance_remaining,
-        balance_expiring_soon: data.balance_expiring_soon,
-        requests_completed: data.requests_completed,
-        requests_open: data.requests_open,
-        avg_request_progress: data.avg_request_progress,
+        balance_expiring_soon: data.stats.balance_expiring_soon,
+        requests_completed: data.stats.requests_completed,
+        requests_open: data.stats.requests_open,
+        avg_request_progress: data.stats.avg_request_progress,
     }
 }
 
@@ -183,7 +182,7 @@ pub fn staff_monthly_report_dto(data: &StaffMonthlyReport) -> StaffMonthlyReport
 #[must_use]
 pub fn report_summary_dto(report: &Report, download_url: String) -> ReportSummaryDto {
     ReportSummaryDto {
-        id: report_id(report.id),
+        id: super::report_id(report.id),
         kind: report_kind_dto(report.kind),
         period_start: report.period_start,
         period_end: report.period_end,

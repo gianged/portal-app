@@ -1,4 +1,4 @@
-use std::{any, time::Duration};
+use std::time::Duration;
 
 use apalis::prelude::Storage;
 use apalis_redis::{Config, ConnectionManager, RedisStorage};
@@ -13,8 +13,12 @@ use crate::telemetry;
 
 /// Wire type persisted on one apalis/Redis queue: payload bytes plus the W3C
 /// `traceparent` of the enqueuing request. Each implementor stays a distinct
-/// type so its queue namespace (derived from the type name) cannot collide.
+/// type with its own [`Envelope::NAMESPACE`] so queues cannot collide.
 pub trait Envelope: Serialize + DeserializeOwned + Clone + Send + Sync + Unpin + 'static {
+    /// Redis queue namespace. Frozen to the historical type-name-derived
+    /// strings so queues persisted by earlier deploys keep draining.
+    const NAMESPACE: &'static str;
+
     fn new(payload: Vec<u8>, traceparent: Option<String>) -> Self;
 }
 
@@ -30,6 +34,8 @@ pub struct NotificationEnvelope {
 }
 
 impl Envelope for NotificationEnvelope {
+    const NAMESPACE: &'static str = "infrastructure::jobs::NotificationEnvelope";
+
     fn new(payload: Vec<u8>, traceparent: Option<String>) -> Self {
         Self {
             event: payload,
@@ -48,6 +54,8 @@ pub struct AuditEnvelope {
 }
 
 impl Envelope for AuditEnvelope {
+    const NAMESPACE: &'static str = "infrastructure::jobs::AuditEnvelope";
+
     fn new(payload: Vec<u8>, traceparent: Option<String>) -> Self {
         Self {
             event: payload,
@@ -67,6 +75,8 @@ pub struct EmailEnvelope {
 }
 
 impl Envelope for EmailEnvelope {
+    const NAMESPACE: &'static str = "infrastructure::jobs::EmailEnvelope";
+
     fn new(payload: Vec<u8>, traceparent: Option<String>) -> Self {
         Self {
             message: payload,
@@ -75,18 +85,14 @@ impl Envelope for EmailEnvelope {
     }
 }
 
-/// Builds the Redis-backed job storage for `E`. Producer and consumer both call
-/// this so they agree on wire type and namespace. `buffer` bounds how many jobs
-/// one consumer fetches and runs concurrently (producers only push, so it is
-/// inert on their side).
-pub async fn storage<E: Envelope>(
-    redis_url: &str,
-    buffer: usize,
-) -> Result<RedisStorage<E>, JobError> {
+/// Builds the Redis-backed job storage for `E`. Producer and consumer share the
+/// per-queue wrappers below so they agree on wire type and namespace. `buffer`
+/// bounds how many jobs one consumer fetches and runs concurrently (producers
+/// only push, so it is inert on their side).
+async fn storage<E: Envelope>(redis_url: &str, buffer: usize) -> Result<RedisStorage<E>, JobError> {
     let conn = connect_apalis(redis_url).await?;
-    // Namespace must mirror `RedisStorage::new`, which derives it from the type name.
     let config = Config::default()
-        .set_namespace(any::type_name::<E>())
+        .set_namespace(E::NAMESPACE)
         .set_buffer_size(buffer);
     Ok(RedisStorage::new_with_config(conn, config))
 }

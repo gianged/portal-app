@@ -8,16 +8,18 @@ use axum::{
     http::StatusCode,
     routing,
 };
-use uuid::Uuid;
 
 use domain::ids::ServiceAccountId;
-use shared::dto::service_account::{
-    CreateServiceAccountRequest, CreatedServiceAccountDto, ServiceAccountDto,
+use shared::dto::{
+    ids as wire,
+    service_account::{CreateServiceAccountRequest, CreatedServiceAccountDto, ServiceAccountDto},
 };
 
 use crate::{
-    app::AppState, dto, error::AppError, extractors::auth_user::AuthUser,
-    extractors::validated_json::ValidatedJson,
+    app::AppState,
+    dto,
+    error::AppError,
+    extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
 };
 
 pub fn router() -> Router<AppState> {
@@ -57,11 +59,11 @@ async fn list(
 async fn revoke(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::ServiceAccountId>,
 ) -> Result<StatusCode, AppError> {
     state
         .service_accounts
-        .revoke(auth.user_id, ServiceAccountId(id))
+        .revoke(auth.user_id, ServiceAccountId(id.0))
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -1,7 +1,7 @@
 use leptos::ev::MouseEvent;
 use leptos::prelude::*;
 
-use crate::theme::{self, color, radius, typography};
+use crate::theme::{self, color, effect, radius, typography};
 
 /// Pill-style segmented control (e.g. ticket scope: Triage / Assigned / Mine).
 /// Wrap a row of [`SegmentedItem`]s; the parent owns the active-segment state.
@@ -39,7 +39,7 @@ pub fn SegmentedItem(
         "background: {bg} !important; color: {c} !important; box-shadow: {s};",
         bg = color::BG_ELEVATED,
         c = color::TEXT_STRONG,
-        s = typography::SHADOW_XS,
+        s = effect::SHADOW_XS,
     ));
     let handle = move |ev: MouseEvent| {
         if let Some(cb) = on_click {

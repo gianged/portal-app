@@ -16,12 +16,30 @@ pub enum GroupKind {
 }
 
 impl GroupKind {
+    /// Every variant, for building select options.
+    pub const ALL: [Self; 2] = [Self::Standard, Self::It];
+
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::Standard => "Standard",
             Self::It => "IT",
         }
+    }
+
+    /// Canonical wire string (the serde `snake_case` tag).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Standard => "standard",
+            Self::It => "it",
+        }
+    }
+
+    /// Parses a wire string produced by [`Self::as_str`].
+    #[must_use]
+    pub fn from_wire(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|v| v.as_str() == s)
     }
 }
 
@@ -35,6 +53,9 @@ pub enum GroupRole {
 }
 
 impl GroupRole {
+    /// Every variant, for building select options.
+    pub const ALL: [Self; 3] = [Self::Leader, Self::SubLeader, Self::Member];
+
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -42,6 +63,22 @@ impl GroupRole {
             Self::SubLeader => "Sub-leader",
             Self::Member => "Member",
         }
+    }
+
+    /// Canonical wire string (the serde `snake_case` tag).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Leader => "leader",
+            Self::SubLeader => "sub_leader",
+            Self::Member => "member",
+        }
+    }
+
+    /// Parses a wire string produced by [`Self::as_str`].
+    #[must_use]
+    pub fn from_wire(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|v| v.as_str() == s)
     }
 }
 
@@ -105,4 +142,27 @@ pub struct ChangeMemberRoleRequest {
 pub struct TransferLeadershipRequest {
     pub from_user_id: UserId,
     pub to_user_id: UserId,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GroupKind, GroupRole};
+
+    #[test]
+    fn wire_helpers_match_serde() {
+        for k in GroupKind::ALL {
+            assert_eq!(
+                serde_json::to_string(&k).unwrap(),
+                format!("\"{}\"", k.as_str())
+            );
+            assert_eq!(GroupKind::from_wire(k.as_str()), Some(k));
+        }
+        for r in GroupRole::ALL {
+            assert_eq!(
+                serde_json::to_string(&r).unwrap(),
+                format!("\"{}\"", r.as_str())
+            );
+            assert_eq!(GroupRole::from_wire(r.as_str()), Some(r));
+        }
+    }
 }

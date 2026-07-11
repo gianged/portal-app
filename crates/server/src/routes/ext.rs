@@ -9,10 +9,10 @@ use axum::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use application::service::Page;
 use domain::ids::{ProjectId, RequestId};
 use shared::dto::{
     ext::{ExtProjectDto, ExtRequestDto, PageDto},
+    ids as wire,
     report::{MonthlyReportDto, YearlyReportDto},
 };
 
@@ -52,10 +52,10 @@ struct YearlyQuery {
     year: i32,
 }
 
-fn page_dto<T, D>(page: &Page<T>, map: impl Fn(&T) -> D) -> PageDto<D> {
+fn page_dto<T, D>(items: &[T], next_cursor: Option<Uuid>, map: impl Fn(&T) -> D) -> PageDto<D> {
     PageDto {
-        items: page.items.iter().map(map).collect(),
-        next_cursor: page.next_cursor.map(|id| id.to_string()),
+        items: items.iter().map(map).collect(),
+        next_cursor: next_cursor.map(|id| id.to_string()),
     }
 }
 
@@ -68,15 +68,19 @@ async fn list_projects(
         .ext_read
         .list_projects(ctx.id, q.after.map(ProjectId), q.limit)
         .await?;
-    Ok(Json(page_dto(&page, dto::ext_project_dto)))
+    Ok(Json(page_dto(
+        &page.items,
+        page.next_cursor.map(|id| id.0),
+        dto::ext_project_dto,
+    )))
 }
 
 async fn get_project(
     State(state): State<AppState>,
     Extension(ctx): Extension<ServiceAccountCtx>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::ProjectId>,
 ) -> Result<Json<ExtProjectDto>, AppError> {
-    let project = state.ext_read.get_project(ctx.id, ProjectId(id)).await?;
+    let project = state.ext_read.get_project(ctx.id, ProjectId(id.0)).await?;
     Ok(Json(dto::ext_project_dto(&project)))
 }
 
@@ -94,15 +98,19 @@ async fn list_requests(
             q.limit,
         )
         .await?;
-    Ok(Json(page_dto(&page, dto::ext_request_dto)))
+    Ok(Json(page_dto(
+        &page.items,
+        page.next_cursor.map(|id| id.0),
+        dto::ext_request_dto,
+    )))
 }
 
 async fn get_request(
     State(state): State<AppState>,
     Extension(ctx): Extension<ServiceAccountCtx>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::RequestId>,
 ) -> Result<Json<ExtRequestDto>, AppError> {
-    let request = state.ext_read.get_request(ctx.id, RequestId(id)).await?;
+    let request = state.ext_read.get_request(ctx.id, RequestId(id.0)).await?;
     Ok(Json(dto::ext_request_dto(&request)))
 }
 

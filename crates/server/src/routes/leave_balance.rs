@@ -7,12 +7,14 @@ use axum::{
     routing,
 };
 use serde::Deserialize;
-use time::OffsetDateTime;
-use uuid::Uuid;
+use time::{Date, OffsetDateTime};
 
 use domain::ids::UserId;
-use shared::dto::leave_balance::{
-    AdjustBalanceRequest, LeaveBalanceDto, LeaveStatementDto, SetLeaveGrantRequest,
+use shared::dto::{
+    ids as wire,
+    leave_balance::{
+        AdjustBalanceRequest, LeaveBalanceDto, LeaveStatementDto, SetLeaveGrantRequest,
+    },
 };
 
 use crate::{
@@ -20,7 +22,6 @@ use crate::{
     dto,
     error::AppError,
     extractors::{auth_user::AuthUser, validated_json::ValidatedJson},
-    routes,
 };
 
 pub fn router() -> Router<AppState> {
@@ -34,25 +35,23 @@ pub fn router() -> Router<AppState> {
 
 #[derive(Deserialize)]
 struct RangeQuery {
-    from: String,
-    to: String,
+    from: Date,
+    to: Date,
 }
 
 async fn my_balance(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<LeaveBalanceDto>, AppError> {
-    Ok(Json(balance_for(&state, auth.user_id).await?))
+    Ok(Json(balance_for(&state, auth.user_id, auth.user_id).await?))
 }
 
 async fn user_balance(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::UserId>,
 ) -> Result<Json<LeaveBalanceDto>, AppError> {
-    let target = UserId(id);
-    require_can_view(&state, auth.user_id, target).await?;
-    Ok(Json(balance_for(&state, target).await?))
+    Ok(Json(balance_for(&state, auth.user_id, UserId(id.0)).await?))
 }
 
 async fn my_statement(
@@ -60,54 +59,43 @@ async fn my_statement(
     auth: AuthUser,
     Query(q): Query<RangeQuery>,
 ) -> Result<Json<LeaveStatementDto>, AppError> {
-    let from = routes::parse_date(&q.from)?;
-    let to = routes::parse_date(&q.to)?;
-    let (grants, txns) = state.leave.statement(auth.user_id, from, to).await?;
+    let (grants, txns) = state.leave.statement(auth.user_id, q.from, q.to).await?;
     Ok(Json(dto::leave_statement_dto(&grants, &txns)))
 }
 
 async fn set_grant(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::UserId>,
     ValidatedJson(body): ValidatedJson<SetLeaveGrantRequest>,
 ) -> Result<Json<LeaveBalanceDto>, AppError> {
-    let target = UserId(id);
-    let cmd = dto::set_leave_grant_command(target, body);
+    let target = UserId(id.0);
+    let cmd = dto::set_leave_grant_command(target, &body);
     state.leave.set_grant(auth.user_id, cmd).await?;
-    Ok(Json(balance_for(&state, target).await?))
+    Ok(Json(balance_for(&state, auth.user_id, target).await?))
 }
 
 async fn adjust(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(id): Path<Uuid>,
+    Path(id): Path<wire::UserId>,
     ValidatedJson(body): ValidatedJson<AdjustBalanceRequest>,
 ) -> Result<Json<LeaveBalanceDto>, AppError> {
-    let target = UserId(id);
+    let target = UserId(id.0);
     let cmd = dto::adjust_balance_command(target, body);
     state.leave.adjust(auth.user_id, cmd).await?;
-    Ok(Json(balance_for(&state, target).await?))
+    Ok(Json(balance_for(&state, auth.user_id, target).await?))
 }
 
-/// Self always; otherwise a leader of the member or HR.
-async fn require_can_view(state: &AppState, actor: UserId, target: UserId) -> Result<(), AppError> {
-    if actor == target {
-        return Ok(());
-    }
-    let allowed =
-        state.perms.is_leader_of_member(actor, target).await? || state.perms.is_hr(actor).await?;
-    if allowed {
-        Ok(())
-    } else {
-        Err(application::Error::Forbidden.into())
-    }
-}
-
-/// Available days (as of today) plus the per-year grant breakdown.
-async fn balance_for(state: &AppState, user: UserId) -> Result<LeaveBalanceDto, AppError> {
+/// Available days (as of today) plus the per-year grant breakdown; the service
+/// gates who may view whom.
+async fn balance_for(
+    state: &AppState,
+    actor: UserId,
+    target: UserId,
+) -> Result<LeaveBalanceDto, AppError> {
     let today = OffsetDateTime::now_utc().date();
-    let available = state.leave.available(user, today).await?;
-    let grants = state.leave.grants(user).await?;
+    let available = state.leave.balance_of(actor, target, today).await?;
+    let grants = state.leave.grants_of(actor, target).await?;
     Ok(dto::leave_balance_dto(available, &grants))
 }

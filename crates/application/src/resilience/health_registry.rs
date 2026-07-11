@@ -44,9 +44,10 @@ impl HealthRegistry {
     /// Periodically pings each backend and feeds the result into its breaker:
     /// a failure trips it toward open, a success against a cooled-down breaker
     /// flips it half-open then closed (recovery detection). While a breaker is
-    /// still cooling down, `acquire` is false and the ping is skipped, so a
-    /// downed backend is not hammered by the prober either. Spawned under
-    /// `supervise`, so a panic restarts it.
+    /// still cooling down, `acquire` yields no permit and the ping is skipped,
+    /// so a downed backend is not hammered by the prober either. Each ping is
+    /// bounded by the probe interval, so one hung backend cannot stall the
+    /// others. Spawned under `supervise`, so a panic restarts it.
     pub async fn run_prober(
         self: Arc<Self>,
         checks: Vec<Arc<dyn HealthCheck>>,
@@ -60,19 +61,27 @@ impl HealthRegistry {
                 let Some(breaker) = self.breaker(check.backend()) else {
                     continue;
                 };
-                if !breaker.acquire() {
+                let Some(permit) = breaker.acquire() else {
                     continue;
-                }
-                match check.ping().await {
-                    Ok(()) => breaker.record_success(),
-                    Err(e) => {
+                };
+                match time::timeout(interval, check.ping()).await {
+                    Ok(Ok(())) => permit.record_success(),
+                    Ok(Err(e)) => {
                         tracing::warn!(
                             target: "health",
                             backend = check.backend().as_str(),
                             error = %e,
                             "health probe failed"
                         );
-                        breaker.record_failure();
+                        permit.record_failure();
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            target: "health",
+                            backend = check.backend().as_str(),
+                            "health probe timed out"
+                        );
+                        permit.record_failure();
                     }
                 }
             }
