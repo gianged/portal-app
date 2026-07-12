@@ -1,4 +1,8 @@
-use std::{any::Any, sync::Arc, time::Duration};
+use std::{
+    any::Any,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use anyhow::Context;
 use axum::{
@@ -26,7 +30,7 @@ use application::{
     bootstrap,
     events::EventBus,
     permissions::Permissions,
-    resilience::{self, DispatchQueue, HealthRegistry},
+    resilience::{self, DispatchQueue, HealthRegistry, retry},
     service::{
         AnnouncementService, AuditService, ChatIngest, ChatIngestConfig, ChatService,
         CommentService, DailyReportService, DayOffService, ExtReadService, FlexHoursService,
@@ -190,37 +194,51 @@ impl IngestShutdown {
 /// which cannot happen: the registry is built from `BackendId::ALL` just above.
 #[allow(clippy::too_many_lines)]
 pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, GrpcPlane)> {
-    // Backends.
-    let pool = postgres::build_pool(&cfg.database_url, cfg.pg_max_connections)
-        .await
-        .context("building postgres pool")?;
-    let session = scylla::build_session(&cfg.scylla_hosts, &cfg.scylla_keyspace)
-        .await
-        .context("building scylla session")?;
+    // Backends. Every connect below retries with backoff against this shared
+    // deadline, so a binary started before its infra waits instead of failing.
+    let deadline = Instant::now() + cfg.startup_timeout;
+    let pool = retry::until_deadline("postgres", deadline, || {
+        postgres::build_pool(&cfg.database_url, cfg.pg_max_connections)
+    })
+    .await
+    .context("building postgres pool")?;
+    let session = retry::until_deadline("scylla", deadline, || {
+        scylla::build_session(&cfg.scylla_hosts, &cfg.scylla_keyspace)
+    })
+    .await
+    .context("building scylla session")?;
     let publisher = Arc::new(
-        RedisEventPublisher::new(&cfg.redis_url)
-            .await
-            .context("connecting redis (events)")?,
+        retry::until_deadline("redis (events)", deadline, || {
+            RedisEventPublisher::new(&cfg.redis_url)
+        })
+        .await
+        .context("connecting redis (events)")?,
     );
     let subscriber: Arc<dyn EventSubscriber> = Arc::new(
         RedisEventSubscriber::new(&cfg.redis_url).context("building redis event subscriber")?,
     );
     let presence: Arc<dyn Presence> = Arc::new(
-        PresenceStore::new(&cfg.redis_url)
-            .await
-            .context("connecting redis (presence)")?,
+        retry::until_deadline("redis (presence)", deadline, || {
+            PresenceStore::new(&cfg.redis_url)
+        })
+        .await
+        .context("connecting redis (presence)")?,
     );
     let rate_limiter: Arc<dyn RateLimit> = Arc::new(
-        RateLimiter::new(&cfg.redis_url)
-            .await
-            .context("connecting redis (rate limit)")?
-            .with_window(cfg.rate_limit_window_secs),
+        retry::until_deadline("redis (rate limit)", deadline, || {
+            RateLimiter::new(&cfg.redis_url)
+        })
+        .await
+        .context("connecting redis (rate limit)")?
+        .with_window(cfg.rate_limit_window_secs),
     );
     // Version keys outlive session TTL by 2x and refresh on touch, so they can't lapse under a live token.
     let revocation: Arc<dyn TokenRevocation> = Arc::new(
-        RedisTokenRevocation::new(&cfg.redis_url, cfg.session_ttl_secs * 2)
-            .await
-            .context("connecting redis (token revocation)")?,
+        retry::until_deadline("redis (token revocation)", deadline, || {
+            RedisTokenRevocation::new(&cfg.redis_url, cfg.session_ttl_secs * 2)
+        })
+        .await
+        .context("connecting redis (token revocation)")?,
     );
     // One signer for presign + verify; key is dedicated (never the JWT secret) so tokens and links can't forge each other.
     let signed_url = Arc::new(SignedUrl::new(cfg.storage_signing_secret.as_bytes()));
@@ -245,7 +263,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
     // Clone the session for the health probe before the repo takes ownership.
     let scylla_health: Arc<dyn HealthCheck> = Arc::new(ScyllaHealthCheck::new(session.clone()));
     let chats: Arc<dyn ChatRepository> = Arc::new(
-        ScyllaChatRepo::new(session)
+        retry::until_deadline("scylla", deadline, || ScyllaChatRepo::new(session.clone()))
             .await
             .context("preparing scylla statements")?,
     );
@@ -259,12 +277,14 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
                 cfg.openfga_model_path.display()
             )
         })?;
-    let fga_config = openfga::resolve_config(
-        &cfg.openfga_api_url,
-        "portal",
-        &model_json,
-        cfg.openfga_bearer_token.clone(),
-    )
+    let fga_config = retry::until_deadline("openfga", deadline, || {
+        openfga::resolve_config(
+            &cfg.openfga_api_url,
+            "portal",
+            &model_json,
+            cfg.openfga_bearer_token.clone(),
+        )
+    })
     .await
     .context("resolving openfga store/model")?;
     let authz = OpenFgaAuthzClient::new(fga_config).context("building openfga client")?;
@@ -278,9 +298,11 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
     ));
 
     // Idempotent org bootstrap: company singleton tuples + general channel.
-    bootstrap::seed_company(chats.as_ref(), perms.as_ref())
-        .await
-        .context("seeding company singleton")?;
+    retry::until_deadline("company seed", deadline, || {
+        bootstrap::seed_company(chats.as_ref(), perms.as_ref())
+    })
+    .await
+    .context("seeding company singleton")?;
     // Health registry is built before the dispatch chain so the chain's primary
     // hop shares the workers-gRPC breaker with the prober and `/readyz`.
     let health = Arc::new(HealthRegistry::new(&BackendId::ALL));
@@ -292,19 +314,25 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
     // Both first hops land in the same apalis queue; the spool is replayed by
     // the workers' job-spool drainer.
     let jobs = ApalisNotificationQueue::new(
-        jobs::notification_storage(&cfg.redis_url)
-            .await
-            .context("connecting apalis redis (jobs)")?,
+        retry::until_deadline("redis (apalis jobs)", deadline, || {
+            jobs::notification_storage(&cfg.redis_url)
+        })
+        .await
+        .context("connecting apalis redis (jobs)")?,
     );
     let audit_jobs = ApalisAuditQueue::new(
-        jobs::audit_storage(&cfg.redis_url)
-            .await
-            .context("connecting apalis redis (audit jobs)")?,
+        retry::until_deadline("redis (apalis audit)", deadline, || {
+            jobs::audit_storage(&cfg.redis_url)
+        })
+        .await
+        .context("connecting apalis redis (audit jobs)")?,
     );
     let job_spool: Arc<dyn Spool> = Arc::new(
-        RedisSpool::new(&cfg.redis_url, "jobs")
-            .await
-            .context("connecting redis (job spool)")?,
+        retry::until_deadline("redis (job spool)", deadline, || {
+            RedisSpool::new(&cfg.redis_url, "jobs")
+        })
+        .await
+        .context("connecting redis (job spool)")?,
     );
     let grpc_dispatch: Arc<dyn JobQueue> = Arc::new(
         GrpcJobQueue::new(&cfg.workers_grpc_url, &cfg.internal_grpc_token)
@@ -355,9 +383,11 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
         Arc::new(PgHealthCheck::new(pool.clone())),
         scylla_health,
         Arc::new(
-            RedisHealthCheck::new(&cfg.redis_url)
-                .await
-                .context("connecting redis (health)")?,
+            retry::until_deadline("redis (health)", deadline, || {
+                RedisHealthCheck::new(&cfg.redis_url)
+            })
+            .await
+            .context("connecting redis (health)")?,
         ),
         Arc::new(
             OpenFgaHealthCheck::new(&cfg.openfga_api_url, cfg.openfga_bearer_token.clone())
@@ -391,9 +421,11 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
         events.clone(),
     ));
     let chat_spool: Arc<dyn Spool> = Arc::new(
-        RedisSpool::new(&cfg.redis_url, "chat")
-            .await
-            .context("connecting redis (chat spool)")?,
+        retry::until_deadline("redis (chat spool)", deadline, || {
+            RedisSpool::new(&cfg.redis_url, "chat")
+        })
+        .await
+        .context("connecting redis (chat spool)")?,
     );
     let (chat_ingest, chat_ingest_rx) = ChatIngest::new(
         chat.clone(),
@@ -416,8 +448,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
     // are lock-free. Other attendance services share this `policy_provider`.
     let policy_repo: Arc<dyn PolicyRepository> = Arc::new(PgPolicyRepo::new(pool.clone()));
     let policy_provider = Arc::new(PolicyProvider::new(
-        policy_repo
-            .load()
+        retry::until_deadline("postgres (policy)", deadline, || policy_repo.load())
             .await
             .context("loading attendance policy")?,
     ));

@@ -7,6 +7,7 @@ mod circuit;
 mod dispatch_queue;
 mod drainer;
 mod health_registry;
+pub mod retry;
 mod supervisor;
 
 pub use backoff::Backoff;

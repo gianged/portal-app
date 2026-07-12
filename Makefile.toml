@@ -124,3 +124,9 @@ args = ["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]
 description = "Build the entire workspace."
 command = "cargo"
 args = ["build", "--workspace"]
+
+[tasks.boot-resilience-test]
+description = "E2E: server/workers must retry while infra is down, then give up on deadline (needs debug binaries)."
+command = "go"
+args = ["run", ".", "boot-resilience"]
+cwd = "loadtest"

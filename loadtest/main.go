@@ -1,12 +1,14 @@
 // Load-test harness for the portal, modelling 1000 employees at peak.
-// One binary, three scenarios:
+// One binary, three load scenarios plus a boot-resilience e2e:
 //
 //	go run . login-storm -rate 200 -duration 5m
 //	go run . api-mix    -peak-rps 200
 //	go run . ws-chat    -sockets 1000 -stagger 120ms -hold 2m
+//	go run . boot-resilience
 //
 // Prerequisites: seeded DB and users.json (see README.md). The server must run
-// with COOKIE_SECURE=false for plain-HTTP cookies.
+// with COOKIE_SECURE=false for plain-HTTP cookies. boot-resilience instead
+// needs prebuilt binaries and drives docker compose itself.
 package main
 
 import (
@@ -37,6 +39,8 @@ func main() {
 		err = runAPIMix(args)
 	case "ws-chat":
 		err = runWsChat(args)
+	case "boot-resilience":
+		err = runBootResilience(args)
 	default:
 		usage()
 	}
@@ -48,7 +52,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: loadtest <login-storm|api-mix|ws-chat> [flags]")
+	fmt.Fprintln(os.Stderr, "usage: loadtest <login-storm|api-mix|ws-chat|boot-resilience> [flags]")
 	os.Exit(2)
 }
 

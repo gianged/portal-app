@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use anyhow::Context;
 use apalis_redis::RedisStorage;
@@ -9,7 +9,7 @@ use application::{
     NotificationFanout, PolicyProvider, ReportService,
     events::EventBus,
     permissions::Permissions,
-    resilience::{CircuitBreaker, Drainer, DrainerConfig, HealthRegistry},
+    resilience::{CircuitBreaker, Drainer, DrainerConfig, HealthRegistry, retry},
 };
 use domain::{
     health::BackendId,
@@ -76,12 +76,19 @@ pub struct WorkerContext {
 /// consumes. Mirrors the server composition root, minus the HTTP/authz slice.
 #[allow(clippy::too_many_lines)]
 pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
-    let pool = postgres::build_pool(&cfg.database_url, cfg.pg_max_connections)
-        .await
-        .context("building postgres pool")?;
-    let session = scylla::build_session(&cfg.scylla_hosts, &cfg.scylla_keyspace)
-        .await
-        .context("building scylla session")?;
+    // Every connect below retries with backoff against this shared deadline, so
+    // a binary started before its infra waits instead of failing.
+    let deadline = Instant::now() + cfg.startup_timeout;
+    let pool = retry::until_deadline("postgres", deadline, || {
+        postgres::build_pool(&cfg.database_url, cfg.pg_max_connections)
+    })
+    .await
+    .context("building postgres pool")?;
+    let session = retry::until_deadline("scylla", deadline, || {
+        scylla::build_session(&cfg.scylla_hosts, &cfg.scylla_keyspace)
+    })
+    .await
+    .context("building scylla session")?;
 
     let notifications: Arc<dyn NotificationRepository> =
         Arc::new(PgNotificationRepo::new(pool.clone()));
@@ -91,7 +98,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     // Clone the session for the health probe before the repo takes ownership.
     let scylla_health: Arc<dyn HealthCheck> = Arc::new(ScyllaHealthCheck::new(session.clone()));
     let chats: Arc<dyn ChatRepository> = Arc::new(
-        ScyllaChatRepo::new(session)
+        retry::until_deadline("scylla", deadline, || ScyllaChatRepo::new(session.clone()))
             .await
             .context("preparing scylla statements")?,
     );
@@ -104,21 +111,29 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         signer,
     ));
 
-    let storage = jobs::notification_storage(&cfg.redis_url)
-        .await
-        .context("connecting apalis redis (jobs)")?;
-    let audit_storage = jobs::audit_storage(&cfg.redis_url)
-        .await
-        .context("connecting apalis redis (audit jobs)")?;
-    let email_store = jobs::email_storage(&cfg.redis_url)
-        .await
-        .context("connecting apalis redis (email jobs)")?;
+    let storage = retry::until_deadline("redis (apalis jobs)", deadline, || {
+        jobs::notification_storage(&cfg.redis_url)
+    })
+    .await
+    .context("connecting apalis redis (jobs)")?;
+    let audit_storage = retry::until_deadline("redis (apalis audit)", deadline, || {
+        jobs::audit_storage(&cfg.redis_url)
+    })
+    .await
+    .context("connecting apalis redis (audit jobs)")?;
+    let email_store = retry::until_deadline("redis (apalis email)", deadline, || {
+        jobs::email_storage(&cfg.redis_url)
+    })
+    .await
+    .context("connecting apalis redis (email jobs)")?;
 
     // Event bus for system events (ticket auto-close): broadcast publisher plus the two durable queues this process consumes.
     let publisher = Arc::new(
-        RedisEventPublisher::new(&cfg.redis_url)
-            .await
-            .context("connecting redis (events)")?,
+        retry::until_deadline("redis (events)", deadline, || {
+            RedisEventPublisher::new(&cfg.redis_url)
+        })
+        .await
+        .context("connecting redis (events)")?,
     );
     let events = Arc::new(EventBus::new(
         publisher,
@@ -135,12 +150,14 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
                 cfg.openfga_model_path.display()
             )
         })?;
-    let fga_config = openfga::resolve_config(
-        &cfg.openfga_api_url,
-        "portal",
-        &model_json,
-        cfg.openfga_bearer_token.clone(),
-    )
+    let fga_config = retry::until_deadline("openfga", deadline, || {
+        openfga::resolve_config(
+            &cfg.openfga_api_url,
+            "portal",
+            &model_json,
+            cfg.openfga_bearer_token.clone(),
+        )
+    })
     .await
     .context("resolving openfga store/model")?;
     let authz = OpenFgaAuthzClient::new(fga_config).context("building openfga client")?;
@@ -151,8 +168,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     ));
     let policy_repo: Arc<dyn PolicyRepository> = Arc::new(PgPolicyRepo::new(pool.clone()));
     let policy_provider = Arc::new(PolicyProvider::new(
-        policy_repo
-            .load()
+        retry::until_deadline("postgres (policy)", deadline, || policy_repo.load())
             .await
             .context("loading attendance policy")?,
     ));
@@ -244,9 +260,11 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         Arc::new(PgHealthCheck::new(pool.clone())),
         scylla_health,
         Arc::new(
-            RedisHealthCheck::new(&cfg.redis_url)
-                .await
-                .context("connecting redis (health)")?,
+            retry::until_deadline("redis (health)", deadline, || {
+                RedisHealthCheck::new(&cfg.redis_url)
+            })
+            .await
+            .context("connecting redis (health)")?,
         ),
     ];
     let pg_breaker = health_registry
@@ -259,9 +277,11 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     // Chat write-behind spool drainer: replays batches the server spooled while
     // Scylla was down, paced by the Scylla breaker.
     let spool: Arc<dyn Spool> = Arc::new(
-        RedisSpool::new(&cfg.redis_url, "chat")
-            .await
-            .context("connecting redis (chat spool)")?,
+        retry::until_deadline("redis (chat spool)", deadline, || {
+            RedisSpool::new(&cfg.redis_url, "chat")
+        })
+        .await
+        .context("connecting redis (chat spool)")?,
     );
     let chat_drainer = Drainer::new(
         spool,
@@ -273,9 +293,11 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     // Job-dispatch spool: the server's last-resort hop when gRPC and the direct
     // apalis push are both unavailable; replayed by the job-spool drainer.
     let job_spool: Arc<dyn Spool> = Arc::new(
-        RedisSpool::new(&cfg.redis_url, "jobs")
-            .await
-            .context("connecting redis (job spool)")?,
+        retry::until_deadline("redis (job spool)", deadline, || {
+            RedisSpool::new(&cfg.redis_url, "jobs")
+        })
+        .await
+        .context("connecting redis (job spool)")?,
     );
 
     let fanout = Arc::new(

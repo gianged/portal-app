@@ -81,6 +81,9 @@ pub struct Config {
     /// How often the health prober pings each backend to drive its breaker and
     /// the `/readyz` snapshot.
     pub health_probe_interval: Duration,
+    /// Total boot budget: how long `app::build` keeps retrying unavailable
+    /// backends before giving up.
+    pub startup_timeout: Duration,
     /// Network gate: when `true`, only clients whose peer IP falls in
     /// `ip_allowlist` reach the API; others get 403. Toggle via
     /// `IP_ALLOWLIST_ENABLED` (default on).
@@ -200,6 +203,11 @@ pub fn from_env() -> anyhow::Result<Config> {
             optional("HEALTH_PROBE_INTERVAL_SECS", "5")
                 .parse()
                 .context("invalid HEALTH_PROBE_INTERVAL_SECS")?,
+        ),
+        startup_timeout: Duration::from_secs(
+            optional("STARTUP_TIMEOUT_SECS", "120")
+                .parse()
+                .context("invalid STARTUP_TIMEOUT_SECS")?,
         ),
         ip_allowlist_enabled,
         ip_allowlist,

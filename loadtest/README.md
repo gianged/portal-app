@@ -30,6 +30,24 @@ Common flags: `-base-url` (default `http://127.0.0.1:8090`), `-users`, `-passwor
 Each scenario prints latency percentiles plus its threshold checks and exits
 non-zero when one fails.
 
+## Boot-resilience e2e
+
+`go run . boot-resilience` (or `cargo make boot-resilience-test` from the repo
+root) verifies that server and workers wait for infra at startup instead of
+failing fast:
+
+1. Brings the dependency stack up, then stops `postgres` + `scylla`.
+2. Starts the prebuilt binaries and asserts both stay alive and log retry
+   warnings for the outage window (default 15s, `-outage`).
+3. Restarts the two services and asserts `/healthz` + `/readyz` go 200 and the
+   workers gRPC port accepts within 3 minutes.
+4. Reruns the server with `STARTUP_TIMEOUT_SECS=8` while Postgres is stopped
+   and asserts a non-zero exit once the budget expires.
+
+Prerequisites: `cargo build -p server -p workers`, docker running, and ports
+8090/50052 free (the scenario aborts if a live server/workers already answers).
+Child output lands in `boot-*.log` here. No seeded data or users.json needed.
+
 ## Rate-limit interplay
 
 - The defaults (`API_RATE_LIMIT=120`/min/user) throttle `api-mix` above ~2 req/s

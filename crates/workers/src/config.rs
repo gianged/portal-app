@@ -68,6 +68,9 @@ pub struct Config {
     pub report_schedule_interval: std::time::Duration,
     /// How often the health prober pings each backend to drive its breaker.
     pub health_probe_interval: std::time::Duration,
+    /// Total boot budget: how long `bootstrap::build` keeps retrying unavailable
+    /// backends before giving up.
+    pub startup_timeout: std::time::Duration,
     /// When false, the daily leave-expiry sweep does not run.
     pub leave_expiry_enabled: bool,
     /// How often the leave-expiry sweep runs.
@@ -128,6 +131,9 @@ pub fn from_env() -> anyhow::Result<Config> {
         health_probe_interval_secs > 0,
         "HEALTH_PROBE_INTERVAL_SECS must be > 0"
     );
+    let startup_timeout_secs: u64 = optional("STARTUP_TIMEOUT_SECS", "120")
+        .parse()
+        .context("invalid STARTUP_TIMEOUT_SECS")?;
 
     // OpenFGA wiring for the leave service; mirrors the server's store/model resolution.
     let openfga_bearer_token = env::var("OPENFGA_BEARER_TOKEN")
@@ -190,6 +196,7 @@ pub fn from_env() -> anyhow::Result<Config> {
         report_schedule_day,
         report_schedule_interval,
         health_probe_interval: std::time::Duration::from_secs(health_probe_interval_secs),
+        startup_timeout: std::time::Duration::from_secs(startup_timeout_secs),
         leave_expiry_enabled,
         leave_expiry_interval,
         flex_recon_enabled,
