@@ -31,6 +31,7 @@ struct GroupRow {
     name: String,
     description: String,
     kind: SqlGroupKind,
+    version: i64,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
 }
@@ -42,6 +43,7 @@ impl From<GroupRow> for Group {
             name: r.name,
             description: r.description,
             kind: r.kind.into(),
+            version: r.version,
             created_at: r.created_at,
             updated_at: r.updated_at,
         }
@@ -55,6 +57,7 @@ struct MembershipRow {
     role: SqlGroupRole,
     joined_at: OffsetDateTime,
     deactivated_at: Option<OffsetDateTime>,
+    version: i64,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
 }
@@ -68,6 +71,7 @@ impl From<MembershipRow> for Membership {
             role: r.role.into(),
             joined_at: r.joined_at,
             deactivated_at: r.deactivated_at,
+            version: r.version,
             created_at: r.created_at,
             updated_at: r.updated_at,
         }
@@ -75,34 +79,37 @@ impl From<MembershipRow> for Membership {
 }
 
 // Single upsert statement shared by single and batched saves so the sqlx
-// statement cache serves both.
+// statement cache serves both. Returns rows affected; 0 = version guard missed.
 async fn upsert_membership(
     executor: impl PgExecutor<'_>,
     m: &Membership,
-) -> Result<(), sqlx::Error> {
+) -> Result<u64, sqlx::Error> {
     let role = SqlGroupRole::from(m.role);
     // Literal kept byte-identical to the committed .sqlx cache entry.
-    sqlx::query!(
-        r#"INSERT INTO org.memberships
-                 (id, group_id, user_id, role, joined_at, deactivated_at, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)
+    let result = sqlx::query!(
+        r#"INSERT INTO org.memberships AS t
+                 (id, group_id, user_id, role, joined_at, deactivated_at, version, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                ON CONFLICT (id) DO UPDATE SET
                  group_id       = EXCLUDED.group_id,
                  user_id        = EXCLUDED.user_id,
                  role           = EXCLUDED.role,
                  joined_at      = EXCLUDED.joined_at,
-                 deactivated_at = EXCLUDED.deactivated_at"#,
+                 deactivated_at = EXCLUDED.deactivated_at,
+                 version        = EXCLUDED.version + 1
+               WHERE t.version = EXCLUDED.version"#,
         m.id.0,
         m.group_id.0,
         m.user_id.0,
         role as SqlGroupRole,
         m.joined_at,
         m.deactivated_at,
+        m.version,
         m.created_at,
     )
     .execute(executor)
     .await?;
-    Ok(())
+    Ok(result.rows_affected())
 }
 
 #[async_trait]
@@ -116,6 +123,7 @@ impl GroupRepository for PgGroupRepo {
                  name,
                  description,
                  kind AS "kind: SqlGroupKind",
+                 version,
                  created_at,
                  updated_at
                FROM org.groups
@@ -141,6 +149,7 @@ impl GroupRepository for PgGroupRepo {
                  name,
                  description,
                  kind AS "kind: SqlGroupKind",
+                 version,
                  created_at,
                  updated_at
                FROM org.groups
@@ -162,6 +171,7 @@ impl GroupRepository for PgGroupRepo {
                  name,
                  description,
                  kind AS "kind: SqlGroupKind",
+                 version,
                  created_at,
                  updated_at
                FROM org.groups
@@ -183,6 +193,7 @@ impl GroupRepository for PgGroupRepo {
                  name,
                  description,
                  kind AS "kind: SqlGroupKind",
+                 version,
                  created_at,
                  updated_at
                FROM org.groups
@@ -198,23 +209,29 @@ impl GroupRepository for PgGroupRepo {
     #[tracing::instrument(skip_all)]
     async fn save_group(&self, group: &Group) -> Result<(), RepositoryError> {
         let kind = SqlGroupKind::from(group.kind);
-        sqlx::query!(
-            r#"INSERT INTO org.groups
-                 (id, name, description, kind, created_at)
-               VALUES ($1, $2, $3, $4, $5)
+        let result = sqlx::query!(
+            r#"INSERT INTO org.groups AS t
+                 (id, name, description, kind, version, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6)
                ON CONFLICT (id) DO UPDATE SET
                  name        = EXCLUDED.name,
                  description = EXCLUDED.description,
-                 kind        = EXCLUDED.kind"#,
+                 kind        = EXCLUDED.kind,
+                 version     = EXCLUDED.version + 1
+               WHERE t.version = EXCLUDED.version"#,
             group.id.0,
             group.name,
             group.description,
             kind as SqlGroupKind,
+            group.version,
             group.created_at,
         )
         .execute(&self.pool)
         .await
         .map_err(mappers::map_pg_error)?;
+        if result.rows_affected() == 0 {
+            return Err(RepositoryError::Stale);
+        }
         Ok(())
     }
 
@@ -233,6 +250,7 @@ impl GroupRepository for PgGroupRepo {
                  role AS "role: SqlGroupRole",
                  joined_at,
                  deactivated_at,
+                 version,
                  created_at,
                  updated_at
                FROM org.memberships
@@ -260,6 +278,7 @@ impl GroupRepository for PgGroupRepo {
                  role AS "role: SqlGroupRole",
                  joined_at,
                  deactivated_at,
+                 version,
                  created_at,
                  updated_at
                FROM org.memberships
@@ -288,6 +307,7 @@ impl GroupRepository for PgGroupRepo {
                  role AS "role: SqlGroupRole",
                  joined_at,
                  deactivated_at,
+                 version,
                  created_at,
                  updated_at
                FROM org.memberships
@@ -319,6 +339,7 @@ impl GroupRepository for PgGroupRepo {
                  role AS "role: SqlGroupRole",
                  joined_at,
                  deactivated_at,
+                 version,
                  created_at,
                  updated_at
                FROM org.memberships
@@ -334,18 +355,27 @@ impl GroupRepository for PgGroupRepo {
 
     #[tracing::instrument(skip_all)]
     async fn save_membership(&self, m: &Membership) -> Result<(), RepositoryError> {
-        upsert_membership(&self.pool, m)
+        let rows = upsert_membership(&self.pool, m)
             .await
-            .map_err(mappers::map_pg_error)
+            .map_err(mappers::map_pg_error)?;
+        if rows == 0 {
+            return Err(RepositoryError::Stale);
+        }
+        Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(count = memberships.len()))]
     async fn save_memberships(&self, memberships: &[Membership]) -> Result<(), RepositoryError> {
         let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
         for m in memberships {
-            upsert_membership(&mut *tx, m)
+            let rows = upsert_membership(&mut *tx, m)
                 .await
                 .map_err(mappers::map_pg_error)?;
+            // One stale row voids the whole batch so a leader swap stays atomic.
+            if rows == 0 {
+                tx.rollback().await.map_err(mappers::map_pg_error)?;
+                return Err(RepositoryError::Stale);
+            }
         }
         tx.commit().await.map_err(mappers::map_pg_error)?;
         Ok(())

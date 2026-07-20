@@ -208,7 +208,11 @@ fn InvitesInbox(
                     });
                     on_responded.run(());
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        on_responded.run(());
+                    }
+                }
             }
         });
     };

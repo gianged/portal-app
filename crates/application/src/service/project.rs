@@ -17,6 +17,7 @@ use crate::{
     error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
+    resilience,
 };
 
 const OPEN_REQUEST_STATUSES: &[RequestStatus] = &[
@@ -73,6 +74,7 @@ impl ProjectService {
             status: ProjectStatus::Planning,
             progress: 0,
             completed_at: None,
+            version: 0,
             created_at: now,
             updated_at: now,
         };
@@ -105,30 +107,33 @@ impl ProjectService {
         project_id: ProjectId,
         cmd: UpdateProjectMetadataCommand,
     ) -> Result<Project> {
-        let mut project = self.load(project_id).await?;
-        self.perms
-            .require_group_leader_or_sub(actor, project.owner_group_id)
-            .await?;
-        let before = project.clone();
-        let now = OffsetDateTime::now_utc();
-        if let Some(name) = cmd.name {
-            project.name = name;
-        }
-        if let Some(description) = cmd.description {
-            project.description = description;
-        }
-        project.updated_at = now;
-        self.projects.save_project(&project).await?;
-        self.events
-            .emit(DomainEvent::ProjectMetadataUpdated {
-                project_id: project.id,
-                actor,
-                at: now,
-                before,
-                after: project.clone(),
-            })
-            .await?;
-        Ok(project)
+        resilience::retry_stale(|| async {
+            let mut project = self.load(project_id).await?;
+            self.perms
+                .require_group_leader_or_sub(actor, project.owner_group_id)
+                .await?;
+            let before = project.clone();
+            let now = OffsetDateTime::now_utc();
+            if let Some(name) = cmd.name.clone() {
+                project.name = name;
+            }
+            if let Some(description) = cmd.description.clone() {
+                project.description = description;
+            }
+            project.updated_at = now;
+            self.projects.save_project(&project).await?;
+            self.events
+                .emit(DomainEvent::ProjectMetadataUpdated {
+                    project_id: project.id,
+                    actor,
+                    at: now,
+                    before,
+                    after: project.clone(),
+                })
+                .await?;
+            Ok(project)
+        })
+        .await
     }
 
     /// Sets the project's manual completion percentage (0-100).
@@ -142,26 +147,29 @@ impl ProjectService {
         project_id: ProjectId,
         progress: u8,
     ) -> Result<Project> {
-        let mut project = self.load(project_id).await?;
-        self.perms
-            .require_group_leader_or_sub(actor, project.owner_group_id)
-            .await?;
-        let before = project.clone();
-        let now = OffsetDateTime::now_utc();
-        project.set_progress(progress, now);
-        self.projects.save_project(&project).await?;
-        // Reuse the metadata-updated event; before/after carry the full project,
-        // so the progress change is captured for audit without a new event variant.
-        self.events
-            .emit(DomainEvent::ProjectMetadataUpdated {
-                project_id: project.id,
-                actor,
-                at: now,
-                before,
-                after: project.clone(),
-            })
-            .await?;
-        Ok(project)
+        resilience::retry_stale(|| async {
+            let mut project = self.load(project_id).await?;
+            self.perms
+                .require_group_leader_or_sub(actor, project.owner_group_id)
+                .await?;
+            let before = project.clone();
+            let now = OffsetDateTime::now_utc();
+            project.set_progress(progress, now);
+            self.projects.save_project(&project).await?;
+            // Reuse the metadata-updated event; before/after carry the full project,
+            // so the progress change is captured for audit without a new event variant.
+            self.events
+                .emit(DomainEvent::ProjectMetadataUpdated {
+                    project_id: project.id,
+                    actor,
+                    at: now,
+                    before,
+                    after: project.clone(),
+                })
+                .await?;
+            Ok(project)
+        })
+        .await
     }
 
     /// Transitions the project to `Active`.
@@ -504,10 +512,15 @@ impl ProjectService {
             .await?)
     }
 
-    async fn transition<F>(&self, actor: UserId, project_id: ProjectId, op: F) -> Result<Project>
-    where
-        F: FnOnce(&mut Project, OffsetDateTime) -> std::result::Result<(), TransitionError>,
-    {
+    /// Single-shot on purpose (no stale retry): a raced transition must surface
+    /// as a conflict, never chain onto the winner's state (e.g. a cancel
+    /// silently landing after a concurrent hold).
+    async fn transition(
+        &self,
+        actor: UserId,
+        project_id: ProjectId,
+        op: fn(&mut Project, OffsetDateTime) -> std::result::Result<(), TransitionError>,
+    ) -> Result<Project> {
         let mut project = self.load(project_id).await?;
         self.perms
             .require_group_leader(actor, project.owner_group_id)
@@ -530,15 +543,13 @@ impl ProjectService {
 
     /// Terminal transition: validate first, cascade-cancel the open requests, and
     /// persist the project last so a mid-cascade failure leaves the endpoint retryable.
-    async fn terminal_transition<F>(
+    /// Single-shot for the same reason as [`Self::transition`].
+    async fn terminal_transition(
         &self,
         actor: UserId,
         project_id: ProjectId,
-        op: F,
-    ) -> Result<Project>
-    where
-        F: FnOnce(&mut Project, OffsetDateTime) -> std::result::Result<(), TransitionError>,
-    {
+        op: fn(&mut Project, OffsetDateTime) -> std::result::Result<(), TransitionError>,
+    ) -> Result<Project> {
         let mut project = self.load(project_id).await?;
         self.perms
             .require_group_leader(actor, project.owner_group_id)

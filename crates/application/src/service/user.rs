@@ -19,6 +19,7 @@ use crate::{
     error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
+    resilience,
 };
 
 const OPEN_REQUEST_STATUSES: &[RequestStatus] = &[
@@ -108,6 +109,7 @@ impl UserService {
             email_notifications: true,
             first_logged_in_at: None,
             deactivated_at: None,
+            version: 0,
             created_at: now,
             updated_at: now,
         };
@@ -139,21 +141,24 @@ impl UserService {
     #[tracing::instrument(skip_all, fields(user_id = ?user_id))]
     pub async fn complete_first_login(&self, user_id: UserId) -> Result<User> {
         let now = OffsetDateTime::now_utc();
-        let mut user = self
-            .users
-            .find_by_id(user_id)
-            .await?
-            .ok_or(Error::NotFound("user"))?;
-        user.activate(now, now)?;
-        self.users.save(&user).await?;
-        self.subscribe_to_general(user.id).await?;
-        self.events
-            .emit(DomainEvent::UserActivated {
-                user_id: user.id,
-                at: now,
-            })
-            .await?;
-        Ok(user)
+        resilience::retry_stale(|| async {
+            let mut user = self
+                .users
+                .find_by_id(user_id)
+                .await?
+                .ok_or(Error::NotFound("user"))?;
+            user.activate(now, now)?;
+            self.users.save(&user).await?;
+            self.subscribe_to_general(user.id).await?;
+            self.events
+                .emit(DomainEvent::UserActivated {
+                    user_id: user.id,
+                    at: now,
+                })
+                .await?;
+            Ok(user)
+        })
+        .await
     }
 
     /// Authenticates a login attempt and returns the resolved active user.
@@ -190,24 +195,19 @@ impl UserService {
     }
 
     /// Deactivates a user, dropping their memberships and org-role tuples.
-    /// Retry-safe: an already deactivated target re-runs the remaining cleanup.
+    /// Exactly one concurrent deactivation wins; losers fail the transition on
+    /// the reloaded state and surface as a conflict.
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the target does
     /// not exist, `Conflict` if the target still leads a group or has open
-    /// requests assigned, `Transition` if the target is still `Pending`, a
+    /// requests assigned, `Transition` if the target is not `Active`, a
     /// repository error if the datastore or authz backend is unavailable, or an
     /// event error if the event bus fails.
     #[tracing::instrument(skip_all, fields(actor = ?actor, target = ?target))]
     pub async fn deactivate_user(&self, actor: UserId, target: UserId) -> Result<()> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
-
-        let mut user = self
-            .users
-            .find_by_id(target)
-            .await?
-            .ok_or(Error::NotFound("user"))?;
 
         let memberships = self.groups.list_active_memberships_for_user(target).await?;
         if memberships.iter().any(|m| m.role == GroupRole::Leader) {
@@ -223,12 +223,17 @@ impl UserService {
             }
         }
 
-        // An already-deactivated target skips the transition so a partially
-        // failed run can resume; every cleanup step below is idempotent.
-        if user.status != UserStatus::Deactivated {
+        let user = resilience::retry_stale(|| async {
+            let mut user = self
+                .users
+                .find_by_id(target)
+                .await?
+                .ok_or(Error::NotFound("user"))?;
             user.deactivate(now)?;
             self.users.save(&user).await?;
-        }
+            Ok(user)
+        })
+        .await?;
         // Invalidate every session token the user still holds; status checks
         // alone leave read endpoints open until token expiry.
         self.revocation.bump_version(target).await?;
@@ -265,13 +270,17 @@ impl UserService {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
 
-        let mut user = self
-            .users
-            .find_by_id(target)
-            .await?
-            .ok_or(Error::NotFound("user"))?;
-        user.reactivate(now)?;
-        self.users.save(&user).await?;
+        let user = resilience::retry_stale(|| async {
+            let mut user = self
+                .users
+                .find_by_id(target)
+                .await?
+                .ok_or(Error::NotFound("user"))?;
+            user.reactivate(now)?;
+            self.users.save(&user).await?;
+            Ok(user)
+        })
+        .await?;
         if let Some(role) = user.system_role {
             self.perms.grant_company_role(target, role).await?;
         }
@@ -308,43 +317,46 @@ impl UserService {
         }
         let now = OffsetDateTime::now_utc();
 
-        let mut user = self
-            .users
-            .find_by_id(target)
-            .await?
-            .ok_or(Error::NotFound("user"))?;
+        resilience::retry_stale(|| async {
+            let mut user = self
+                .users
+                .find_by_id(target)
+                .await?
+                .ok_or(Error::NotFound("user"))?;
 
-        if let Some(full_name) = cmd.full_name {
-            user.full_name = full_name;
-        }
-        if cmd.phone.is_some() {
-            user.phone = cmd.phone;
-        }
-        if let Some(timezone) = cmd.timezone {
-            user.timezone = timezone;
-        }
-        if let Some(key) = cmd.avatar_storage_key {
-            // A profile key is client-supplied; a prefix pin keeps it from
-            // pointing at another user's uploads or arbitrary stored objects.
-            if !key.starts_with(&format!("avatars/{}/", target.0)) {
-                return Err(Error::Validation("invalid avatar storage key".into()));
+            if let Some(full_name) = cmd.full_name.clone() {
+                user.full_name = full_name;
             }
-            user.avatar_storage_key = Some(key);
-        }
-        if let Some(email_notifications) = cmd.email_notifications {
-            user.email_notifications = email_notifications;
-        }
-        user.updated_at = now;
+            if cmd.phone.is_some() {
+                user.phone = cmd.phone.clone();
+            }
+            if let Some(timezone) = cmd.timezone.clone() {
+                user.timezone = timezone;
+            }
+            if let Some(key) = cmd.avatar_storage_key.clone() {
+                // A profile key is client-supplied; a prefix pin keeps it from
+                // pointing at another user's uploads or arbitrary stored objects.
+                if !key.starts_with(&format!("avatars/{}/", target.0)) {
+                    return Err(Error::Validation("invalid avatar storage key".into()));
+                }
+                user.avatar_storage_key = Some(key);
+            }
+            if let Some(email_notifications) = cmd.email_notifications {
+                user.email_notifications = email_notifications;
+            }
+            user.updated_at = now;
 
-        self.users.save(&user).await?;
-        self.events
-            .emit(DomainEvent::UserProfileUpdated {
-                user_id: user.id,
-                actor,
-                at: now,
-            })
-            .await?;
-        Ok(user)
+            self.users.save(&user).await?;
+            self.events
+                .emit(DomainEvent::UserProfileUpdated {
+                    user_id: user.id,
+                    actor,
+                    at: now,
+                })
+                .await?;
+            Ok(user)
+        })
+        .await
     }
 
     /// Changes the actor's own password after re-verifying the current one,
@@ -365,18 +377,24 @@ impl UserService {
         self.perms.require_active(actor).await?;
         let now = OffsetDateTime::now_utc();
 
-        let mut user = self
-            .users
-            .find_by_id(actor)
-            .await?
-            .ok_or(Error::NotFound("user"))?;
-        if !verify_password(user.password_hash.clone(), current_password).await? {
-            return Err(Error::Validation("current password is incorrect".into()));
-        }
+        // Hash once outside the retry loop; argon2 is too expensive to redo.
+        let new_hash = hash_password(new_password).await?;
+        resilience::retry_stale(|| async {
+            let mut user = self
+                .users
+                .find_by_id(actor)
+                .await?
+                .ok_or(Error::NotFound("user"))?;
+            if !verify_password(user.password_hash.clone(), current_password).await? {
+                return Err(Error::Validation("current password is incorrect".into()));
+            }
 
-        user.password_hash = hash_password(new_password).await?;
-        user.updated_at = now;
-        self.users.save(&user).await?;
+            user.password_hash = new_hash.clone();
+            user.updated_at = now;
+            self.users.save(&user).await?;
+            Ok(())
+        })
+        .await?;
         self.revocation.bump_version(actor).await?;
         self.events
             .emit(DomainEvent::UserPasswordChanged {
@@ -404,14 +422,20 @@ impl UserService {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
 
-        let mut user = self
-            .users
-            .find_by_id(target)
-            .await?
-            .ok_or(Error::NotFound("user"))?;
-        user.password_hash = hash_password(new_password).await?;
-        user.updated_at = now;
-        self.users.save(&user).await?;
+        // Hash once outside the retry loop; argon2 is too expensive to redo.
+        let new_hash = hash_password(new_password).await?;
+        resilience::retry_stale(|| async {
+            let mut user = self
+                .users
+                .find_by_id(target)
+                .await?
+                .ok_or(Error::NotFound("user"))?;
+            user.password_hash = new_hash.clone();
+            user.updated_at = now;
+            self.users.save(&user).await?;
+            Ok(())
+        })
+        .await?;
         self.revocation.bump_version(target).await?;
         self.events
             .emit(DomainEvent::UserPasswordReset {

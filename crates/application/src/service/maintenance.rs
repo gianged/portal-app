@@ -1,6 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use domain::{
+    error::RepositoryError,
     ports::file_storage::FileStorage,
     repository::{
         ChatAttachmentRepository, NotificationRepository, ReportArchiveRepository,
@@ -92,7 +93,13 @@ impl MaintenanceService {
                     tracing::debug!(ticket = %ticket.id.0, error = %e, "auto-close skipped");
                     continue;
                 }
-                self.tickets.save(&ticket).await?;
+                match self.tickets.save(&ticket).await {
+                    Err(RepositoryError::Stale) => {
+                        tracing::debug!(ticket = %ticket.id.0, "auto-close lost to a concurrent writer");
+                        continue;
+                    }
+                    other => other?,
+                }
                 self.events
                     .emit(DomainEvent::TicketAutoClosed {
                         ticket_id: ticket.id,

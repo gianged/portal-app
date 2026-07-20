@@ -48,6 +48,26 @@ Prerequisites: `cargo build -p server -p workers`, docker running, and ports
 8090/50052 free (the scenario aborts if a live server/workers already answers).
 Child output lands in `boot-*.log` here. No seeded data or users.json needed.
 
+## Concurrency race e2e
+
+`go run . race` (or `cargo make race-test` from the repo root) checks that
+concurrent writers cannot corrupt an entity. It provisions its own throwaway
+cast (leader, sub-leaders, members, IT staff) via `hr@portal.local`, then per
+scenario fires barrier-synchronized bursts at the same entity:
+
+- request: submit x N, assign to different users, approve vs reject, and
+  concurrent single-field PATCHes
+- ticket: triage x N (distinct priorities), assign to different IT users
+- project: hold/complete/cancel race, resume x N from on-hold
+- group: two simultaneous leader promotions (one-leader invariant)
+- user: deactivate x N
+
+Contract per burst: exactly one winner (all winners for the compatible PATCH
+burst), losers get 409 (never 500), and the final state read back must match
+the winner. Needs the demo seed (`hr@portal.local`) and `COOKIE_SECURE=false`;
+no `users.json`. Defaults (`-writers 6 -rounds 8`) stay under the per-user API
+rate limit — raise `API_RATE_LIMIT` before raising them.
+
 ## Rate-limit interplay
 
 - The defaults (`API_RATE_LIMIT=120`/min/user) throttle `api-mix` above ~2 req/s

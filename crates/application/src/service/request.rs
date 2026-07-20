@@ -14,6 +14,7 @@ use crate::{
     error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
+    resilience,
 };
 
 pub struct RequestService {
@@ -68,6 +69,7 @@ impl RequestService {
             progress: 0,
             due_at: cmd.due_at,
             completed_at: None,
+            version: 0,
             created_at: now,
             updated_at: now,
         };
@@ -91,16 +93,19 @@ impl RequestService {
     #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn submit(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         self.perms.require_active(actor).await?;
-        let mut request = self.load(request_id).await?;
-        if request.creator_user_id != actor {
-            return Err(Error::Forbidden);
-        }
-        let from = request.status;
-        let now = OffsetDateTime::now_utc();
-        request.submit(now)?;
-        self.requests.save(&request).await?;
-        self.emit_status(actor, &request, from, now).await?;
-        Ok(request)
+        resilience::retry_stale(|| async {
+            let mut request = self.load(request_id).await?;
+            if request.creator_user_id != actor {
+                return Err(Error::Forbidden);
+            }
+            let from = request.status;
+            let now = OffsetDateTime::now_utc();
+            request.submit(now)?;
+            self.requests.save(&request).await?;
+            self.emit_status(actor, &request, from, now).await?;
+            Ok(request)
+        })
+        .await
     }
 
     /// Assigns the request to an eligible assignee.
@@ -114,27 +119,30 @@ impl RequestService {
         request_id: RequestId,
         assignee: UserId,
     ) -> Result<Request> {
-        let mut request = self.load(request_id).await?;
-        self.perms
-            .require_can_assign_request(actor, request.project_id)
-            .await?;
-        self.assert_assignee_eligible(request.project_id, assignee)
-            .await?;
-        let from = request.status;
-        let now = OffsetDateTime::now_utc();
-        request.assign(assignee, now)?;
-        self.requests.save(&request).await?;
-        self.events
-            .emit(DomainEvent::RequestAssigned {
-                request_id: request.id,
-                project_id: request.project_id,
-                assignee,
-                actor,
-                at: now,
-            })
-            .await?;
-        self.emit_status(actor, &request, from, now).await?;
-        Ok(request)
+        resilience::retry_stale(|| async {
+            let mut request = self.load(request_id).await?;
+            self.perms
+                .require_can_assign_request(actor, request.project_id)
+                .await?;
+            self.assert_assignee_eligible(request.project_id, assignee)
+                .await?;
+            let from = request.status;
+            let now = OffsetDateTime::now_utc();
+            request.assign(assignee, now)?;
+            self.requests.save(&request).await?;
+            self.events
+                .emit(DomainEvent::RequestAssigned {
+                    request_id: request.id,
+                    project_id: request.project_id,
+                    assignee,
+                    actor,
+                    at: now,
+                })
+                .await?;
+            self.emit_status(actor, &request, from, now).await?;
+            Ok(request)
+        })
+        .await
     }
 
     /// Starts work on an assigned request. Assignee-only.
@@ -144,16 +152,19 @@ impl RequestService {
     #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn start(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         self.perms.require_active(actor).await?;
-        let mut request = self.load(request_id).await?;
-        if request.assignee_user_id != Some(actor) {
-            return Err(Error::Forbidden);
-        }
-        let from = request.status;
-        let now = OffsetDateTime::now_utc();
-        request.start(now)?;
-        self.requests.save(&request).await?;
-        self.emit_status(actor, &request, from, now).await?;
-        Ok(request)
+        resilience::retry_stale(|| async {
+            let mut request = self.load(request_id).await?;
+            if request.assignee_user_id != Some(actor) {
+                return Err(Error::Forbidden);
+            }
+            let from = request.status;
+            let now = OffsetDateTime::now_utc();
+            request.start(now)?;
+            self.requests.save(&request).await?;
+            self.emit_status(actor, &request, from, now).await?;
+            Ok(request)
+        })
+        .await
     }
 
     /// Sends an in-progress request for review. Assignee-only.
@@ -163,16 +174,19 @@ impl RequestService {
     #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn send_for_review(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         self.perms.require_active(actor).await?;
-        let mut request = self.load(request_id).await?;
-        if request.assignee_user_id != Some(actor) {
-            return Err(Error::Forbidden);
-        }
-        let from = request.status;
-        let now = OffsetDateTime::now_utc();
-        request.send_for_review(now)?;
-        self.requests.save(&request).await?;
-        self.emit_status(actor, &request, from, now).await?;
-        Ok(request)
+        resilience::retry_stale(|| async {
+            let mut request = self.load(request_id).await?;
+            if request.assignee_user_id != Some(actor) {
+                return Err(Error::Forbidden);
+            }
+            let from = request.status;
+            let now = OffsetDateTime::now_utc();
+            request.send_for_review(now)?;
+            self.requests.save(&request).await?;
+            self.emit_status(actor, &request, from, now).await?;
+            Ok(request)
+        })
+        .await
     }
 
     /// Approves a request under review, completing it.
@@ -181,14 +195,17 @@ impl RequestService {
     /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is neither the creator nor able to assign requests on the project, `Transition` if the request is not under review, or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn approve(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
-        let mut request = self.load(request_id).await?;
-        self.require_approver(actor, &request).await?;
-        let from = request.status;
-        let now = OffsetDateTime::now_utc();
-        request.complete(now)?;
-        self.requests.save(&request).await?;
-        self.emit_status(actor, &request, from, now).await?;
-        Ok(request)
+        resilience::retry_stale(|| async {
+            let mut request = self.load(request_id).await?;
+            self.require_approver(actor, &request).await?;
+            let from = request.status;
+            let now = OffsetDateTime::now_utc();
+            request.complete(now)?;
+            self.requests.save(&request).await?;
+            self.emit_status(actor, &request, from, now).await?;
+            Ok(request)
+        })
+        .await
     }
 
     /// Rejects a request under review, sending it back.
@@ -197,14 +214,17 @@ impl RequestService {
     /// Returns `NotFound` if the request does not exist, `Forbidden` if the actor is neither the creator nor able to assign requests on the project, `Transition` if the request is not under review, or a repository or event error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn reject(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
-        let mut request = self.load(request_id).await?;
-        self.require_approver(actor, &request).await?;
-        let from = request.status;
-        let now = OffsetDateTime::now_utc();
-        request.reject(now)?;
-        self.requests.save(&request).await?;
-        self.emit_status(actor, &request, from, now).await?;
-        Ok(request)
+        resilience::retry_stale(|| async {
+            let mut request = self.load(request_id).await?;
+            self.require_approver(actor, &request).await?;
+            let from = request.status;
+            let now = OffsetDateTime::now_utc();
+            request.reject(now)?;
+            self.requests.save(&request).await?;
+            self.emit_status(actor, &request, from, now).await?;
+            Ok(request)
+        })
+        .await
     }
 
     /// Cancels a request. Allowed for the creator, the assignee, or anyone who can assign requests on the project.
@@ -214,20 +234,23 @@ impl RequestService {
     #[tracing::instrument(skip_all, fields(actor = ?actor, request_id = ?request_id))]
     pub async fn cancel(&self, actor: UserId, request_id: RequestId) -> Result<Request> {
         self.perms.require_active(actor).await?;
-        let mut request = self.load(request_id).await?;
-        let is_creator = request.creator_user_id == actor;
-        let is_assignee = request.assignee_user_id == Some(actor);
-        if !is_creator && !is_assignee {
-            self.perms
-                .require_can_assign_request(actor, request.project_id)
-                .await?;
-        }
-        let from = request.status;
-        let now = OffsetDateTime::now_utc();
-        request.cancel(now)?;
-        self.requests.save(&request).await?;
-        self.emit_status(actor, &request, from, now).await?;
-        Ok(request)
+        resilience::retry_stale(|| async {
+            let mut request = self.load(request_id).await?;
+            let is_creator = request.creator_user_id == actor;
+            let is_assignee = request.assignee_user_id == Some(actor);
+            if !is_creator && !is_assignee {
+                self.perms
+                    .require_can_assign_request(actor, request.project_id)
+                    .await?;
+            }
+            let from = request.status;
+            let now = OffsetDateTime::now_utc();
+            request.cancel(now)?;
+            self.requests.save(&request).await?;
+            self.emit_status(actor, &request, from, now).await?;
+            Ok(request)
+        })
+        .await
     }
 
     /// Sets the completion percentage on an in-progress request. Assignee-only.
@@ -242,22 +265,27 @@ impl RequestService {
         progress: u8,
     ) -> Result<Request> {
         self.perms.require_active(actor).await?;
-        let mut request = self.load(request_id).await?;
-        if request.assignee_user_id != Some(actor) || request.status != RequestStatus::InProgress {
-            return Err(Error::Forbidden);
-        }
-        let now = OffsetDateTime::now_utc();
-        request.set_progress(progress, now);
-        self.requests.save(&request).await?;
-        self.events
-            .emit(DomainEvent::RequestProgressUpdated {
-                request_id: request.id,
-                project_id: request.project_id,
-                actor,
-                at: now,
-            })
-            .await?;
-        Ok(request)
+        resilience::retry_stale(|| async {
+            let mut request = self.load(request_id).await?;
+            if request.assignee_user_id != Some(actor)
+                || request.status != RequestStatus::InProgress
+            {
+                return Err(Error::Forbidden);
+            }
+            let now = OffsetDateTime::now_utc();
+            request.set_progress(progress, now);
+            self.requests.save(&request).await?;
+            self.events
+                .emit(DomainEvent::RequestProgressUpdated {
+                    request_id: request.id,
+                    project_id: request.project_id,
+                    actor,
+                    at: now,
+                })
+                .await?;
+            Ok(request)
+        })
+        .await
     }
 
     /// Uploads an attachment to the request and records its metadata.
@@ -379,43 +407,46 @@ impl RequestService {
         cmd: UpdateRequestCommand,
     ) -> Result<Request> {
         self.perms.require_active(actor).await?;
-        let mut request = self.load(request_id).await?;
-        if request.creator_user_id != actor {
-            return Err(Error::Forbidden);
-        }
-        if !matches!(
-            request.status,
-            RequestStatus::Draft | RequestStatus::Submitted
-        ) {
-            return Err(Error::Conflict(ConflictCode::RequestNotEditable));
-        }
-        let before = request.clone();
-        let now = OffsetDateTime::now_utc();
-        if let Some(title) = cmd.title {
-            request.title = title;
-        }
-        if let Some(description) = cmd.description {
-            request.description = description;
-        }
-        if let Some(priority) = cmd.priority {
-            request.priority = priority;
-        }
-        if let Some(due_at) = cmd.due_at {
-            request.due_at = Some(due_at);
-        }
-        request.updated_at = now;
-        self.requests.save(&request).await?;
-        self.events
-            .emit(DomainEvent::RequestMetadataUpdated {
-                request_id: request.id,
-                project_id: request.project_id,
-                actor,
-                at: now,
-                before,
-                after: request.clone(),
-            })
-            .await?;
-        Ok(request)
+        resilience::retry_stale(|| async {
+            let mut request = self.load(request_id).await?;
+            if request.creator_user_id != actor {
+                return Err(Error::Forbidden);
+            }
+            if !matches!(
+                request.status,
+                RequestStatus::Draft | RequestStatus::Submitted
+            ) {
+                return Err(Error::Conflict(ConflictCode::RequestNotEditable));
+            }
+            let before = request.clone();
+            let now = OffsetDateTime::now_utc();
+            if let Some(title) = cmd.title.clone() {
+                request.title = title;
+            }
+            if let Some(description) = cmd.description.clone() {
+                request.description = description;
+            }
+            if let Some(priority) = cmd.priority {
+                request.priority = priority;
+            }
+            if let Some(due_at) = cmd.due_at {
+                request.due_at = Some(due_at);
+            }
+            request.updated_at = now;
+            self.requests.save(&request).await?;
+            self.events
+                .emit(DomainEvent::RequestMetadataUpdated {
+                    request_id: request.id,
+                    project_id: request.project_id,
+                    actor,
+                    at: now,
+                    before,
+                    after: request.clone(),
+                })
+                .await?;
+            Ok(request)
+        })
+        .await
     }
 
     async fn require_approver(&self, actor: UserId, request: &Request) -> Result<()> {

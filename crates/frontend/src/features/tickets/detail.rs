@@ -85,7 +85,11 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
                     toast.success("Ticket updated");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        reload.update(|n| *n += 1);
+                    }
+                }
             }
             busy.set(false);
         });
@@ -109,7 +113,12 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
                     triage_open.set(false);
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        triage_open.set(false);
+                        reload.update(|n| *n += 1);
+                    }
+                }
             }
             triage_busy.set(false);
         });
@@ -137,7 +146,12 @@ pub fn TicketDetail(#[prop(into)] id: Signal<Option<TicketId>>) -> impl IntoView
                     assign_open.set(false);
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        assign_open.set(false);
+                        reload.update(|n| *n += 1);
+                    }
+                }
             }
             assign_busy.set(false);
         });

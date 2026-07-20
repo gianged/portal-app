@@ -19,6 +19,8 @@ pub struct Project {
     pub progress: u8,
     /// Set when the project transitions into `Completed`; `None` otherwise.
     pub completed_at: Option<OffsetDateTime>,
+    /// Optimistic-lock version as loaded; the guarded save bumps it.
+    pub version: i64,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -301,6 +303,7 @@ mod tests {
             status: ProjectStatus::Planning,
             progress: 0,
             completed_at: None,
+            version: 0,
             created_at: t0,
             updated_at: t0,
         };
@@ -322,6 +325,7 @@ mod tests {
             status: ProjectStatus::Active,
             progress: 80,
             completed_at: None,
+            version: 0,
             created_at: t0,
             updated_at: t0,
         };

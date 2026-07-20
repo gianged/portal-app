@@ -1138,6 +1138,7 @@ pub fn active_user(id: UserId, email: &str) -> User {
         email_notifications: true,
         first_logged_in_at: Some(now),
         deactivated_at: None,
+        version: 0,
         created_at: now,
         updated_at: now,
     }

@@ -5,6 +5,7 @@
 //	go run . api-mix    -peak-rps 200
 //	go run . ws-chat    -sockets 1000 -stagger 120ms -hold 2m
 //	go run . boot-resilience
+//	go run . race       -writers 6 -rounds 8
 //
 // Prerequisites: seeded DB and users.json (see README.md). The server must run
 // with COOKIE_SECURE=false for plain-HTTP cookies. boot-resilience instead
@@ -41,6 +42,8 @@ func main() {
 		err = runWsChat(args)
 	case "boot-resilience":
 		err = runBootResilience(args)
+	case "race":
+		err = runRace(args)
 	default:
 		usage()
 	}
@@ -52,7 +55,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: loadtest <login-storm|api-mix|ws-chat|boot-resilience> [flags]")
+	fmt.Fprintln(os.Stderr, "usage: loadtest <login-storm|api-mix|ws-chat|boot-resilience|race> [flags]")
 	os.Exit(2)
 }
 

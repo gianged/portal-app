@@ -7,6 +7,7 @@ mod circuit;
 mod dispatch_queue;
 mod drainer;
 mod health_registry;
+mod optimistic;
 pub mod retry;
 mod supervisor;
 
@@ -15,4 +16,5 @@ pub use circuit::{CircuitBreaker, CircuitConfig, Permit};
 pub use dispatch_queue::{DispatchQueue, SpooledJob};
 pub use drainer::{Drainer, DrainerConfig};
 pub use health_registry::HealthRegistry;
+pub use optimistic::retry_stale;
 pub use supervisor::{SupervisorHandle, supervise};

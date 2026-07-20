@@ -18,6 +18,8 @@ pub struct User {
     pub email_notifications: bool,
     pub first_logged_in_at: Option<OffsetDateTime>,
     pub deactivated_at: Option<OffsetDateTime>,
+    /// Optimistic-lock version as loaded; the guarded save bumps it.
+    pub version: i64,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -124,6 +126,7 @@ mod tests {
             email_notifications: true,
             first_logged_in_at: None,
             deactivated_at: None,
+            version: 0,
             created_at: t0,
             updated_at: t0,
         }

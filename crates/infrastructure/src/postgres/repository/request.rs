@@ -38,6 +38,7 @@ struct RequestRow {
     progress: i16,
     due_at: Option<OffsetDateTime>,
     completed_at: Option<OffsetDateTime>,
+    version: i64,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
 }
@@ -56,6 +57,7 @@ impl From<RequestRow> for Request {
             progress: u8::try_from(r.progress).unwrap_or(0),
             due_at: r.due_at,
             completed_at: r.completed_at,
+            version: r.version,
             created_at: r.created_at,
             updated_at: r.updated_at,
         }
@@ -110,6 +112,7 @@ impl RequestRepository for PgRequestRepo {
                  progress,
                  due_at,
                  completed_at,
+                 version,
                  created_at,
                  updated_at
                FROM project.requests
@@ -144,6 +147,7 @@ impl RequestRepository for PgRequestRepo {
                  progress,
                  due_at,
                  completed_at,
+                 version,
                  created_at,
                  updated_at
                FROM project.requests
@@ -185,6 +189,7 @@ impl RequestRepository for PgRequestRepo {
                  progress,
                  due_at,
                  completed_at,
+                 version,
                  created_at,
                  updated_at
                FROM project.requests
@@ -226,6 +231,7 @@ impl RequestRepository for PgRequestRepo {
                  progress,
                  due_at,
                  completed_at,
+                 version,
                  created_at,
                  updated_at
                FROM project.requests
@@ -247,11 +253,11 @@ impl RequestRepository for PgRequestRepo {
     async fn save(&self, request: &Request) -> Result<(), RepositoryError> {
         let status = SqlRequestStatus::from(request.status);
         let priority = SqlRequestPriority::from(request.priority);
-        sqlx::query!(
-            r#"INSERT INTO project.requests
+        let result = sqlx::query!(
+            r#"INSERT INTO project.requests AS t
                  (id, project_id, creator_user_id, assignee_user_id, title, description,
-                  status, priority, progress, due_at, completed_at, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                  status, priority, progress, due_at, completed_at, version, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                ON CONFLICT (id) DO UPDATE SET
                  project_id        = EXCLUDED.project_id,
                  creator_user_id   = EXCLUDED.creator_user_id,
@@ -262,7 +268,9 @@ impl RequestRepository for PgRequestRepo {
                  priority          = EXCLUDED.priority,
                  progress          = EXCLUDED.progress,
                  due_at            = EXCLUDED.due_at,
-                 completed_at      = EXCLUDED.completed_at"#,
+                 completed_at      = EXCLUDED.completed_at,
+                 version           = EXCLUDED.version + 1
+               WHERE t.version = EXCLUDED.version"#,
             request.id.0,
             request.project_id.0,
             request.creator_user_id.0,
@@ -274,11 +282,15 @@ impl RequestRepository for PgRequestRepo {
             i16::from(request.progress),
             request.due_at,
             request.completed_at,
+            request.version,
             request.created_at,
         )
         .execute(&self.pool)
         .await
         .map_err(mappers::map_pg_error)?;
+        if result.rows_affected() == 0 {
+            return Err(RepositoryError::Stale);
+        }
         Ok(())
     }
 

@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO auth.users AS t\n                 (id, email, password_hash, full_name, avatar_storage_key, phone,\n                  timezone, status, system_role, email_notifications,\n                  first_logged_in_at, deactivated_at, version, created_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)\n               ON CONFLICT (id) DO UPDATE SET\n                 email               = EXCLUDED.email,\n                 password_hash       = EXCLUDED.password_hash,\n                 full_name           = EXCLUDED.full_name,\n                 avatar_storage_key  = EXCLUDED.avatar_storage_key,\n                 phone               = EXCLUDED.phone,\n                 timezone            = EXCLUDED.timezone,\n                 status              = EXCLUDED.status,\n                 system_role         = EXCLUDED.system_role,\n                 email_notifications = EXCLUDED.email_notifications,\n                 first_logged_in_at  = EXCLUDED.first_logged_in_at,\n                 deactivated_at      = EXCLUDED.deactivated_at,\n                 version             = EXCLUDED.version + 1\n               WHERE t.version = EXCLUDED.version",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        {
+          "Custom": {
+            "name": "auth.user_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "active",
+                "deactivated"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "auth.system_role",
+            "kind": {
+              "Enum": [
+                "director",
+                "hr"
+              ]
+            }
+          }
+        },
+        "Bool",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e0ea3fd5cb9617dbe52d15cabf4fd37b569ae5e59577adb28e2d35e8ea759167"
+}

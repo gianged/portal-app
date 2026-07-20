@@ -19,6 +19,8 @@ pub struct Ticket {
     pub triaged_at: Option<OffsetDateTime>,
     pub resolved_at: Option<OffsetDateTime>,
     pub closed_at: Option<OffsetDateTime>,
+    /// Optimistic-lock version as loaded; the guarded save bumps it.
+    pub version: i64,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -242,6 +244,7 @@ mod tests {
             triaged_at: None,
             resolved_at: None,
             closed_at: None,
+            version: 0,
             created_at: t0,
             updated_at: t0,
         }

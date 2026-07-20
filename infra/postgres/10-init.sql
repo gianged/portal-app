@@ -306,6 +306,8 @@ CREATE TABLE auth.users (
     email_notifications BOOLEAN     NOT NULL DEFAULT TRUE,
     first_logged_in_at  TIMESTAMPTZ,
     deactivated_at      TIMESTAMPTZ,
+    -- optimistic-lock counter; guarded upserts bump it on every update
+    version             BIGINT      NOT NULL DEFAULT 0,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -400,6 +402,7 @@ CREATE TABLE org.groups (
     name        TEXT        NOT NULL,
     description TEXT        NOT NULL DEFAULT '',
     kind        org.group_kind NOT NULL DEFAULT 'standard',
+    version     BIGINT      NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -415,6 +418,7 @@ CREATE TABLE org.memberships (
     role            org.group_role NOT NULL,
     joined_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deactivated_at  TIMESTAMPTZ,
+    version         BIGINT      NOT NULL DEFAULT 0,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -433,6 +437,7 @@ CREATE TABLE project.projects (
     status              project.project_status NOT NULL DEFAULT 'planning',
     progress            SMALLINT    NOT NULL DEFAULT 0,
     completed_at        TIMESTAMPTZ,
+    version             BIGINT      NOT NULL DEFAULT 0,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -489,6 +494,7 @@ CREATE TABLE project.requests (
     progress          SMALLINT    NOT NULL DEFAULT 0,
     due_at            TIMESTAMPTZ,
     completed_at      TIMESTAMPTZ,
+    version           BIGINT      NOT NULL DEFAULT 0,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -577,6 +583,7 @@ CREATE TABLE ticket.tickets (
     triaged_at         TIMESTAMPTZ,
     resolved_at        TIMESTAMPTZ,
     closed_at          TIMESTAMPTZ,
+    version            BIGINT      NOT NULL DEFAULT 0,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 

@@ -63,6 +63,22 @@ impl ToastState {
         self.push(ToastKind::Error, Some(display.title), display.message);
     }
 
+    /// Conflict-aware variant for entity mutations: a 409 warns that the content
+    /// just changed and returns `true` so the caller refetches; anything else
+    /// falls back to [`Self::error_from`].
+    pub fn error_or_conflict(&self, err: &FrontendError) -> bool {
+        if err.is_conflict() {
+            self.push(
+                ToastKind::Error,
+                Some("Just Updated".to_owned()),
+                "Someone else just updated this content. Showing the latest version.".to_owned(),
+            );
+            return true;
+        }
+        self.error_from(err);
+        false
+    }
+
     pub fn dismiss(&self, id: u64) {
         self.items.update(|v| v.retain(|t| t.id != id));
     }

@@ -26,6 +26,8 @@ pub enum RepositoryError {
     NotFound,
     #[error("conflicting state: {0}")]
     Conflict(String),
+    #[error("entity was modified concurrently")]
+    Stale,
     #[error("backend error: {0}")]
     Backend(String),
 }

@@ -71,7 +71,11 @@ pub fn UserDetail(#[prop(into)] id: Signal<Option<UserId>>) -> impl IntoView {
                     });
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        reload.update(|n| *n += 1);
+                    }
+                }
             }
         });
     };
@@ -377,7 +381,12 @@ fn EditProfileDialog(
                     open.set(false);
                     on_saved.run(());
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    // Dialog stays open so the typed input survives the refetch.
+                    if toast.error_or_conflict(&e) {
+                        on_saved.run(());
+                    }
+                }
             }
             submitting.set(false);
         });

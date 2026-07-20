@@ -94,7 +94,11 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                     toast.success("Request updated");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        reload.update(|n| *n += 1);
+                    }
+                }
             }
             busy.set(false);
         });
@@ -122,7 +126,12 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                     assign_open.set(false);
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        assign_open.set(false);
+                        reload.update(|n| *n += 1);
+                    }
+                }
             }
             assign_busy.set(false);
         });
@@ -193,7 +202,11 @@ pub fn RequestDetail(#[prop(into)] id: Signal<Option<RequestId>>) -> impl IntoVi
                                             toast.success("Progress updated");
                                             reload.update(|n| *n += 1);
                                         }
-                                        Err(e) => toast.error_from(&e),
+                                        Err(e) => {
+                                            if toast.error_or_conflict(&e) {
+                                                reload.update(|n| *n += 1);
+                                            }
+                                        }
                                     }
                                     saving.set(false);
                                 });

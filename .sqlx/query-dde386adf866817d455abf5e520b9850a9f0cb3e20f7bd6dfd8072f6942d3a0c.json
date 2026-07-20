@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO org.memberships AS t\n                 (id, group_id, user_id, role, joined_at, deactivated_at, version, created_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n               ON CONFLICT (id) DO UPDATE SET\n                 group_id       = EXCLUDED.group_id,\n                 user_id        = EXCLUDED.user_id,\n                 role           = EXCLUDED.role,\n                 joined_at      = EXCLUDED.joined_at,\n                 deactivated_at = EXCLUDED.deactivated_at,\n                 version        = EXCLUDED.version + 1\n               WHERE t.version = EXCLUDED.version",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        {
+          "Custom": {
+            "name": "org.group_role",
+            "kind": {
+              "Enum": [
+                "leader",
+                "sub_leader",
+                "member"
+              ]
+            }
+          }
+        },
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dde386adf866817d455abf5e520b9850a9f0cb3e20f7bd6dfd8072f6942d3a0c"
+}

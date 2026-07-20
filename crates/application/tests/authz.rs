@@ -624,6 +624,7 @@ fn user(system_role: Option<SystemRole>) -> User {
         email_notifications: true,
         first_logged_in_at: Some(now),
         deactivated_at: None,
+        version: 0,
         created_at: now,
         updated_at: now,
     }
@@ -636,6 +637,7 @@ fn group(kind: GroupKind) -> Group {
         name: "G".into(),
         description: String::new(),
         kind,
+        version: 0,
         created_at: now,
         updated_at: now,
     }
@@ -650,6 +652,7 @@ fn membership(group_id: GroupId, user_id: UserId, role: GroupRole) -> Membership
         role,
         joined_at: now,
         deactivated_at: None,
+        version: 0,
         created_at: now,
         updated_at: now,
     }
@@ -991,6 +994,7 @@ fn closed_ticket(requester: UserId, closed_at: OffsetDateTime) -> Ticket {
         triaged_at: Some(closed_at),
         resolved_at: Some(closed_at),
         closed_at: Some(closed_at),
+        version: 0,
         created_at: closed_at,
         updated_at: closed_at,
     }

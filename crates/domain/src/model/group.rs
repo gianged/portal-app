@@ -9,6 +9,8 @@ pub struct Group {
     pub name: String,
     pub description: String,
     pub kind: GroupKind,
+    /// Optimistic-lock version as loaded; the guarded save bumps it.
+    pub version: i64,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -30,6 +32,8 @@ pub struct Membership {
     pub role: GroupRole,
     pub joined_at: OffsetDateTime,
     pub deactivated_at: Option<OffsetDateTime>,
+    /// Optimistic-lock version as loaded; the guarded save bumps it.
+    pub version: i64,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }

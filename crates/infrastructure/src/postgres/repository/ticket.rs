@@ -38,6 +38,7 @@ struct TicketRow {
     triaged_at: Option<OffsetDateTime>,
     resolved_at: Option<OffsetDateTime>,
     closed_at: Option<OffsetDateTime>,
+    version: i64,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
 }
@@ -56,6 +57,7 @@ impl From<TicketRow> for Ticket {
             triaged_at: r.triaged_at,
             resolved_at: r.resolved_at,
             closed_at: r.closed_at,
+            version: r.version,
             created_at: r.created_at,
             updated_at: r.updated_at,
         }
@@ -80,6 +82,7 @@ impl TicketRepository for PgTicketRepo {
                  triaged_at,
                  resolved_at,
                  closed_at,
+                 version,
                  created_at,
                  updated_at
                FROM ticket.tickets
@@ -114,6 +117,7 @@ impl TicketRepository for PgTicketRepo {
                  triaged_at,
                  resolved_at,
                  closed_at,
+                 version,
                  created_at,
                  updated_at
                FROM ticket.tickets
@@ -152,6 +156,7 @@ impl TicketRepository for PgTicketRepo {
                  triaged_at,
                  resolved_at,
                  closed_at,
+                 version,
                  created_at,
                  updated_at
                FROM ticket.tickets
@@ -188,6 +193,7 @@ impl TicketRepository for PgTicketRepo {
                  triaged_at,
                  resolved_at,
                  closed_at,
+                 version,
                  created_at,
                  updated_at
                FROM ticket.tickets
@@ -224,6 +230,7 @@ impl TicketRepository for PgTicketRepo {
                  triaged_at,
                  resolved_at,
                  closed_at,
+                 version,
                  created_at,
                  updated_at
                FROM ticket.tickets
@@ -245,12 +252,12 @@ impl TicketRepository for PgTicketRepo {
         let status = SqlTicketStatus::from(ticket.status);
         let priority: Option<SqlTicketPriority> = ticket.priority.map(Into::into);
         let category = SqlTicketCategory::from(ticket.category);
-        sqlx::query!(
-            r#"INSERT INTO ticket.tickets
+        let result = sqlx::query!(
+            r#"INSERT INTO ticket.tickets AS t
                  (id, requester_user_id, assignee_user_id, title, description,
                   status, priority, category, triaged_at, resolved_at, closed_at,
-                  created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                  version, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                ON CONFLICT (id) DO UPDATE SET
                  requester_user_id = EXCLUDED.requester_user_id,
                  assignee_user_id  = EXCLUDED.assignee_user_id,
@@ -261,7 +268,9 @@ impl TicketRepository for PgTicketRepo {
                  category          = EXCLUDED.category,
                  triaged_at        = EXCLUDED.triaged_at,
                  resolved_at       = EXCLUDED.resolved_at,
-                 closed_at         = EXCLUDED.closed_at"#,
+                 closed_at         = EXCLUDED.closed_at,
+                 version           = EXCLUDED.version + 1
+               WHERE t.version = EXCLUDED.version"#,
             ticket.id.0,
             ticket.requester_user_id.0,
             ticket.assignee_user_id.map(|u| u.0),
@@ -273,11 +282,15 @@ impl TicketRepository for PgTicketRepo {
             ticket.triaged_at,
             ticket.resolved_at,
             ticket.closed_at,
+            ticket.version,
             ticket.created_at,
         )
         .execute(&self.pool)
         .await
         .map_err(mappers::map_pg_error)?;
+        if result.rows_affected() == 0 {
+            return Err(RepositoryError::Stale);
+        }
         Ok(())
     }
 }

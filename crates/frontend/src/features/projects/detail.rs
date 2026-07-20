@@ -89,7 +89,11 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                     toast.success("Project updated");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        reload.update(|n| *n += 1);
+                    }
+                }
             }
             busy.set(false);
         });
@@ -113,7 +117,11 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                     toast.success("Collaborator removed");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        reload.update(|n| *n += 1);
+                    }
+                }
             }
         });
     });
@@ -128,7 +136,11 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                     toast.success("Invite revoked");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        reload.update(|n| *n += 1);
+                    }
+                }
             }
         });
     });
@@ -171,7 +183,11 @@ pub fn ProjectDetail(#[prop(into)] id: Signal<Option<ProjectId>>) -> impl IntoVi
                                             toast.success("Progress updated");
                                             reload.update(|n| *n += 1);
                                         }
-                                        Err(e) => toast.error_from(&e),
+                                        Err(e) => {
+                                            if toast.error_or_conflict(&e) {
+                                                reload.update(|n| *n += 1);
+                                            }
+                                        }
                                     }
                                     saving.set(false);
                                 });
@@ -447,7 +463,12 @@ fn InviteGroupDialog(
                     open.set(false);
                     on_invited.run(());
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        open.set(false);
+                        on_invited.run(());
+                    }
+                }
             }
             submitting.set(false);
         });

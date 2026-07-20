@@ -13,6 +13,7 @@ use crate::{
     error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
+    resilience,
 };
 
 pub struct TicketService {
@@ -55,6 +56,7 @@ impl TicketService {
             triaged_at: None,
             resolved_at: None,
             closed_at: None,
+            version: 0,
             created_at: now,
             updated_at: now,
         };
@@ -85,21 +87,24 @@ impl TicketService {
         priority: TicketPriority,
     ) -> Result<Ticket> {
         self.perms.require_it_member(actor).await?;
-        let mut ticket = self.load(ticket_id).await?;
-        let from = ticket.status;
-        let now = OffsetDateTime::now_utc();
-        ticket.triage(priority, now)?;
-        self.tickets.save(&ticket).await?;
-        self.events
-            .emit(DomainEvent::TicketTriaged {
-                ticket_id: ticket.id,
-                priority,
-                actor,
-                at: now,
-            })
-            .await?;
-        self.emit_status(actor, &ticket, from, now).await?;
-        Ok(ticket)
+        resilience::retry_stale(|| async {
+            let mut ticket = self.load(ticket_id).await?;
+            let from = ticket.status;
+            let now = OffsetDateTime::now_utc();
+            ticket.triage(priority, now)?;
+            self.tickets.save(&ticket).await?;
+            self.events
+                .emit(DomainEvent::TicketTriaged {
+                    ticket_id: ticket.id,
+                    priority,
+                    actor,
+                    at: now,
+                })
+                .await?;
+            self.emit_status(actor, &ticket, from, now).await?;
+            Ok(ticket)
+        })
+        .await
     }
 
     /// Assigns a ticket to an IT member.
@@ -117,24 +122,27 @@ impl TicketService {
         if !self.perms.is_it_member(assignee).await? {
             return Err(Error::Conflict(ConflictCode::AssigneeNotIt));
         }
-        let mut ticket = self.load(ticket_id).await?;
-        let from = ticket.status;
-        let now = OffsetDateTime::now_utc();
-        ticket.assign(assignee, now)?;
-        self.tickets.save(&ticket).await?;
-        self.perms
-            .grant_ticket_assignee(assignee, ticket.id)
-            .await?;
-        self.events
-            .emit(DomainEvent::TicketAssigned {
-                ticket_id: ticket.id,
-                assignee,
-                actor,
-                at: now,
-            })
-            .await?;
-        self.emit_status(actor, &ticket, from, now).await?;
-        Ok(ticket)
+        resilience::retry_stale(|| async {
+            let mut ticket = self.load(ticket_id).await?;
+            let from = ticket.status;
+            let now = OffsetDateTime::now_utc();
+            ticket.assign(assignee, now)?;
+            self.tickets.save(&ticket).await?;
+            self.perms
+                .grant_ticket_assignee(assignee, ticket.id)
+                .await?;
+            self.events
+                .emit(DomainEvent::TicketAssigned {
+                    ticket_id: ticket.id,
+                    assignee,
+                    actor,
+                    at: now,
+                })
+                .await?;
+            self.emit_status(actor, &ticket, from, now).await?;
+            Ok(ticket)
+        })
+        .await
     }
 
     /// Starts work on an assigned ticket. Assignee-only.
@@ -144,16 +152,19 @@ impl TicketService {
     #[tracing::instrument(skip_all, fields(actor = ?actor, ticket_id = ?ticket_id))]
     pub async fn start(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
         self.perms.require_active(actor).await?;
-        let mut ticket = self.load(ticket_id).await?;
-        if ticket.assignee_user_id != Some(actor) {
-            return Err(Error::Forbidden);
-        }
-        let from = ticket.status;
-        let now = OffsetDateTime::now_utc();
-        ticket.start(now)?;
-        self.tickets.save(&ticket).await?;
-        self.emit_status(actor, &ticket, from, now).await?;
-        Ok(ticket)
+        resilience::retry_stale(|| async {
+            let mut ticket = self.load(ticket_id).await?;
+            if ticket.assignee_user_id != Some(actor) {
+                return Err(Error::Forbidden);
+            }
+            let from = ticket.status;
+            let now = OffsetDateTime::now_utc();
+            ticket.start(now)?;
+            self.tickets.save(&ticket).await?;
+            self.emit_status(actor, &ticket, from, now).await?;
+            Ok(ticket)
+        })
+        .await
     }
 
     /// Marks an in-progress ticket as resolved. Assignee-only.
@@ -163,16 +174,19 @@ impl TicketService {
     #[tracing::instrument(skip_all, fields(actor = ?actor, ticket_id = ?ticket_id))]
     pub async fn resolve(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
         self.perms.require_active(actor).await?;
-        let mut ticket = self.load(ticket_id).await?;
-        if ticket.assignee_user_id != Some(actor) {
-            return Err(Error::Forbidden);
-        }
-        let from = ticket.status;
-        let now = OffsetDateTime::now_utc();
-        ticket.resolve(now)?;
-        self.tickets.save(&ticket).await?;
-        self.emit_status(actor, &ticket, from, now).await?;
-        Ok(ticket)
+        resilience::retry_stale(|| async {
+            let mut ticket = self.load(ticket_id).await?;
+            if ticket.assignee_user_id != Some(actor) {
+                return Err(Error::Forbidden);
+            }
+            let from = ticket.status;
+            let now = OffsetDateTime::now_utc();
+            ticket.resolve(now)?;
+            self.tickets.save(&ticket).await?;
+            self.emit_status(actor, &ticket, from, now).await?;
+            Ok(ticket)
+        })
+        .await
     }
 
     /// Closes a resolved ticket. Requester-only.
@@ -182,16 +196,19 @@ impl TicketService {
     #[tracing::instrument(skip_all, fields(actor = ?actor, ticket_id = ?ticket_id))]
     pub async fn close(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
         self.perms.require_active(actor).await?;
-        let mut ticket = self.load(ticket_id).await?;
-        if ticket.requester_user_id != actor {
-            return Err(Error::Forbidden);
-        }
-        let from = ticket.status;
-        let now = OffsetDateTime::now_utc();
-        ticket.close(now)?;
-        self.tickets.save(&ticket).await?;
-        self.emit_status(actor, &ticket, from, now).await?;
-        Ok(ticket)
+        resilience::retry_stale(|| async {
+            let mut ticket = self.load(ticket_id).await?;
+            if ticket.requester_user_id != actor {
+                return Err(Error::Forbidden);
+            }
+            let from = ticket.status;
+            let now = OffsetDateTime::now_utc();
+            ticket.close(now)?;
+            self.tickets.save(&ticket).await?;
+            self.emit_status(actor, &ticket, from, now).await?;
+            Ok(ticket)
+        })
+        .await
     }
 
     /// Rejects a ticket's resolution, sending it back to the assignee. Requester-only.
@@ -201,16 +218,19 @@ impl TicketService {
     #[tracing::instrument(skip_all, fields(actor = ?actor, ticket_id = ?ticket_id))]
     pub async fn reject_resolution(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
         self.perms.require_active(actor).await?;
-        let mut ticket = self.load(ticket_id).await?;
-        if ticket.requester_user_id != actor {
-            return Err(Error::Forbidden);
-        }
-        let from = ticket.status;
-        let now = OffsetDateTime::now_utc();
-        ticket.reject_resolution(now)?;
-        self.tickets.save(&ticket).await?;
-        self.emit_status(actor, &ticket, from, now).await?;
-        Ok(ticket)
+        resilience::retry_stale(|| async {
+            let mut ticket = self.load(ticket_id).await?;
+            if ticket.requester_user_id != actor {
+                return Err(Error::Forbidden);
+            }
+            let from = ticket.status;
+            let now = OffsetDateTime::now_utc();
+            ticket.reject_resolution(now)?;
+            self.tickets.save(&ticket).await?;
+            self.emit_status(actor, &ticket, from, now).await?;
+            Ok(ticket)
+        })
+        .await
     }
 
     /// Reopens a closed ticket within [`Ticket::REOPEN_WINDOW`]. Requester-only.
@@ -220,16 +240,19 @@ impl TicketService {
     #[tracing::instrument(skip_all, fields(actor = ?actor, ticket_id = ?ticket_id))]
     pub async fn reopen(&self, actor: UserId, ticket_id: TicketId) -> Result<Ticket> {
         self.perms.require_active(actor).await?;
-        let mut ticket = self.load(ticket_id).await?;
-        if ticket.requester_user_id != actor {
-            return Err(Error::Forbidden);
-        }
-        let from = ticket.status;
-        let now = OffsetDateTime::now_utc();
-        ticket.reopen(now)?;
-        self.tickets.save(&ticket).await?;
-        self.emit_status(actor, &ticket, from, now).await?;
-        Ok(ticket)
+        resilience::retry_stale(|| async {
+            let mut ticket = self.load(ticket_id).await?;
+            if ticket.requester_user_id != actor {
+                return Err(Error::Forbidden);
+            }
+            let from = ticket.status;
+            let now = OffsetDateTime::now_utc();
+            ticket.reopen(now)?;
+            self.tickets.save(&ticket).await?;
+            self.emit_status(actor, &ticket, from, now).await?;
+            Ok(ticket)
+        })
+        .await
     }
 
     /// Lists open tickets awaiting triage, up to `limit`. IT-only.

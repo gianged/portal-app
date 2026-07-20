@@ -51,7 +51,11 @@ pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
                     toast.success("Role updated");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        reload.update(|n| *n += 1);
+                    }
+                }
             }
         });
     };
@@ -65,7 +69,11 @@ pub fn GroupDetail(#[prop(into)] id: Signal<Option<GroupId>>) -> impl IntoView {
                     toast.success("Member removed");
                     reload.update(|n| *n += 1);
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        reload.update(|n| *n += 1);
+                    }
+                }
             }
         });
     };
@@ -259,7 +267,12 @@ fn AddMemberDialog(
                     open.set(false);
                     on_added.run(());
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        open.set(false);
+                        on_added.run(());
+                    }
+                }
             }
             submitting.set(false);
         });
@@ -330,7 +343,12 @@ fn TransferDialog(
                     open.set(false);
                     on_transferred.run(());
                 }
-                Err(e) => toast.error_from(&e),
+                Err(e) => {
+                    if toast.error_or_conflict(&e) {
+                        open.set(false);
+                        on_transferred.run(());
+                    }
+                }
             }
             submitting.set(false);
         });

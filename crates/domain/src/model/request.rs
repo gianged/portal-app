@@ -20,6 +20,8 @@ pub struct Request {
     pub due_at: Option<OffsetDateTime>,
     /// Set when the request transitions into `Completed`; `None` otherwise.
     pub completed_at: Option<OffsetDateTime>,
+    /// Optimistic-lock version as loaded; the guarded save bumps it.
+    pub version: i64,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -231,6 +233,7 @@ mod tests {
             progress: 0,
             due_at: None,
             completed_at: None,
+            version: 0,
             created_at: t0,
             updated_at: t0,
         }

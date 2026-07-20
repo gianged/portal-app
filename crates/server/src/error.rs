@@ -4,7 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use domain::error::StorageError;
+use domain::error::{RepositoryError, StorageError};
 use shared::dto::common::{ApiError, ErrorCode};
 
 /// HTTP-facing error. Its `IntoResponse` impl is the single place where an
@@ -102,6 +102,15 @@ impl AppError {
                     StatusCode::BAD_REQUEST,
                     ErrorCode::Validation,
                     "invalid storage key".to_owned(),
+                ),
+                // Optimistic-lock losers and DB-constraint backstops are client
+                // conflicts, never 500s; the raw DB detail stays server-side.
+                application::Error::Repository(
+                    RepositoryError::Conflict(_) | RepositoryError::Stale,
+                ) => (
+                    StatusCode::CONFLICT,
+                    ErrorCode::Conflict,
+                    "modified_concurrently".to_owned(),
                 ),
                 application::Error::Repository(_)
                 | application::Error::Storage(_)
@@ -219,6 +228,19 @@ mod tests {
                     .into(),
                 StatusCode::INTERNAL_SERVER_ERROR,
                 ErrorCode::Internal,
+            ),
+            (
+                application::Error::Repository(RepositoryError::Stale).into(),
+                StatusCode::CONFLICT,
+                ErrorCode::Conflict,
+            ),
+            (
+                application::Error::Repository(RepositoryError::Conflict(
+                    "duplicate key".to_owned(),
+                ))
+                .into(),
+                StatusCode::CONFLICT,
+                ErrorCode::Conflict,
             ),
             (
                 application::Error::Storage(StorageError::Backend("disk".to_owned())).into(),

@@ -34,6 +34,7 @@ struct UserRow {
     email_notifications: bool,
     first_logged_in_at: Option<OffsetDateTime>,
     deactivated_at: Option<OffsetDateTime>,
+    version: i64,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
 }
@@ -53,6 +54,7 @@ impl From<UserRow> for User {
             email_notifications: r.email_notifications,
             first_logged_in_at: r.first_logged_in_at,
             deactivated_at: r.deactivated_at,
+            version: r.version,
             created_at: r.created_at,
             updated_at: r.updated_at,
         }
@@ -78,6 +80,7 @@ impl UserRepository for PgUserRepo {
                  email_notifications,
                  first_logged_in_at,
                  deactivated_at,
+                 version,
                  created_at,
                  updated_at
                FROM auth.users
@@ -111,6 +114,7 @@ impl UserRepository for PgUserRepo {
                  email_notifications,
                  first_logged_in_at,
                  deactivated_at,
+                 version,
                  created_at,
                  updated_at
                FROM auth.users
@@ -140,6 +144,7 @@ impl UserRepository for PgUserRepo {
                  email_notifications,
                  first_logged_in_at,
                  deactivated_at,
+                 version,
                  created_at,
                  updated_at
                FROM auth.users
@@ -175,6 +180,7 @@ impl UserRepository for PgUserRepo {
                  email_notifications,
                  first_logged_in_at,
                  deactivated_at,
+                 version,
                  created_at,
                  updated_at
                FROM auth.users
@@ -197,12 +203,12 @@ impl UserRepository for PgUserRepo {
     async fn save(&self, user: &User) -> Result<(), RepositoryError> {
         let status = SqlUserStatus::from(user.status);
         let system_role: Option<SqlSystemRole> = user.system_role.map(Into::into);
-        sqlx::query!(
-            r#"INSERT INTO auth.users
+        let result = sqlx::query!(
+            r#"INSERT INTO auth.users AS t
                  (id, email, password_hash, full_name, avatar_storage_key, phone,
                   timezone, status, system_role, email_notifications,
-                  first_logged_in_at, deactivated_at, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                  first_logged_in_at, deactivated_at, version, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                ON CONFLICT (id) DO UPDATE SET
                  email               = EXCLUDED.email,
                  password_hash       = EXCLUDED.password_hash,
@@ -214,7 +220,9 @@ impl UserRepository for PgUserRepo {
                  system_role         = EXCLUDED.system_role,
                  email_notifications = EXCLUDED.email_notifications,
                  first_logged_in_at  = EXCLUDED.first_logged_in_at,
-                 deactivated_at      = EXCLUDED.deactivated_at"#,
+                 deactivated_at      = EXCLUDED.deactivated_at,
+                 version             = EXCLUDED.version + 1
+               WHERE t.version = EXCLUDED.version"#,
             user.id.0,
             user.email,
             user.password_hash,
@@ -227,11 +235,15 @@ impl UserRepository for PgUserRepo {
             user.email_notifications,
             user.first_logged_in_at,
             user.deactivated_at,
+            user.version,
             user.created_at,
         )
         .execute(&self.pool)
         .await
         .map_err(mappers::map_pg_error)?;
+        if result.rows_affected() == 0 {
+            return Err(RepositoryError::Stale);
+        }
         Ok(())
     }
 
@@ -265,6 +277,7 @@ impl UserRepository for PgUserRepo {
                  email_notifications,
                  first_logged_in_at,
                  deactivated_at,
+                 version,
                  created_at,
                  updated_at
                FROM auth.users

@@ -1,0 +1,224 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 id,\n                 requester_user_id,\n                 assignee_user_id,\n                 title,\n                 description,\n                 status   AS \"status: SqlTicketStatus\",\n                 priority AS \"priority: SqlTicketPriority\",\n                 category AS \"category: SqlTicketCategory\",\n                 triaged_at,\n                 resolved_at,\n                 closed_at,\n                 version,\n                 created_at,\n                 updated_at\n               FROM ticket.tickets\n               WHERE status = 'resolved'\n                 AND resolved_at <= $1\n               ORDER BY resolved_at\n               LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "requester_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "requester_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "assignee_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "assignee_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "status: SqlTicketStatus",
+        "type_info": {
+          "Custom": {
+            "name": "ticket.ticket_status",
+            "kind": {
+              "Enum": [
+                "open",
+                "triaged",
+                "assigned",
+                "in_progress",
+                "resolved",
+                "closed",
+                "reopened"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "priority: SqlTicketPriority",
+        "type_info": {
+          "Custom": {
+            "name": "ticket.ticket_priority",
+            "kind": {
+              "Enum": [
+                "low",
+                "normal",
+                "high",
+                "urgent"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "priority"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "category: SqlTicketCategory",
+        "type_info": {
+          "Custom": {
+            "name": "ticket.ticket_category",
+            "kind": {
+              "Enum": [
+                "hardware",
+                "software",
+                "access",
+                "other"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "category"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "triaged_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "triaged_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "resolved_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "resolved_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "closed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "closed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ticket.tickets",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6f0d6495c26f97d46c6d55a07644db54ace72dea4a454521604f1e8a1d181027"
+}

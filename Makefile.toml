@@ -130,3 +130,9 @@ description = "E2E: server/workers must retry while infra is down, then give up 
 command = "go"
 args = ["run", ".", "boot-resilience"]
 cwd = "loadtest"
+
+[tasks.race-test]
+description = "E2E: concurrent writers on the same entity must not lose updates (needs running seeded stack)."
+command = "go"
+args = ["run", ".", "race"]
+cwd = "loadtest"

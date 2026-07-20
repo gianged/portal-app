@@ -35,6 +35,7 @@ struct ProjectRow {
     status: SqlProjectStatus,
     progress: i16,
     completed_at: Option<OffsetDateTime>,
+    version: i64,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
 }
@@ -51,6 +52,7 @@ impl From<ProjectRow> for Project {
             // CHECK constrains the column to 0..=100, so the cast never truncates.
             progress: u8::try_from(r.progress).unwrap_or(0),
             completed_at: r.completed_at,
+            version: r.version,
             created_at: r.created_at,
             updated_at: r.updated_at,
         }
@@ -120,6 +122,7 @@ impl ProjectRepository for PgProjectRepo {
                  status AS "status: SqlProjectStatus",
                  progress,
                  completed_at,
+                 version,
                  created_at,
                  updated_at
                FROM project.projects
@@ -150,6 +153,7 @@ impl ProjectRepository for PgProjectRepo {
                  status AS "status: SqlProjectStatus",
                  progress,
                  completed_at,
+                 version,
                  created_at,
                  updated_at
                FROM project.projects
@@ -184,6 +188,7 @@ impl ProjectRepository for PgProjectRepo {
                  status AS "status: SqlProjectStatus",
                  progress,
                  completed_at,
+                 version,
                  created_at,
                  updated_at
                FROM project.projects
@@ -215,6 +220,7 @@ impl ProjectRepository for PgProjectRepo {
                  p.status AS "status: SqlProjectStatus",
                  p.progress,
                  p.completed_at,
+                 p.version,
                  p.created_at,
                  p.updated_at
                FROM project.projects p
@@ -233,11 +239,11 @@ impl ProjectRepository for PgProjectRepo {
     #[tracing::instrument(skip_all)]
     async fn save_project(&self, project: &Project) -> Result<(), RepositoryError> {
         let status = SqlProjectStatus::from(project.status);
-        sqlx::query!(
-            r#"INSERT INTO project.projects
+        let result = sqlx::query!(
+            r#"INSERT INTO project.projects AS t
                  (id, owner_group_id, created_by_user_id, name, description, status,
-                  progress, completed_at, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                  progress, completed_at, version, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                ON CONFLICT (id) DO UPDATE SET
                  owner_group_id     = EXCLUDED.owner_group_id,
                  created_by_user_id = EXCLUDED.created_by_user_id,
@@ -245,7 +251,9 @@ impl ProjectRepository for PgProjectRepo {
                  description        = EXCLUDED.description,
                  status             = EXCLUDED.status,
                  progress           = EXCLUDED.progress,
-                 completed_at       = EXCLUDED.completed_at"#,
+                 completed_at       = EXCLUDED.completed_at,
+                 version            = EXCLUDED.version + 1
+               WHERE t.version = EXCLUDED.version"#,
             project.id.0,
             project.owner_group_id.0,
             project.created_by_user_id.0,
@@ -254,11 +262,15 @@ impl ProjectRepository for PgProjectRepo {
             status as SqlProjectStatus,
             i16::from(project.progress),
             project.completed_at,
+            project.version,
             project.created_at,
         )
         .execute(&self.pool)
         .await
         .map_err(mappers::map_pg_error)?;
+        if result.rows_affected() == 0 {
+            return Err(RepositoryError::Stale);
+        }
         Ok(())
     }
 

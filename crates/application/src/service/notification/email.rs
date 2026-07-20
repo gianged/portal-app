@@ -220,6 +220,7 @@ mod tests {
             email_notifications: true,
             first_logged_in_at: None,
             deactivated_at: None,
+            version: 0,
             created_at: now,
             updated_at: now,
         }

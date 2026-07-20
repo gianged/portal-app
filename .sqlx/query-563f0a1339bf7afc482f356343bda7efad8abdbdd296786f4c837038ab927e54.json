@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO project.requests AS t\n                 (id, project_id, creator_user_id, assignee_user_id, title, description,\n                  status, priority, progress, due_at, completed_at, version, created_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)\n               ON CONFLICT (id) DO UPDATE SET\n                 project_id        = EXCLUDED.project_id,\n                 creator_user_id   = EXCLUDED.creator_user_id,\n                 assignee_user_id  = EXCLUDED.assignee_user_id,\n                 title             = EXCLUDED.title,\n                 description       = EXCLUDED.description,\n                 status            = EXCLUDED.status,\n                 priority          = EXCLUDED.priority,\n                 progress          = EXCLUDED.progress,\n                 due_at            = EXCLUDED.due_at,\n                 completed_at      = EXCLUDED.completed_at,\n                 version           = EXCLUDED.version + 1\n               WHERE t.version = EXCLUDED.version",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        {
+          "Custom": {
+            "name": "project.request_status",
+            "kind": {
+              "Enum": [
+                "draft",
+                "submitted",
+                "assigned",
+                "in_progress",
+                "review",
+                "completed",
+                "cancelled"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "project.request_priority",
+            "kind": {
+              "Enum": [
+                "low",
+                "normal",
+                "high",
+                "urgent"
+              ]
+            }
+          }
+        },
+        "Int2",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "563f0a1339bf7afc482f356343bda7efad8abdbdd296786f4c837038ab927e54"
+}

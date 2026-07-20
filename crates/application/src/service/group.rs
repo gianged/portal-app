@@ -16,6 +16,7 @@ use crate::{
     error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
+    resilience,
 };
 
 pub struct GroupService {
@@ -64,6 +65,7 @@ impl GroupService {
             name: cmd.name.clone(),
             description: cmd.description,
             kind: cmd.kind,
+            version: 0,
             created_at: now,
             updated_at: now,
         };
@@ -159,58 +161,62 @@ impl GroupService {
         if self.groups.find_group(cmd.group_id).await?.is_none() {
             return Err(Error::NotFound("group"));
         }
-        let existing = self
-            .groups
-            .find_membership(cmd.group_id, cmd.user_id)
-            .await?;
-        if let Some(m) = &existing
-            && m.is_active()
-        {
-            return Err(Error::Conflict(ConflictCode::UserAlreadyMember));
-        }
-
-        if cmd.role == GroupRole::Leader && self.active_leader_exists(cmd.group_id).await? {
-            return Err(Error::Conflict(ConflictCode::GroupAlreadyHasLeader));
-        }
-
-        // A deactivated row is reactivated in place: the (group_id, user_id)
-        // unique constraint forbids inserting a second one.
-        let membership = match existing {
-            Some(mut m) => {
-                m.rejoin(cmd.role, now);
-                m
-            }
-            None => Membership {
-                id: MembershipId(Uuid::now_v7()),
-                group_id: cmd.group_id,
-                user_id: cmd.user_id,
-                role: cmd.role,
-                joined_at: now,
-                deactivated_at: None,
-                created_at: now,
-                updated_at: now,
-            },
-        };
-        self.groups.save_membership(&membership).await?;
-        self.perms.grant_group_membership(&membership).await?;
-        // Subscribe the new member to the group channel so it appears in their
-        // channel list (channels_by_user is per-user denormalised in Scylla).
-        if let Some(channel) = self.chats.find_group_channel(cmd.group_id).await? {
-            self.chats
-                .subscribe_member(cmd.user_id, channel.id(), ChannelKind::Group)
+        resilience::retry_stale(|| async {
+            let existing = self
+                .groups
+                .find_membership(cmd.group_id, cmd.user_id)
                 .await?;
-        }
-        self.events
-            .emit(DomainEvent::MembershipAdded {
-                membership_id: membership.id,
-                group_id: cmd.group_id,
-                user_id: cmd.user_id,
-                role: cmd.role,
-                actor,
-                at: now,
-            })
-            .await?;
-        Ok(membership)
+            if let Some(m) = &existing
+                && m.is_active()
+            {
+                return Err(Error::Conflict(ConflictCode::UserAlreadyMember));
+            }
+
+            if cmd.role == GroupRole::Leader && self.active_leader_exists(cmd.group_id).await? {
+                return Err(Error::Conflict(ConflictCode::GroupAlreadyHasLeader));
+            }
+
+            // A deactivated row is reactivated in place: the (group_id, user_id)
+            // unique constraint forbids inserting a second one.
+            let membership = match existing {
+                Some(mut m) => {
+                    m.rejoin(cmd.role, now);
+                    m
+                }
+                None => Membership {
+                    id: MembershipId(Uuid::now_v7()),
+                    group_id: cmd.group_id,
+                    user_id: cmd.user_id,
+                    role: cmd.role,
+                    joined_at: now,
+                    deactivated_at: None,
+                    version: 0,
+                    created_at: now,
+                    updated_at: now,
+                },
+            };
+            self.groups.save_membership(&membership).await?;
+            self.perms.grant_group_membership(&membership).await?;
+            // Subscribe the new member to the group channel so it appears in their
+            // channel list (channels_by_user is per-user denormalised in Scylla).
+            if let Some(channel) = self.chats.find_group_channel(cmd.group_id).await? {
+                self.chats
+                    .subscribe_member(cmd.user_id, channel.id(), ChannelKind::Group)
+                    .await?;
+            }
+            self.events
+                .emit(DomainEvent::MembershipAdded {
+                    membership_id: membership.id,
+                    group_id: cmd.group_id,
+                    user_id: cmd.user_id,
+                    role: cmd.role,
+                    actor,
+                    at: now,
+                })
+                .await?;
+            Ok(membership)
+        })
+        .await
     }
 
     /// Changes a member's role within a group.
@@ -232,44 +238,47 @@ impl GroupService {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
 
-        let mut membership = self
-            .groups
-            .find_membership(group_id, user_id)
-            .await?
-            .ok_or(Error::NotFound("membership"))?;
-        if !membership.is_active() {
-            return Err(Error::Conflict(ConflictCode::MembershipInactive));
-        }
-        let from_role = membership.role;
-        if from_role == new_role {
-            return Ok(membership);
-        }
+        resilience::retry_stale(|| async {
+            let mut membership = self
+                .groups
+                .find_membership(group_id, user_id)
+                .await?
+                .ok_or(Error::NotFound("membership"))?;
+            if !membership.is_active() {
+                return Err(Error::Conflict(ConflictCode::MembershipInactive));
+            }
+            let from_role = membership.role;
+            if from_role == new_role {
+                return Ok(membership);
+            }
 
-        if from_role == GroupRole::Leader && self.count_active_leaders(group_id).await? <= 1 {
-            return Err(Error::Conflict(ConflictCode::CannotDemoteLastLeader));
-        }
-        if new_role == GroupRole::Leader && self.active_leader_exists(group_id).await? {
-            return Err(Error::Conflict(ConflictCode::GroupAlreadyHasLeader));
-        }
+            if from_role == GroupRole::Leader && self.count_active_leaders(group_id).await? <= 1 {
+                return Err(Error::Conflict(ConflictCode::CannotDemoteLastLeader));
+            }
+            if new_role == GroupRole::Leader && self.active_leader_exists(group_id).await? {
+                return Err(Error::Conflict(ConflictCode::GroupAlreadyHasLeader));
+            }
 
-        // Update OpenFGA: revoke old role tuple before granting the new one.
-        self.perms.revoke_group_membership(&membership).await?;
-        membership.change_role(new_role, now);
-        self.groups.save_membership(&membership).await?;
-        self.perms.grant_group_membership(&membership).await?;
+            // Update OpenFGA: revoke old role tuple before granting the new one.
+            self.perms.revoke_group_membership(&membership).await?;
+            membership.change_role(new_role, now);
+            self.groups.save_membership(&membership).await?;
+            self.perms.grant_group_membership(&membership).await?;
 
-        self.events
-            .emit(DomainEvent::MembershipRoleChanged {
-                membership_id: membership.id,
-                group_id,
-                user_id,
-                from: from_role,
-                to: new_role,
-                actor,
-                at: now,
-            })
-            .await?;
-        Ok(membership)
+            self.events
+                .emit(DomainEvent::MembershipRoleChanged {
+                    membership_id: membership.id,
+                    group_id,
+                    user_id,
+                    from: from_role,
+                    to: new_role,
+                    actor,
+                    at: now,
+                })
+                .await?;
+            Ok(membership)
+        })
+        .await
     }
 
     /// Deactivates a user's membership in a group.
@@ -289,35 +298,40 @@ impl GroupService {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
 
-        let mut membership = self
-            .groups
-            .find_membership(group_id, user_id)
-            .await?
-            .ok_or(Error::NotFound("membership"))?;
-        if !membership.is_active() {
-            return Ok(());
-        }
-        if membership.role == GroupRole::Leader && self.count_active_leaders(group_id).await? <= 1 {
-            return Err(Error::Conflict(ConflictCode::TransferLeadershipFirst));
-        }
+        resilience::retry_stale(|| async {
+            let mut membership = self
+                .groups
+                .find_membership(group_id, user_id)
+                .await?
+                .ok_or(Error::NotFound("membership"))?;
+            if !membership.is_active() {
+                return Ok(());
+            }
+            if membership.role == GroupRole::Leader
+                && self.count_active_leaders(group_id).await? <= 1
+            {
+                return Err(Error::Conflict(ConflictCode::TransferLeadershipFirst));
+            }
 
-        self.perms.revoke_group_membership(&membership).await?;
-        membership.deactivate(now);
-        self.groups.save_membership(&membership).await?;
-        if let Some(channel) = self.chats.find_group_channel(group_id).await? {
-            self.chats.unsubscribe_member(user_id, channel.id()).await?;
-        }
+            self.perms.revoke_group_membership(&membership).await?;
+            membership.deactivate(now);
+            self.groups.save_membership(&membership).await?;
+            if let Some(channel) = self.chats.find_group_channel(group_id).await? {
+                self.chats.unsubscribe_member(user_id, channel.id()).await?;
+            }
 
-        self.events
-            .emit(DomainEvent::MembershipDeactivated {
-                membership_id: membership.id,
-                group_id,
-                user_id,
-                actor,
-                at: now,
-            })
-            .await?;
-        Ok(())
+            self.events
+                .emit(DomainEvent::MembershipDeactivated {
+                    membership_id: membership.id,
+                    group_id,
+                    user_id,
+                    actor,
+                    at: now,
+                })
+                .await?;
+            Ok(())
+        })
+        .await
     }
 
     /// Transfers leadership of a group from one active member to another.
@@ -342,69 +356,72 @@ impl GroupService {
         }
         let now = OffsetDateTime::now_utc();
 
-        let mut from_membership = self
-            .groups
-            .find_membership(group_id, from_user)
-            .await?
-            .ok_or(Error::NotFound("from_membership"))?;
-        if from_membership.role != GroupRole::Leader || !from_membership.is_active() {
-            return Err(Error::Conflict(ConflictCode::FromUserNotLeader));
-        }
-        let mut to_membership = self
-            .groups
-            .find_membership(group_id, to_user)
-            .await?
-            .ok_or(Error::NotFound("to_membership"))?;
-        if !to_membership.is_active() {
-            return Err(Error::Conflict(ConflictCode::ToUserInactive));
-        }
+        resilience::retry_stale(|| async {
+            let mut from_membership = self
+                .groups
+                .find_membership(group_id, from_user)
+                .await?
+                .ok_or(Error::NotFound("from_membership"))?;
+            if from_membership.role != GroupRole::Leader || !from_membership.is_active() {
+                return Err(Error::Conflict(ConflictCode::FromUserNotLeader));
+            }
+            let mut to_membership = self
+                .groups
+                .find_membership(group_id, to_user)
+                .await?
+                .ok_or(Error::NotFound("to_membership"))?;
+            if !to_membership.is_active() {
+                return Err(Error::Conflict(ConflictCode::ToUserInactive));
+            }
 
-        self.perms.revoke_group_membership(&from_membership).await?;
-        self.perms.revoke_group_membership(&to_membership).await?;
-        let from_was = from_membership.role;
-        let to_was = to_membership.role;
-        from_membership.change_role(GroupRole::Member, now);
-        to_membership.change_role(GroupRole::Leader, now);
-        // One transaction so the group is never left leaderless; demoted row first
-        // so the partial unique index on (group_id WHERE role=leader) accepts it.
-        self.groups
-            .save_memberships(&[from_membership.clone(), to_membership.clone()])
-            .await?;
-        self.perms.grant_group_membership(&from_membership).await?;
-        self.perms.grant_group_membership(&to_membership).await?;
+            self.perms.revoke_group_membership(&from_membership).await?;
+            self.perms.revoke_group_membership(&to_membership).await?;
+            let from_was = from_membership.role;
+            let to_was = to_membership.role;
+            from_membership.change_role(GroupRole::Member, now);
+            to_membership.change_role(GroupRole::Leader, now);
+            // One transaction so the group is never left leaderless; demoted row first
+            // so the partial unique index on (group_id WHERE role=leader) accepts it.
+            self.groups
+                .save_memberships(&[from_membership.clone(), to_membership.clone()])
+                .await?;
+            self.perms.grant_group_membership(&from_membership).await?;
+            self.perms.grant_group_membership(&to_membership).await?;
 
-        self.events
-            .emit(DomainEvent::MembershipRoleChanged {
-                membership_id: from_membership.id,
-                group_id,
-                user_id: from_user,
-                from: from_was,
-                to: GroupRole::Member,
-                actor,
-                at: now,
-            })
-            .await?;
-        self.events
-            .emit(DomainEvent::MembershipRoleChanged {
-                membership_id: to_membership.id,
-                group_id,
-                user_id: to_user,
-                from: to_was,
-                to: GroupRole::Leader,
-                actor,
-                at: now,
-            })
-            .await?;
-        self.events
-            .emit(DomainEvent::LeadershipTransferred {
-                group_id,
-                from_user,
-                to_user,
-                actor,
-                at: now,
-            })
-            .await?;
-        Ok(())
+            self.events
+                .emit(DomainEvent::MembershipRoleChanged {
+                    membership_id: from_membership.id,
+                    group_id,
+                    user_id: from_user,
+                    from: from_was,
+                    to: GroupRole::Member,
+                    actor,
+                    at: now,
+                })
+                .await?;
+            self.events
+                .emit(DomainEvent::MembershipRoleChanged {
+                    membership_id: to_membership.id,
+                    group_id,
+                    user_id: to_user,
+                    from: to_was,
+                    to: GroupRole::Leader,
+                    actor,
+                    at: now,
+                })
+                .await?;
+            self.events
+                .emit(DomainEvent::LeadershipTransferred {
+                    group_id,
+                    from_user,
+                    to_user,
+                    actor,
+                    at: now,
+                })
+                .await?;
+            Ok(())
+        })
+        .await
     }
 
     /// Looks up a group by id, returning `None` if it does not exist.
@@ -451,39 +468,42 @@ impl GroupService {
         cmd: UpdateGroupMetadataCommand,
     ) -> Result<Group> {
         self.perms.require_hr(actor).await?;
-        let mut group = self
-            .groups
-            .find_group(group_id)
-            .await?
-            .ok_or(Error::NotFound("group"))?;
-        let before = group.clone();
         let now = OffsetDateTime::now_utc();
-        if let Some(name) = cmd.name {
-            group.name = name;
-        }
-        if let Some(description) = cmd.description {
-            group.description = description;
-        }
-        group.updated_at = now;
-        self.groups.save_group(&group).await?;
-        // The group channel denormalises the name; keep the chat title in sync.
-        if group.name != before.name
-            && let Some(Channel::Group(mut channel)) =
-                self.chats.find_group_channel(group_id).await?
-        {
-            channel.name = group.name.clone();
-            self.chats.save_channel(&Channel::Group(channel)).await?;
-        }
-        self.events
-            .emit(DomainEvent::GroupMetadataUpdated {
-                group_id: group.id,
-                actor,
-                at: now,
-                before,
-                after: group.clone(),
-            })
-            .await?;
-        Ok(group)
+        resilience::retry_stale(|| async {
+            let mut group = self
+                .groups
+                .find_group(group_id)
+                .await?
+                .ok_or(Error::NotFound("group"))?;
+            let before = group.clone();
+            if let Some(name) = cmd.name.clone() {
+                group.name = name;
+            }
+            if let Some(description) = cmd.description.clone() {
+                group.description = description;
+            }
+            group.updated_at = now;
+            self.groups.save_group(&group).await?;
+            // The group channel denormalises the name; keep the chat title in sync.
+            if group.name != before.name
+                && let Some(Channel::Group(mut channel)) =
+                    self.chats.find_group_channel(group_id).await?
+            {
+                channel.name = group.name.clone();
+                self.chats.save_channel(&Channel::Group(channel)).await?;
+            }
+            self.events
+                .emit(DomainEvent::GroupMetadataUpdated {
+                    group_id: group.id,
+                    actor,
+                    at: now,
+                    before,
+                    after: group.clone(),
+                })
+                .await?;
+            Ok(group)
+        })
+        .await
     }
 
     /// Active membership count for the group (for directory/detail headers).

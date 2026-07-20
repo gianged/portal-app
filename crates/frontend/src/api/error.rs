@@ -20,6 +20,14 @@ pub enum FrontendError {
     Validation(String),
 }
 
+impl FrontendError {
+    /// True for HTTP 409 (the entity changed concurrently).
+    #[must_use]
+    pub fn is_conflict(&self) -> bool {
+        matches!(self, Self::Http { status: 409, .. })
+    }
+}
+
 impl From<gloo::net::Error> for FrontendError {
     fn from(err: gloo::net::Error) -> Self {
         match err {
