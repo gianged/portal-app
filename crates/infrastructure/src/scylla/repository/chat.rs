@@ -662,16 +662,40 @@ impl ChatRepository for ScyllaChatRepo {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn save_announcement(&self, announcement: &Announcement) -> Result<(), RepositoryError> {
+    async fn save_announcement_with_message(
+        &self,
+        announcement: &Announcement,
+        message: &Message,
+    ) -> Result<(), RepositoryError> {
+        // Logged batch: the rail row and the timeline copy span two tables and
+        // must land together; announcement volume is low, batchlog cost is fine.
+        let mut batch = Batch::default();
+        batch.append_statement(self.stmts.save_message.clone());
+        batch.append_statement(self.stmts.save_announcement.clone());
+        let mentions: HashSet<Uuid> = message.mentions.iter().map(|u| u.0).collect();
         self.session
-            .execute_unpaged(
-                &self.stmts.save_announcement,
+            .batch(
+                &batch,
                 (
-                    announcement.channel_id.0,
-                    announcement.id.0,
-                    announcement.sender_user_id.0,
-                    &announcement.body,
-                    announcement.edited_at,
+                    (
+                        message.channel_id.0,
+                        bucket_of(message.id.0),
+                        message.id.0,
+                        message.sender_user_id.0,
+                        &message.body,
+                        mentions,
+                        &message.attachment_keys,
+                        message.is_announcement,
+                        message.edited_at,
+                        message.deleted_at,
+                    ),
+                    (
+                        announcement.channel_id.0,
+                        announcement.id.0,
+                        announcement.sender_user_id.0,
+                        &announcement.body,
+                        announcement.edited_at,
+                    ),
                 ),
             )
             .await
@@ -680,7 +704,7 @@ impl ChatRepository for ScyllaChatRepo {
     }
 
     #[tracing::instrument(skip_all, fields(channel_id = ?channel_id, message_id = ?message_id))]
-    async fn delete_announcement(
+    async fn delete_announcement_with_message(
         &self,
         channel_id: ChannelId,
         message_id: MessageId,

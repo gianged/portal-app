@@ -7,12 +7,12 @@ use domain::{
     error::RepositoryError,
     ids::{TicketId, UserId},
     model::Ticket,
-    repository::TicketRepository,
+    repository::{OutboxRecord, TicketRepository},
 };
 
 use crate::postgres::{
     enums::{SqlTicketCategory, SqlTicketPriority, SqlTicketStatus},
-    mappers,
+    mappers, outbox,
 };
 
 pub struct PgTicketRepo {
@@ -248,10 +248,15 @@ impl TicketRepository for PgTicketRepo {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn save(&self, ticket: &Ticket) -> Result<(), RepositoryError> {
+    async fn save(
+        &self,
+        ticket: &Ticket,
+        outbox_records: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         let status = SqlTicketStatus::from(ticket.status);
         let priority: Option<SqlTicketPriority> = ticket.priority.map(Into::into);
         let category = SqlTicketCategory::from(ticket.category);
+        let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
         let result = sqlx::query!(
             r#"INSERT INTO ticket.tickets AS t
                  (id, requester_user_id, assignee_user_id, title, description,
@@ -285,12 +290,14 @@ impl TicketRepository for PgTicketRepo {
             ticket.version,
             ticket.created_at,
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(mappers::map_pg_error)?;
         if result.rows_affected() == 0 {
             return Err(RepositoryError::Stale);
         }
+        outbox::write(&mut tx, outbox_records).await?;
+        tx.commit().await.map_err(mappers::map_pg_error)?;
         Ok(())
     }
 }

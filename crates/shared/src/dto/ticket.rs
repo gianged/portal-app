@@ -139,6 +139,10 @@ pub struct TicketDto {
     pub created_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
     pub updated_at: OffsetDateTime,
+    /// True on a create response whose authz grant is still being reconciled;
+    /// permissions may lag briefly. Always false on reads.
+    #[serde(default)]
+    pub authz_pending: bool,
 }
 
 /// Maps to `application::commands::RaiseTicketCommand`.

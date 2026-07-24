@@ -507,6 +507,35 @@ impl Permissions {
             .map_err(map_authz_write)
     }
 
+    /// Reconciles the user's role tuples on `group` to `desired`: deletes every
+    /// other role tuple, writes the desired one. All legs are idempotent.
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects a write, or a repository error if the authz backend is unavailable.
+    pub async fn sync_group_role(
+        &self,
+        user: UserId,
+        group: GroupId,
+        desired: Option<GroupRole>,
+    ) -> Result<()> {
+        for role in [GroupRole::Leader, GroupRole::SubLeader, GroupRole::Member] {
+            if Some(role) == desired {
+                continue;
+            }
+            self.authz
+                .delete_tuple(&subj_user(user), role_relation(role), &obj_group(group))
+                .await
+                .map_err(map_authz_write)?;
+        }
+        if let Some(role) = desired {
+            self.authz
+                .write_tuple(&subj_user(user), role_relation(role), &obj_group(group))
+                .await
+                .map_err(map_authz_write)?;
+        }
+        Ok(())
+    }
+
     /// Mirror a user's org-wide `SystemRole` into `company#hr` / `company#director`
     /// so the model's `... or director from company` viewer branches resolve.
     ///
@@ -653,6 +682,37 @@ impl Permissions {
     pub async fn grant_group_created(&self, group: GroupId) -> Result<()> {
         self.authz
             .write_tuple(COMPANY_OBJECT, REL_COMPANY, &obj_group(group))
+            .await
+            .map_err(map_authz_write)
+    }
+
+    /// Removes a group's tie to the company singleton (archive teardown).
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the delete, or a repository error if the authz backend is unavailable.
+    pub async fn revoke_group_created(&self, group: GroupId) -> Result<()> {
+        self.authz
+            .delete_tuple(COMPANY_OBJECT, REL_COMPANY, &obj_group(group))
+            .await
+            .map_err(map_authz_write)
+    }
+
+    /// Removes a group channel's parent-group and company ties (archive teardown).
+    ///
+    /// # Errors
+    /// Returns `Conflict` if the authz backend rejects the delete, or a repository error if the authz backend is unavailable.
+    pub async fn revoke_group_channel_created(
+        &self,
+        group: GroupId,
+        channel: ChannelId,
+    ) -> Result<()> {
+        let object = obj_group_channel(channel);
+        let deletes = [
+            RelationTuple::new(subj_group(group), REL_PARENT_GROUP, object.clone()),
+            RelationTuple::new(COMPANY_OBJECT, REL_COMPANY, object),
+        ];
+        self.authz
+            .write_tuples(&[], &deletes)
             .await
             .map_err(map_authz_write)
     }

@@ -6,7 +6,7 @@ use tokio::fs;
 
 use application::{
     AuditProjector, EmailNotifier, FlexHoursService, LeaveBalanceService, MaintenanceService,
-    NotificationFanout, PolicyProvider, ReportService,
+    NotificationFanout, PolicyProvider, RepairService, ReportService,
     events::EventBus,
     permissions::Permissions,
     resilience::{CircuitBreaker, Drainer, DrainerConfig, HealthRegistry, retry},
@@ -15,30 +15,31 @@ use domain::{
     health::BackendId,
     ports::{
         file_storage::FileStorage, health::HealthCheck, job_queue::JobQueue, mailer::Mailer,
-        report_renderer::ReportRenderer, spool::Spool,
+        report_renderer::ReportRenderer, spool::Spool, token_revocation::TokenRevocation,
     },
     repository::{
         AuditRepository, ChatAttachmentRepository, ChatRepository, DayOffRepository,
         FlexHoursRepository, GroupRepository, HolidayRepository, LeaveBalanceRepository,
-        NotificationRepository, PolicyRepository, ProjectRepository, ReportArchiveRepository,
-        ReportStatsRepository, RequestRepository, TicketRepository, UserRepository,
+        NotificationRepository, OutboxRepository, PolicyRepository, ProjectRepository,
+        ReportArchiveRepository, ReportStatsRepository, RequestRepository, TicketRepository,
+        UserRepository,
     },
 };
 use infrastructure::{
     health::{PgHealthCheck, RedisHealthCheck, ScyllaHealthCheck},
     jobs::{
-        self, ApalisAuditQueue, ApalisEmailQueue, ApalisNotificationQueue, AuditEnvelope,
-        EmailEnvelope, NotificationEnvelope,
+        self, ApalisEmailQueue, ApalisNotificationQueue, EmailEnvelope, NotificationEnvelope,
+        RepairEnvelope,
     },
     local_storage::LocalStorage,
     mailer::{LogMailer, SmtpMailer},
     openfga::{self, OpenFgaAuthzClient},
     postgres::{
         self, PgAuditRepo, PgChatAttachmentRepo, PgDayOffRepo, PgFlexRepo, PgGroupRepo,
-        PgHolidayRepo, PgLeaveBalanceRepo, PgNotificationRepo, PgPolicyRepo, PgProjectRepo,
-        PgReportingRepo, PgRequestRepo, PgTicketRepo, PgUserRepo,
+        PgHolidayRepo, PgLeaveBalanceRepo, PgNotificationRepo, PgOutboxRepo, PgPolicyRepo,
+        PgProjectRepo, PgReportingRepo, PgRequestRepo, PgTicketRepo, PgUserRepo,
     },
-    redis::{RedisEventPublisher, RedisSpool},
+    redis::{RedisEventPublisher, RedisSpool, RedisTokenRevocation},
     report::PrintPdfReportRenderer,
     scylla::{self, ScyllaChatRepo},
     signed_url::SignedUrl,
@@ -50,8 +51,11 @@ use crate::config::Config;
 pub struct WorkerContext {
     pub fanout: Arc<NotificationFanout>,
     pub storage: RedisStorage<NotificationEnvelope>,
+    /// Outbox-driven audit projector, drained by a supervised poll loop.
     pub audit_projector: Arc<AuditProjector>,
-    pub audit_storage: RedisStorage<AuditEnvelope>,
+    /// Worker-side reconciles for post-commit obligations that failed inline.
+    pub repair_service: Arc<RepairService>,
+    pub repair_storage: RedisStorage<RepairEnvelope>,
     pub maintenance: Arc<MaintenanceService>,
     pub mailer: Arc<dyn Mailer>,
     pub email_storage: RedisStorage<EmailEnvelope>,
@@ -116,16 +120,16 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     })
     .await
     .context("connecting apalis redis (jobs)")?;
-    let audit_storage = retry::until_deadline("redis (apalis audit)", deadline, || {
-        jobs::audit_storage(&cfg.redis_url)
-    })
-    .await
-    .context("connecting apalis redis (audit jobs)")?;
     let email_store = retry::until_deadline("redis (apalis email)", deadline, || {
         jobs::email_storage(&cfg.redis_url)
     })
     .await
     .context("connecting apalis redis (email jobs)")?;
+    let repair_storage = retry::until_deadline("redis (apalis repair)", deadline, || {
+        jobs::repair_storage(&cfg.redis_url)
+    })
+    .await
+    .context("connecting apalis redis (repair jobs)")?;
 
     // Event bus for system events (ticket auto-close): broadcast publisher plus the two durable queues this process consumes.
     let publisher = Arc::new(
@@ -138,7 +142,6 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     let events = Arc::new(EventBus::new(
         publisher,
         Arc::new(ApalisNotificationQueue::new(storage.clone())),
-        Arc::new(ApalisAuditQueue::new(audit_storage.clone())),
     ));
 
     // Leave-expiry sweep service; Permissions only satisfies the constructor (the sweep uses no authz), PolicyProvider supplies the expiry window.
@@ -179,7 +182,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     let leave = Arc::new(LeaveBalanceService::new(
         leave_repo,
         holiday_repo,
-        day_off_repo,
+        day_off_repo.clone(),
         policy_provider.clone(),
         perms.clone(),
         events.clone(),
@@ -207,7 +210,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         users.clone(),
         leave.clone(),
         flex.clone(),
-        perms,
+        perms.clone(),
     ));
 
     // Built before the fan-out moves the repo handles below.
@@ -225,7 +228,29 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
     ));
 
     let audit: Arc<dyn AuditRepository> = Arc::new(PgAuditRepo::new(pool.clone()));
-    let audit_projector = Arc::new(AuditProjector::new(audit));
+    let audit_outbox: Arc<dyn OutboxRepository> = Arc::new(PgOutboxRepo::new(pool.clone()));
+    let audit_projector = Arc::new(AuditProjector::new(audit, audit_outbox));
+
+    // Repair reconciles re-derive tuples/rows from the DB; revocation mirrors
+    // the server's Redis-backed session-version store.
+    let revocation: Arc<dyn TokenRevocation> = Arc::new(
+        retry::until_deadline("redis (token revocation)", deadline, || {
+            RedisTokenRevocation::new(&cfg.redis_url, cfg.session_ttl_secs * 2)
+        })
+        .await
+        .context("connecting redis (token revocation)")?,
+    );
+    let repair_service = Arc::new(RepairService::new(
+        users.clone(),
+        groups.clone(),
+        projects.clone(),
+        tickets.clone(),
+        day_off_repo.clone(),
+        chats.clone(),
+        perms.clone(),
+        leave.clone(),
+        revocation,
+    ));
 
     // SMTP when configured, log-only otherwise.
     let mailer: Arc<dyn Mailer> = match &cfg.email {
@@ -317,7 +342,8 @@ pub async fn build(cfg: &Config) -> anyhow::Result<WorkerContext> {
         fanout,
         storage,
         audit_projector,
-        audit_storage,
+        repair_service,
+        repair_storage,
         maintenance,
         mailer,
         email_storage: email_store,

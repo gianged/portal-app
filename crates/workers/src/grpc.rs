@@ -6,8 +6,8 @@ use std::net::SocketAddr;
 
 use apalis_redis::RedisStorage;
 
-use domain::ports::job_queue::{QUEUE_AUDIT, QUEUE_EMAILS, QUEUE_NOTIFICATIONS};
-use infrastructure::jobs::{AuditEnvelope, EmailEnvelope, Envelope, NotificationEnvelope};
+use domain::ports::job_queue::{QUEUE_EMAILS, QUEUE_NOTIFICATIONS, QUEUE_REPAIR};
+use infrastructure::jobs::{EmailEnvelope, Envelope, NotificationEnvelope, RepairEnvelope};
 use proto::{
     auth::RequireToken,
     internal::v1::{
@@ -23,21 +23,21 @@ use crate::job_spool;
 /// Jobs service backed by the three local apalis storages.
 pub struct GrpcJobs {
     notifications: RedisStorage<NotificationEnvelope>,
-    audit: RedisStorage<AuditEnvelope>,
     emails: RedisStorage<EmailEnvelope>,
+    repairs: RedisStorage<RepairEnvelope>,
 }
 
 impl GrpcJobs {
     /// Wraps the storages the enqueue handler pushes into.
     pub fn new(
         notifications: RedisStorage<NotificationEnvelope>,
-        audit: RedisStorage<AuditEnvelope>,
         emails: RedisStorage<EmailEnvelope>,
+        repairs: RedisStorage<RepairEnvelope>,
     ) -> Self {
         Self {
             notifications,
-            audit,
             emails,
+            repairs,
         }
     }
 }
@@ -62,13 +62,17 @@ impl Jobs for GrpcJobs {
                 )
                 .await?;
             }
-            QUEUE_AUDIT => {
-                push(self.audit.clone(), AuditEnvelope::new(payload, traceparent)).await?;
-            }
             QUEUE_EMAILS => {
                 push(
                     self.emails.clone(),
                     EmailEnvelope::new(payload, traceparent),
+                )
+                .await?;
+            }
+            QUEUE_REPAIR => {
+                push(
+                    self.repairs.clone(),
+                    RepairEnvelope::new(payload, traceparent),
                 )
                 .await?;
             }

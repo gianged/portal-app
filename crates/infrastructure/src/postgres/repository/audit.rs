@@ -50,13 +50,16 @@ impl From<AuditRow> for AuditLog {
 #[async_trait]
 impl AuditRepository for PgAuditRepo {
     #[tracing::instrument(skip_all)]
-    async fn append(&self, e: &AuditLog) -> Result<(), RepositoryError> {
-        // Immutable append (invariant 5): plain INSERT, no UPSERT.
+    async fn append_dedup(&self, e: &AuditLog, event_id: Uuid) -> Result<(), RepositoryError> {
+        // Immutable append (invariant 5): plain INSERT, no UPSERT. The event_id
+        // conflict no-op makes a redelivered projection exactly-once.
         let action = SqlAuditAction::from(e.action);
         sqlx::query!(
             r#"INSERT INTO audit.audit_log
-                 (id, actor_user_id, action, entity_schema, entity_table, entity_id, occurred_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+                 (id, actor_user_id, action, entity_schema, entity_table, entity_id, occurred_at,
+                  event_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+               ON CONFLICT (event_id) DO NOTHING"#,
             e.id.0,
             e.actor_user_id.map(|u| u.0),
             action as SqlAuditAction,
@@ -64,6 +67,7 @@ impl AuditRepository for PgAuditRepo {
             e.entity_table,
             e.entity_id,
             e.occurred_at,
+            event_id,
         )
         .execute(&self.pool)
         .await

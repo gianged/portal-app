@@ -85,16 +85,17 @@ impl CommentService {
             edited_at: None,
             created_at: now,
         };
-        self.comments.save(&comment).await?;
-        self.events
-            .emit(DomainEvent::CommentAdded {
-                comment_id: comment.id,
-                entity,
-                actor,
-                at: now,
-                after: comment.clone(),
-            })
+        let event = DomainEvent::CommentAdded {
+            comment_id: comment.id,
+            entity,
+            actor,
+            at: now,
+            after: comment.clone(),
+        };
+        self.comments
+            .save(&comment, &[event.outbox_record()])
             .await?;
+        self.events.emit(event).await;
         Ok(comment)
     }
 
@@ -140,16 +141,17 @@ impl CommentService {
         }
         let now = OffsetDateTime::now_utc();
         comment.edit(body, now)?;
-        self.comments.save(&comment).await?;
-        self.events
-            .emit(DomainEvent::CommentEdited {
-                comment_id,
-                entity,
-                actor,
-                at: now,
-                after: comment.clone(),
-            })
+        let event = DomainEvent::CommentEdited {
+            comment_id,
+            entity,
+            actor,
+            at: now,
+            after: comment.clone(),
+        };
+        self.comments
+            .save(&comment, &[event.outbox_record()])
             .await?;
+        self.events.emit(event).await;
         Ok(comment)
     }
 
@@ -178,15 +180,16 @@ impl CommentService {
         }
         let now = OffsetDateTime::now_utc();
         comment.require_within_edit_grace(now)?;
-        self.comments.delete(entity, comment_id).await?;
-        self.events
-            .emit(DomainEvent::CommentDeleted {
-                comment_id,
-                entity,
-                actor,
-                at: now,
-            })
+        let event = DomainEvent::CommentDeleted {
+            comment_id,
+            entity,
+            actor,
+            at: now,
+        };
+        self.comments
+            .delete(entity, comment_id, &[event.outbox_record()])
             .await?;
+        self.events.emit(event).await;
         Ok(())
     }
 }

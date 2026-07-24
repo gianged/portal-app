@@ -101,6 +101,13 @@ impl ChatService {
         }
 
         if let Some(existing) = self.chats.find_direct_channel(actor, other_user).await? {
+            // Heal a half-built channel: subscribe is an idempotent upsert.
+            self.chats
+                .subscribe_member(actor, existing.id(), ChannelKind::Direct)
+                .await?;
+            self.chats
+                .subscribe_member(other_user, existing.id(), ChannelKind::Direct)
+                .await?;
             return Ok(existing);
         }
 
@@ -243,8 +250,7 @@ impl ChatService {
     /// Returns `Forbidden` if the actor is not active or cannot post in the
     /// channel, `NotFound` if the channel does not exist, `Validation` if the
     /// attachments exceed the cap or are not owned by the actor in this channel,
-    /// a repository error if the datastore is unavailable, or an event error if
-    /// the event bus fails.
+    /// a repository error if the datastore is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn post_message(&self, actor: UserId, cmd: PostMessageCommand) -> Result<Message> {
         let message = self.prepare_message(actor, cmd).await?;
@@ -258,7 +264,7 @@ impl ChatService {
                 at: uuid_v7_created_at(message.id.0),
                 after: message.clone(),
             })
-            .await?;
+            .await;
         Ok(message)
     }
 
@@ -308,7 +314,14 @@ impl ChatService {
             storage_key,
             created_at: now,
         };
-        self.attachments.save(&attachment).await?;
+        if let Err(e) = self.attachments.save(&attachment).await {
+            // Best-effort cleanup; sweep_orphan_uploads is the backstop.
+            if let Err(del) = self.storage.delete(&attachment.storage_key).await {
+                tracing::warn!(key = %attachment.storage_key, error = %del,
+                    "orphan attachment cleanup failed");
+            }
+            return Err(e.into());
+        }
         Ok(attachment)
     }
 
@@ -329,8 +342,8 @@ impl ChatService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not active or is neither the sender
     /// within the grace window nor a channel moderator, `NotFound` if the channel
-    /// or message does not exist, a repository error if the datastore is
-    /// unavailable, or an event error if the event bus fails.
+    /// or message does not exist, or a repository error if the datastore is
+    /// unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id, message_id = ?message_id))]
     pub async fn delete_message(
         &self,
@@ -372,7 +385,7 @@ impl ChatService {
                 actor,
                 at: now,
             })
-            .await?;
+            .await;
         Ok(())
     }
 
@@ -384,7 +397,7 @@ impl ChatService {
     /// Returns `Forbidden` if the actor is not active or is not the sender within
     /// the grace window, `NotFound` if the message does not exist, `Conflict` if
     /// the message is deleted or is an announcement, a repository error if the
-    /// datastore is unavailable, or an event error if the event bus fails.
+    /// datastore is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id, message_id = ?message_id))]
     pub async fn edit_message(
         &self,
@@ -422,7 +435,7 @@ impl ChatService {
                 at: now,
                 after: message.clone(),
             })
-            .await?;
+            .await;
         Ok(message)
     }
 

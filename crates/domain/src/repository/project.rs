@@ -4,6 +4,7 @@ use crate::{
     error::RepositoryError,
     ids::{GroupId, ProjectCollaboratorId, ProjectId, ProjectInviteId},
     model::{Project, ProjectCollaborator, ProjectInvite},
+    repository::OutboxRecord,
 };
 
 #[async_trait]
@@ -30,7 +31,13 @@ pub trait ProjectRepository: Send + Sync {
         limit: u32,
     ) -> Result<Vec<Project>, RepositoryError>;
 
-    async fn save_project(&self, project: &Project) -> Result<(), RepositoryError>;
+    /// `outbox` rows commit in the same transaction as the entity write, so an
+    /// audited event cannot be lost between commit and projection.
+    async fn save_project(
+        &self,
+        project: &Project,
+        outbox: &[OutboxRecord],
+    ) -> Result<(), RepositoryError>;
 
     async fn list_collaborators(
         &self,
@@ -42,7 +49,13 @@ pub trait ProjectRepository: Send + Sync {
         collaborator: &ProjectCollaborator,
     ) -> Result<(), RepositoryError>;
 
-    async fn delete_collaborator(&self, id: ProjectCollaboratorId) -> Result<(), RepositoryError>;
+    /// `outbox` rows commit in the same transaction as the entity write, so an
+    /// audited event cannot be lost between commit and projection.
+    async fn delete_collaborator(
+        &self,
+        id: ProjectCollaboratorId,
+        outbox: &[OutboxRecord],
+    ) -> Result<(), RepositoryError>;
 
     async fn find_invite(
         &self,
@@ -59,5 +72,11 @@ pub trait ProjectRepository: Send + Sync {
         project_id: ProjectId,
     ) -> Result<Vec<ProjectInvite>, RepositoryError>;
 
-    async fn save_invite(&self, invite: &ProjectInvite) -> Result<(), RepositoryError>;
+    /// `outbox` rows commit in the same transaction as the entity write, so an
+    /// audited event cannot be lost between commit and projection.
+    async fn save_invite(
+        &self,
+        invite: &ProjectInvite,
+        outbox: &[OutboxRecord],
+    ) -> Result<(), RepositoryError>;
 }

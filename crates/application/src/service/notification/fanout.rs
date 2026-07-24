@@ -297,15 +297,16 @@ impl NotificationFanout {
         }
 
         let now = OffsetDateTime::now_utc();
-        for chunk in targets.chunks(ACTIVE_USER_PAGE as usize) {
-            let ids: Vec<NotificationId> = chunk
-                .iter()
-                .map(|_| NotificationId(Uuid::now_v7()))
-                .collect();
-            self.notifications
-                .save_broadcast(&ids, chunk, payload, now)
-                .await?;
-        }
+        let ids: Vec<NotificationId> = targets
+            .iter()
+            .map(|_| NotificationId(Uuid::now_v7()))
+            .collect();
+        // One statement for the whole recipient set: an apalis retry after a
+        // failure starts from zero rows, so a >500-recipient fanout can't
+        // double-notify the earlier chunks.
+        self.notifications
+            .save_broadcast(&ids, &targets, payload, now)
+            .await?;
         // Email only after all saves succeed: a partial failure makes
         // apalis retry the job, and emailing first would double-send.
         if let Some(email) = &self.email {

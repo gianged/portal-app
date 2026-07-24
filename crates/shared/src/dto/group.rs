@@ -91,6 +91,10 @@ pub struct GroupDto {
     pub member_count: u32,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
+    /// True on a create response whose authz grant is still being reconciled;
+    /// permissions may lag briefly. Always false on reads.
+    #[serde(default)]
+    pub authz_pending: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,6 +107,10 @@ pub struct MembershipDto {
     /// `false` once the membership has been deactivated (derived from
     /// `deactivated_at`).
     pub active: bool,
+    /// True on a create response whose authz grant is still being reconciled;
+    /// permissions may lag briefly. Always false on reads.
+    #[serde(default)]
+    pub authz_pending: bool,
 }
 
 /// Group header plus its roster.

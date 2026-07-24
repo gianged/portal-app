@@ -44,21 +44,22 @@ impl Envelope for NotificationEnvelope {
     }
 }
 
-/// Audit-queue twin of [`NotificationEnvelope`].
+/// Repair-queue envelope. Carries a serialised `application::RepairJob`: a
+/// post-commit obligation that failed inline and must be reconciled.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuditEnvelope {
-    pub event: Vec<u8>,
+pub struct RepairEnvelope {
+    pub job: Vec<u8>,
     /// W3C `traceparent` of the enqueuing request; see [`NotificationEnvelope`].
     #[serde(default)]
     pub traceparent: Option<String>,
 }
 
-impl Envelope for AuditEnvelope {
-    const NAMESPACE: &'static str = "infrastructure::jobs::AuditEnvelope";
+impl Envelope for RepairEnvelope {
+    const NAMESPACE: &'static str = "infrastructure::jobs::RepairEnvelope";
 
     fn new(payload: Vec<u8>, traceparent: Option<String>) -> Self {
         Self {
-            event: payload,
+            job: payload,
             traceparent,
         }
     }
@@ -118,14 +119,15 @@ pub async fn notification_storage(
     storage::<NotificationEnvelope>(redis_url, 32).await
 }
 
-/// Builds the Redis-backed audit job storage.
-pub async fn audit_storage(redis_url: &str) -> Result<RedisStorage<AuditEnvelope>, JobError> {
-    storage::<AuditEnvelope>(redis_url, 32).await
-}
-
 /// Builds the Redis-backed email job storage. Narrow: SMTP relays throttle.
 pub async fn email_storage(redis_url: &str) -> Result<RedisStorage<EmailEnvelope>, JobError> {
     storage::<EmailEnvelope>(redis_url, 16).await
+}
+
+/// Builds the Redis-backed repair job storage. Narrow: repairs are rare and
+/// each fans out several backend writes.
+pub async fn repair_storage(redis_url: &str) -> Result<RedisStorage<RepairEnvelope>, JobError> {
+    storage::<RepairEnvelope>(redis_url, 8).await
 }
 
 /// [`JobQueue`] adapter over apalis + Redis, bound to one storage.
@@ -171,5 +173,5 @@ fn is_connection_error(e: &apalis_redis::RedisError) -> bool {
 }
 
 pub type ApalisNotificationQueue = ApalisQueue<NotificationEnvelope>;
-pub type ApalisAuditQueue = ApalisQueue<AuditEnvelope>;
 pub type ApalisEmailQueue = ApalisQueue<EmailEnvelope>;
+pub type ApalisRepairQueue = ApalisQueue<RepairEnvelope>;

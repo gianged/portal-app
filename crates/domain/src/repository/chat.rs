@@ -98,9 +98,16 @@ pub trait ChatRepository: Send + Sync {
         limit: u32,
     ) -> Result<Vec<Announcement>, RepositoryError>;
 
-    async fn save_announcement(&self, announcement: &Announcement) -> Result<(), RepositoryError>;
+    /// Atomically persists the announcement rail row and its chat-timeline copy
+    /// (one logged batch), so the pair cannot diverge.
+    async fn save_announcement_with_message(
+        &self,
+        announcement: &Announcement,
+        message: &Message,
+    ) -> Result<(), RepositoryError>;
 
-    async fn delete_announcement(
+    /// Atomically removes the announcement rail row and its chat-timeline copy.
+    async fn delete_announcement_with_message(
         &self,
         channel_id: ChannelId,
         message_id: MessageId,

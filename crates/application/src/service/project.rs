@@ -17,6 +17,7 @@ use crate::{
     error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
+    repair::{Created, Repair, RepairJob},
     resilience,
 };
 
@@ -33,6 +34,7 @@ pub struct ProjectService {
     requests: Arc<dyn RequestRepository>,
     perms: Arc<Permissions>,
     events: Arc<EventBus>,
+    repair: Arc<Repair>,
 }
 
 impl ProjectService {
@@ -42,12 +44,14 @@ impl ProjectService {
         requests: Arc<dyn RequestRepository>,
         perms: Arc<Permissions>,
         events: Arc<EventBus>,
+        repair: Arc<Repair>,
     ) -> Self {
         Self {
             projects,
             requests,
             perms,
             events,
+            repair,
         }
     }
 
@@ -60,7 +64,7 @@ impl ProjectService {
         &self,
         actor: UserId,
         cmd: CreateProjectCommand,
-    ) -> Result<Project> {
+    ) -> Result<Created<Project>> {
         self.perms
             .require_group_leader(actor, cmd.owner_group_id)
             .await?;
@@ -78,22 +82,34 @@ impl ProjectService {
             created_at: now,
             updated_at: now,
         };
-        self.projects.save_project(&project).await?;
+        let event = DomainEvent::ProjectCreated {
+            project_id: project.id,
+            owner_group: project.owner_group_id,
+            actor,
+            at: now,
+            after: project.clone(),
+        };
+        self.projects
+            .save_project(&project, &[event.outbox_record()])
+            .await?;
         // OpenFGA: bind the project to its owner group (drives owner_member /
         // viewer) and the company singleton (Director viewer branch).
-        self.perms
-            .grant_project_created(project.owner_group_id, project.id)
-            .await?;
-        self.events
-            .emit(DomainEvent::ProjectCreated {
-                project_id: project.id,
-                owner_group: project.owner_group_id,
-                actor,
-                at: now,
-                after: project.clone(),
-            })
-            .await?;
-        Ok(project)
+        let provisioned = self
+            .repair
+            .ensure(
+                self.perms
+                    .grant_project_created(project.owner_group_id, project.id)
+                    .await,
+                RepairJob::SyncProjectTuples {
+                    project_id: project.id,
+                },
+            )
+            .await;
+        self.events.emit(event).await;
+        Ok(Created {
+            entity: project,
+            authz_pending: !provisioned,
+        })
     }
 
     /// Updates the project's name and/or description.
@@ -121,16 +137,17 @@ impl ProjectService {
                 project.description = description;
             }
             project.updated_at = now;
-            self.projects.save_project(&project).await?;
-            self.events
-                .emit(DomainEvent::ProjectMetadataUpdated {
-                    project_id: project.id,
-                    actor,
-                    at: now,
-                    before,
-                    after: project.clone(),
-                })
+            let event = DomainEvent::ProjectMetadataUpdated {
+                project_id: project.id,
+                actor,
+                at: now,
+                before,
+                after: project.clone(),
+            };
+            self.projects
+                .save_project(&project, &[event.outbox_record()])
                 .await?;
+            self.events.emit(event).await;
             Ok(project)
         })
         .await
@@ -155,18 +172,19 @@ impl ProjectService {
             let before = project.clone();
             let now = OffsetDateTime::now_utc();
             project.set_progress(progress, now);
-            self.projects.save_project(&project).await?;
             // Reuse the metadata-updated event; before/after carry the full project,
             // so the progress change is captured for audit without a new event variant.
-            self.events
-                .emit(DomainEvent::ProjectMetadataUpdated {
-                    project_id: project.id,
-                    actor,
-                    at: now,
-                    before,
-                    after: project.clone(),
-                })
+            let event = DomainEvent::ProjectMetadataUpdated {
+                project_id: project.id,
+                actor,
+                at: now,
+                before,
+                after: project.clone(),
+            };
+            self.projects
+                .save_project(&project, &[event.outbox_record()])
                 .await?;
+            self.events.emit(event).await;
             Ok(project)
         })
         .await
@@ -266,16 +284,17 @@ impl ProjectService {
             created_at: now,
             updated_at: now,
         };
-        self.projects.save_invite(&invite).await?;
-        self.events
-            .emit(DomainEvent::ProjectInviteSent {
-                invite_id: invite.id,
-                project_id,
-                target_group,
-                actor,
-                at: now,
-            })
+        let event = DomainEvent::ProjectInviteSent {
+            invite_id: invite.id,
+            project_id,
+            target_group,
+            actor,
+            at: now,
+        };
+        self.projects
+            .save_invite(&invite, &[event.outbox_record()])
             .await?;
+        self.events.emit(event).await;
         Ok(invite)
     }
 
@@ -288,7 +307,7 @@ impl ProjectService {
         &self,
         actor: UserId,
         invite_id: ProjectInviteId,
-    ) -> Result<ProjectInvite> {
+    ) -> Result<Created<ProjectInvite>> {
         let mut invite = self
             .projects
             .find_invite(invite_id)
@@ -308,23 +327,36 @@ impl ProjectService {
             updated_at: now,
         };
         self.projects.save_collaborator(&collaborator).await?;
-        self.projects.save_invite(&invite).await?;
+        let event = DomainEvent::ProjectInviteResponded {
+            invite_id: invite.id,
+            project_id: invite.project_id,
+            target_group: invite.invited_group_id,
+            status: invite.status,
+            actor,
+            at: now,
+        };
+        self.projects
+            .save_invite(&invite, &[event.outbox_record()])
+            .await?;
         // OpenFGA: the invited group's members become collaborator_member -> viewer;
         // later membership changes propagate via the group's member tuples.
-        self.perms
-            .grant_project_collaborator(invite.invited_group_id, invite.project_id)
-            .await?;
-        self.events
-            .emit(DomainEvent::ProjectInviteResponded {
-                invite_id: invite.id,
-                project_id: invite.project_id,
-                target_group: invite.invited_group_id,
-                status: invite.status,
-                actor,
-                at: now,
-            })
-            .await?;
-        Ok(invite)
+        let provisioned = self
+            .repair
+            .ensure(
+                self.perms
+                    .grant_project_collaborator(invite.invited_group_id, invite.project_id)
+                    .await,
+                RepairJob::SyncCollaboratorTuple {
+                    project_id: invite.project_id,
+                    group_id: invite.invited_group_id,
+                },
+            )
+            .await;
+        self.events.emit(event).await;
+        Ok(Created {
+            entity: invite,
+            authz_pending: !provisioned,
+        })
     }
 
     /// Declines a pending invite on behalf of the invited group.
@@ -347,17 +379,18 @@ impl ProjectService {
             .await?;
         let now = OffsetDateTime::now_utc();
         invite.decline(actor, now)?;
-        self.projects.save_invite(&invite).await?;
-        self.events
-            .emit(DomainEvent::ProjectInviteResponded {
-                invite_id: invite.id,
-                project_id: invite.project_id,
-                target_group: invite.invited_group_id,
-                status: invite.status,
-                actor,
-                at: now,
-            })
+        let event = DomainEvent::ProjectInviteResponded {
+            invite_id: invite.id,
+            project_id: invite.project_id,
+            target_group: invite.invited_group_id,
+            status: invite.status,
+            actor,
+            at: now,
+        };
+        self.projects
+            .save_invite(&invite, &[event.outbox_record()])
             .await?;
+        self.events.emit(event).await;
         Ok(invite)
     }
 
@@ -382,17 +415,18 @@ impl ProjectService {
             .await?;
         let now = OffsetDateTime::now_utc();
         invite.revoke(now)?;
-        self.projects.save_invite(&invite).await?;
-        self.events
-            .emit(DomainEvent::ProjectInviteResponded {
-                invite_id: invite.id,
-                project_id: invite.project_id,
-                target_group: invite.invited_group_id,
-                status: invite.status,
-                actor,
-                at: now,
-            })
+        let event = DomainEvent::ProjectInviteResponded {
+            invite_id: invite.id,
+            project_id: invite.project_id,
+            target_group: invite.invited_group_id,
+            status: invite.status,
+            actor,
+            at: now,
+        };
+        self.projects
+            .save_invite(&invite, &[event.outbox_record()])
             .await?;
+        self.events.emit(event).await;
         Ok(invite)
     }
 
@@ -416,19 +450,28 @@ impl ProjectService {
             .into_iter()
             .find(|c| c.group_id == group_id)
             .ok_or(Error::NotFound("collaborator"))?;
-        self.projects.delete_collaborator(collaborator.id).await?;
-        self.perms
-            .revoke_project_collaborator(group_id, project_id)
-            .await?;
         let now = OffsetDateTime::now_utc();
-        self.events
-            .emit(DomainEvent::ProjectCollaboratorRemoved {
-                project_id,
-                group_id,
-                actor,
-                at: now,
-            })
+        let event = DomainEvent::ProjectCollaboratorRemoved {
+            project_id,
+            group_id,
+            actor,
+            at: now,
+        };
+        self.projects
+            .delete_collaborator(collaborator.id, &[event.outbox_record()])
             .await?;
+        self.repair
+            .ensure(
+                self.perms
+                    .revoke_project_collaborator(group_id, project_id)
+                    .await,
+                RepairJob::SyncCollaboratorTuple {
+                    project_id,
+                    group_id,
+                },
+            )
+            .await;
+        self.events.emit(event).await;
         Ok(())
     }
 
@@ -528,16 +571,17 @@ impl ProjectService {
         let from = project.status;
         let now = OffsetDateTime::now_utc();
         op(&mut project, now)?;
-        self.projects.save_project(&project).await?;
-        self.events
-            .emit(DomainEvent::ProjectStatusChanged {
-                project_id: project.id,
-                from,
-                to: project.status,
-                actor,
-                at: now,
-            })
+        let event = DomainEvent::ProjectStatusChanged {
+            project_id: project.id,
+            from,
+            to: project.status,
+            actor,
+            at: now,
+        };
+        self.projects
+            .save_project(&project, &[event.outbox_record()])
             .await?;
+        self.events.emit(event).await;
         Ok(project)
     }
 
@@ -558,16 +602,17 @@ impl ProjectService {
         let now = OffsetDateTime::now_utc();
         op(&mut project, now)?;
         self.cascade_cancel_open_requests(actor, project_id).await?;
-        self.projects.save_project(&project).await?;
-        self.events
-            .emit(DomainEvent::ProjectStatusChanged {
-                project_id: project.id,
-                from,
-                to: project.status,
-                actor,
-                at: now,
-            })
+        let event = DomainEvent::ProjectStatusChanged {
+            project_id: project.id,
+            from,
+            to: project.status,
+            actor,
+            at: now,
+        };
+        self.projects
+            .save_project(&project, &[event.outbox_record()])
             .await?;
+        self.events.emit(event).await;
         Ok(project)
     }
 
@@ -585,17 +630,18 @@ impl ProjectService {
             for mut request in open {
                 let from = request.status;
                 request.cancel(now)?;
-                self.requests.save(&request).await?;
-                self.events
-                    .emit(DomainEvent::RequestStatusChanged {
-                        request_id: request.id,
-                        project_id,
-                        from,
-                        to: request.status,
-                        actor,
-                        at: now,
-                    })
+                let event = DomainEvent::RequestStatusChanged {
+                    request_id: request.id,
+                    project_id,
+                    from,
+                    to: request.status,
+                    actor,
+                    at: now,
+                };
+                self.requests
+                    .save(&request, &[event.outbox_record()])
                     .await?;
+                self.events.emit(event).await;
             }
         }
         Ok(())

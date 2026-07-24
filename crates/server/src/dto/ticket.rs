@@ -84,6 +84,7 @@ pub fn ticket_dto(
         closed_at: ticket.closed_at,
         created_at: ticket.created_at,
         updated_at: ticket.updated_at,
+        authz_pending: false,
     }
 }
 

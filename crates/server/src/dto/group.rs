@@ -55,6 +55,7 @@ pub fn group_dto(group: &model::Group, member_count: u32) -> GroupDto {
         kind: group_kind_dto(group.kind),
         member_count,
         created_at: group.created_at,
+        authz_pending: false,
     }
 }
 
@@ -66,6 +67,7 @@ pub fn membership_dto(membership: &model::Membership, user: UserSummaryDto) -> M
         role: group_role_dto(membership.role),
         joined_at: membership.joined_at,
         active: membership.deactivated_at.is_none(),
+        authz_pending: false,
     }
 }
 

@@ -13,11 +13,13 @@ use domain::{
     },
     ports::{
         event_publisher::EventPublisher,
-        job_queue::{JobQueue, QUEUE_AUDIT, QUEUE_NOTIFICATIONS},
+        job_queue::{JobQueue, QUEUE_NOTIFICATIONS},
     },
+    repository::OutboxRecord,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use uuid::Uuid;
 
 use crate::error::Result;
 
@@ -456,6 +458,22 @@ impl DomainEvent {
             | Self::FlexMonthUnreconciled { .. } => TOPIC_ATTENDANCE,
         }
     }
+
+    /// Audit-outbox row for this event: the same serialised bytes the bus
+    /// broadcasts, committed atomically with the entity write that caused it.
+    ///
+    /// # Panics
+    /// Panics only if `serde_json::to_vec` fails for `DomainEvent`, which cannot
+    /// happen for these infallibly-serialisable variants.
+    #[must_use]
+    pub fn outbox_record(&self) -> OutboxRecord {
+        OutboxRecord {
+            id: Uuid::now_v7(),
+            topic: self.topic().to_owned(),
+            payload: serde_json::to_vec(self)
+                .expect("DomainEvent variants only contain serde-derivable types"),
+        }
+    }
 }
 
 /// Topics whose events are mirrored onto the durable job queue for the worker to
@@ -468,65 +486,42 @@ const NOTIFY_TOPICS: &[&str] = &[
     TOPIC_CHAT,
 ];
 
-/// Topics whose events are projected into the immutable audit log (Postgres-backed
-/// entities only; `portal.chat` / `portal.announcement` live in Scylla).
-const AUDIT_TOPICS: &[&str] = &[
-    TOPIC_USER,
-    TOPIC_GROUP,
-    TOPIC_PROJECT,
-    TOPIC_REQUEST,
-    TOPIC_TICKET,
-];
-
 /// Dispatches every [`DomainEvent`] to a broadcast publisher (Redis pub/sub) and a
-/// durable job queue (apalis), feeding both the same serialised bytes.
+/// durable job queue (apalis), feeding both the same serialised bytes. Audit is
+/// not routed here: audited events ride the Postgres outbox written in the same
+/// transaction as the entity row.
 pub struct EventBus {
     publisher: Arc<dyn EventPublisher>,
     jobs: Arc<dyn JobQueue>,
-    audit_jobs: Arc<dyn JobQueue>,
 }
 
 impl EventBus {
     #[must_use]
-    pub fn new(
-        publisher: Arc<dyn EventPublisher>,
-        jobs: Arc<dyn JobQueue>,
-        audit_jobs: Arc<dyn JobQueue>,
-    ) -> Self {
-        Self {
-            publisher,
-            jobs,
-            audit_jobs,
-        }
+    pub fn new(publisher: Arc<dyn EventPublisher>, jobs: Arc<dyn JobQueue>) -> Self {
+        Self { publisher, jobs }
     }
 
-    /// Publishes `event` to the broadcast publisher and, for notify topics, also
-    /// enqueues it on the durable job queue. With the dispatch chain absorbing
-    /// transient failures, an enqueue error means the whole chain died: a lost
-    /// notification is logged and dropped (best-effort), a lost audit entry
-    /// fails the emit (the append-only log must not drop).
-    ///
-    /// # Errors
-    /// Returns an `Event` error if publishing to the broadcast publisher fails, or a `Job` error if the audit enqueue fails.
+    /// Best-effort dispatch after a committed state change. Broadcast is
+    /// transient realtime (warn + drop on failure); notify rides its own
+    /// breaker+spool dispatch chain, so a failed enqueue means the whole chain
+    /// died and is only logged.
     ///
     /// # Panics
     ///
     /// Panics only if `serde_json::to_vec` fails for `DomainEvent`, which cannot
     /// happen for these infallibly-serialisable variants.
-    pub async fn emit(&self, event: DomainEvent) -> Result<()> {
+    pub async fn emit(&self, event: DomainEvent) {
         let topic = event.topic();
         let payload = serde_json::to_vec(&event)
             .expect("DomainEvent variants only contain serde-derivable types");
-        self.publisher.publish(topic, &payload).await?;
+        if let Err(e) = self.publisher.publish(topic, &payload).await {
+            tracing::warn!(topic, error = %e, "event broadcast failed; realtime update dropped");
+        }
         if NOTIFY_TOPICS.contains(&topic)
             && let Err(e) = self.jobs.enqueue(QUEUE_NOTIFICATIONS, &payload).await
         {
             tracing::error!(topic, error = %e, "notification enqueue failed; dropping fanout job");
         }
-        if AUDIT_TOPICS.contains(&topic) {
-            self.audit_jobs.enqueue(QUEUE_AUDIT, &payload).await?;
-        }
-        Ok(())
     }
 
     /// Broadcasts `event` to the real-time publisher only, skipping the durable job

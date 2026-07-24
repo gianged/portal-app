@@ -7,12 +7,12 @@ use domain::{
     error::RepositoryError,
     ids::{GroupId, MembershipId, UserId},
     model::{Group, Membership},
-    repository::GroupRepository,
+    repository::{GroupRepository, OutboxRecord},
 };
 
 use crate::postgres::{
     enums::{SqlGroupKind, SqlGroupRole},
-    mappers,
+    mappers, outbox,
 };
 
 pub struct PgGroupRepo {
@@ -31,6 +31,7 @@ struct GroupRow {
     name: String,
     description: String,
     kind: SqlGroupKind,
+    archived_at: Option<OffsetDateTime>,
     version: i64,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
@@ -43,6 +44,7 @@ impl From<GroupRow> for Group {
             name: r.name,
             description: r.description,
             kind: r.kind.into(),
+            archived_at: r.archived_at,
             version: r.version,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -123,6 +125,7 @@ impl GroupRepository for PgGroupRepo {
                  name,
                  description,
                  kind AS "kind: SqlGroupKind",
+                 archived_at,
                  version,
                  created_at,
                  updated_at
@@ -149,6 +152,7 @@ impl GroupRepository for PgGroupRepo {
                  name,
                  description,
                  kind AS "kind: SqlGroupKind",
+                 archived_at,
                  version,
                  created_at,
                  updated_at
@@ -171,10 +175,12 @@ impl GroupRepository for PgGroupRepo {
                  name,
                  description,
                  kind AS "kind: SqlGroupKind",
+                 archived_at,
                  version,
                  created_at,
                  updated_at
                FROM org.groups
+               WHERE archived_at IS NULL
                ORDER BY name"#,
         )
         .fetch_all(&self.pool)
@@ -193,11 +199,12 @@ impl GroupRepository for PgGroupRepo {
                  name,
                  description,
                  kind AS "kind: SqlGroupKind",
+                 archived_at,
                  version,
                  created_at,
                  updated_at
                FROM org.groups
-               WHERE kind = 'it'
+               WHERE kind = 'it' AND archived_at IS NULL
                LIMIT 1"#,
         )
         .fetch_optional(&self.pool)
@@ -207,31 +214,40 @@ impl GroupRepository for PgGroupRepo {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn save_group(&self, group: &Group) -> Result<(), RepositoryError> {
+    async fn save_group(
+        &self,
+        group: &Group,
+        outbox_records: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         let kind = SqlGroupKind::from(group.kind);
+        let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
         let result = sqlx::query!(
             r#"INSERT INTO org.groups AS t
-                 (id, name, description, kind, version, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6)
+                 (id, name, description, kind, archived_at, version, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
                ON CONFLICT (id) DO UPDATE SET
                  name        = EXCLUDED.name,
                  description = EXCLUDED.description,
                  kind        = EXCLUDED.kind,
+                 archived_at = EXCLUDED.archived_at,
                  version     = EXCLUDED.version + 1
                WHERE t.version = EXCLUDED.version"#,
             group.id.0,
             group.name,
             group.description,
             kind as SqlGroupKind,
+            group.archived_at,
             group.version,
             group.created_at,
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(mappers::map_pg_error)?;
         if result.rows_affected() == 0 {
             return Err(RepositoryError::Stale);
         }
+        outbox::write(&mut tx, outbox_records).await?;
+        tx.commit().await.map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -301,18 +317,19 @@ impl GroupRepository for PgGroupRepo {
         let rows = sqlx::query_as!(
             MembershipRow,
             r#"SELECT
-                 id,
-                 group_id,
-                 user_id,
-                 role AS "role: SqlGroupRole",
-                 joined_at,
-                 deactivated_at,
-                 version,
-                 created_at,
-                 updated_at
-               FROM org.memberships
-               WHERE user_id = $1 AND deactivated_at IS NULL
-               ORDER BY joined_at"#,
+                 m.id,
+                 m.group_id,
+                 m.user_id,
+                 m.role AS "role: SqlGroupRole",
+                 m.joined_at,
+                 m.deactivated_at,
+                 m.version,
+                 m.created_at,
+                 m.updated_at
+               FROM org.memberships m
+               JOIN org.groups g ON g.id = m.group_id AND g.archived_at IS NULL
+               WHERE m.user_id = $1 AND m.deactivated_at IS NULL
+               ORDER BY m.joined_at"#,
             user_id.0,
         )
         .fetch_all(&self.pool)
@@ -333,18 +350,19 @@ impl GroupRepository for PgGroupRepo {
         let rows = sqlx::query_as!(
             MembershipRow,
             r#"SELECT
-                 id,
-                 group_id,
-                 user_id,
-                 role AS "role: SqlGroupRole",
-                 joined_at,
-                 deactivated_at,
-                 version,
-                 created_at,
-                 updated_at
-               FROM org.memberships
-               WHERE user_id = ANY($1) AND deactivated_at IS NULL
-               ORDER BY joined_at"#,
+                 m.id,
+                 m.group_id,
+                 m.user_id,
+                 m.role AS "role: SqlGroupRole",
+                 m.joined_at,
+                 m.deactivated_at,
+                 m.version,
+                 m.created_at,
+                 m.updated_at
+               FROM org.memberships m
+               JOIN org.groups g ON g.id = m.group_id AND g.archived_at IS NULL
+               WHERE m.user_id = ANY($1) AND m.deactivated_at IS NULL
+               ORDER BY m.joined_at"#,
             &ids,
         )
         .fetch_all(&self.pool)
@@ -354,18 +372,29 @@ impl GroupRepository for PgGroupRepo {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn save_membership(&self, m: &Membership) -> Result<(), RepositoryError> {
-        let rows = upsert_membership(&self.pool, m)
+    async fn save_membership(
+        &self,
+        m: &Membership,
+        outbox_records: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
+        let rows = upsert_membership(&mut *tx, m)
             .await
             .map_err(mappers::map_pg_error)?;
         if rows == 0 {
             return Err(RepositoryError::Stale);
         }
+        outbox::write(&mut tx, outbox_records).await?;
+        tx.commit().await.map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(count = memberships.len()))]
-    async fn save_memberships(&self, memberships: &[Membership]) -> Result<(), RepositoryError> {
+    async fn save_memberships(
+        &self,
+        memberships: &[Membership],
+        outbox_records: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
         for m in memberships {
             let rows = upsert_membership(&mut *tx, m)
@@ -377,6 +406,7 @@ impl GroupRepository for PgGroupRepo {
                 return Err(RepositoryError::Stale);
             }
         }
+        outbox::write(&mut tx, outbox_records).await?;
         tx.commit().await.map_err(mappers::map_pg_error)?;
         Ok(())
     }

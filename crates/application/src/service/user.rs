@@ -6,7 +6,7 @@ use argon2::{
 };
 use domain::{
     ids::UserId,
-    model::{ChannelKind, GroupRole, RequestStatus, User, UserStatus},
+    model::{ChannelKind, GroupRole, Membership, RequestStatus, SystemRole, User, UserStatus},
     ports::token_revocation::TokenRevocation,
     repository::{ChatRepository, GroupRepository, RequestRepository, UserRepository},
 };
@@ -19,6 +19,7 @@ use crate::{
     error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
+    repair::{Repair, RepairJob},
     resilience,
 };
 
@@ -36,6 +37,7 @@ pub struct UserService {
     chats: Arc<dyn ChatRepository>,
     perms: Arc<Permissions>,
     events: Arc<EventBus>,
+    repair: Arc<Repair>,
     revocation: Arc<dyn TokenRevocation>,
 }
 
@@ -48,6 +50,7 @@ impl UserService {
         chats: Arc<dyn ChatRepository>,
         perms: Arc<Permissions>,
         events: Arc<EventBus>,
+        repair: Arc<Repair>,
         revocation: Arc<dyn TokenRevocation>,
     ) -> Self {
         Self {
@@ -57,6 +60,7 @@ impl UserService {
             chats,
             perms,
             events,
+            repair,
             revocation,
         }
     }
@@ -79,13 +83,19 @@ impl UserService {
         Ok(())
     }
 
+    /// Invalidate every session token the user holds; status checks alone
+    /// leave read endpoints open until token expiry.
+    async fn bump_sessions(&self, user_id: UserId) -> Result<()> {
+        self.revocation.bump_version(user_id).await?;
+        Ok(())
+    }
+
     /// Creates a new `Pending` user.
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not HR, `Conflict` if the email is
     /// already in use, `Internal` if password hashing fails, a repository error
-    /// if the datastore or authz backend is unavailable, or an event error if
-    /// the event bus fails.
+    /// if the datastore or authz backend is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn create_user(&self, actor: UserId, cmd: CreateUserCommand) -> Result<User> {
         self.perms.require_hr(actor).await?;
@@ -114,19 +124,23 @@ impl UserService {
             updated_at: now,
         };
 
-        self.users.save(&user).await?;
+        let event = DomainEvent::UserCreated {
+            user_id: user.id,
+            actor,
+            at: now,
+        };
+        self.users.save(&user, &[event.outbox_record()]).await?;
         // Mirror an org role (HR/Director) into company tuples so the model's
         // `... or director from company` viewer branches resolve.
         if let Some(role) = user.system_role {
-            self.perms.grant_company_role(user.id, role).await?;
+            self.repair
+                .ensure(
+                    self.perms.grant_company_role(user.id, role).await,
+                    RepairJob::SyncUserAccess { user_id: user.id },
+                )
+                .await;
         }
-        self.events
-            .emit(DomainEvent::UserCreated {
-                user_id: user.id,
-                actor,
-                at: now,
-            })
-            .await?;
+        self.events.emit(event).await;
         Ok(user)
     }
 
@@ -137,28 +151,30 @@ impl UserService {
     /// # Errors
     /// Returns `NotFound` if the user does not exist, `Transition` if the user is
     /// not in a state that can be activated, a repository error if the datastore
-    /// is unavailable, or an event error if the event bus fails.
+    /// is unavailable.
     #[tracing::instrument(skip_all, fields(user_id = ?user_id))]
     pub async fn complete_first_login(&self, user_id: UserId) -> Result<User> {
         let now = OffsetDateTime::now_utc();
-        resilience::retry_stale(|| async {
+        let event = DomainEvent::UserActivated { user_id, at: now };
+        let user = resilience::retry_stale(|| async {
             let mut user = self
                 .users
                 .find_by_id(user_id)
                 .await?
                 .ok_or(Error::NotFound("user"))?;
             user.activate(now, now)?;
-            self.users.save(&user).await?;
-            self.subscribe_to_general(user.id).await?;
-            self.events
-                .emit(DomainEvent::UserActivated {
-                    user_id: user.id,
-                    at: now,
-                })
-                .await?;
+            self.users.save(&user, &[event.outbox_record()]).await?;
             Ok(user)
         })
-        .await
+        .await?;
+        self.repair
+            .ensure(
+                self.subscribe_to_general(user.id).await,
+                RepairJob::SyncUserAccess { user_id: user.id },
+            )
+            .await;
+        self.events.emit(event).await;
+        Ok(user)
     }
 
     /// Authenticates a login attempt and returns the resolved active user.
@@ -201,9 +217,8 @@ impl UserService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the target does
     /// not exist, `Conflict` if the target still leads a group or has open
-    /// requests assigned, `Transition` if the target is not `Active`, a
-    /// repository error if the datastore or authz backend is unavailable, or an
-    /// event error if the event bus fails.
+    /// requests assigned, `Transition` if the target is not `Active`, or a
+    /// repository error if the datastore or authz backend is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, target = ?target))]
     pub async fn deactivate_user(&self, actor: UserId, target: UserId) -> Result<()> {
         self.perms.require_hr(actor).await?;
@@ -223,6 +238,11 @@ impl UserService {
             }
         }
 
+        let event = DomainEvent::UserDeactivated {
+            user_id: target,
+            actor,
+            at: now,
+        };
         let user = resilience::retry_stale(|| async {
             let mut user = self
                 .users
@@ -230,32 +250,49 @@ impl UserService {
                 .await?
                 .ok_or(Error::NotFound("user"))?;
             user.deactivate(now)?;
-            self.users.save(&user).await?;
+            self.users.save(&user, &[event.outbox_record()]).await?;
             Ok(user)
         })
         .await?;
-        // Invalidate every session token the user still holds; status checks
-        // alone leave read endpoints open until token expiry.
-        self.revocation.bump_version(target).await?;
-        for mut membership in memberships {
-            membership.deactivate(now);
-            self.groups.save_membership(&membership).await?;
-            self.perms.revoke_group_membership(&membership).await?;
+        // Obligations: sessions die first, then access teardown.
+        self.repair
+            .ensure(
+                self.bump_sessions(target).await,
+                RepairJob::BumpSessions { user_id: target },
+            )
+            .await;
+        self.repair
+            .ensure(
+                self.teardown_access(target, &memberships, user.system_role, now)
+                    .await,
+                RepairJob::SyncUserAccess { user_id: target },
+            )
+            .await;
+        self.events.emit(event).await;
+        Ok(())
+    }
+
+    /// Inline attempt of the post-deactivation teardown; the repair job re-runs
+    /// the same logic derived from DB state.
+    async fn teardown_access(
+        &self,
+        target: UserId,
+        memberships: &[Membership],
+        system_role: Option<SystemRole>,
+        now: OffsetDateTime,
+    ) -> Result<()> {
+        for m in memberships {
+            let mut m = m.clone();
+            m.deactivate(now);
+            self.groups.save_membership(&m, &[]).await?;
+            self.perms.revoke_group_membership(&m).await?;
         }
         // Drop org-role tuples too; a deactivated HR/Director loses access until
         // reactivated.
-        if let Some(role) = user.system_role {
+        if let Some(role) = system_role {
             self.perms.revoke_company_role(target, role).await?;
         }
-        self.unsubscribe_from_general(target).await?;
-        self.events
-            .emit(DomainEvent::UserDeactivated {
-                user_id: user.id,
-                actor,
-                at: now,
-            })
-            .await?;
-        Ok(())
+        self.unsubscribe_from_general(target).await
     }
 
     /// Reactivates a deactivated user, restoring org-role tuples.
@@ -264,12 +301,17 @@ impl UserService {
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the target does
     /// not exist, `Transition` if the user cannot be reactivated from its current
     /// state, a repository error if the datastore or authz backend is
-    /// unavailable, or an event error if the event bus fails.
+    /// unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, target = ?target))]
     pub async fn reactivate_user(&self, actor: UserId, target: UserId) -> Result<User> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
 
+        let event = DomainEvent::UserReactivated {
+            user_id: target,
+            actor,
+            at: now,
+        };
         let user = resilience::retry_stale(|| async {
             let mut user = self
                 .users
@@ -277,22 +319,27 @@ impl UserService {
                 .await?
                 .ok_or(Error::NotFound("user"))?;
             user.reactivate(now)?;
-            self.users.save(&user).await?;
+            self.users.save(&user, &[event.outbox_record()]).await?;
             Ok(user)
         })
         .await?;
-        if let Some(role) = user.system_role {
-            self.perms.grant_company_role(target, role).await?;
-        }
-        self.subscribe_to_general(target).await?;
-        self.events
-            .emit(DomainEvent::UserReactivated {
-                user_id: user.id,
-                actor,
-                at: now,
-            })
-            .await?;
+        self.repair
+            .ensure(
+                self.restore_access(&user).await,
+                RepairJob::SyncUserAccess { user_id: target },
+            )
+            .await;
+        self.events.emit(event).await;
         Ok(user)
+    }
+
+    /// Inline attempt of the post-reactivation restore; the repair job re-runs
+    /// the same logic derived from DB state.
+    async fn restore_access(&self, user: &User) -> Result<()> {
+        if let Some(role) = user.system_role {
+            self.perms.grant_company_role(user.id, role).await?;
+        }
+        self.subscribe_to_general(user.id).await
     }
 
     /// Updates a user's profile. A user may update their own profile; otherwise
@@ -301,8 +348,7 @@ impl UserService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not active (when editing their own
     /// profile) or not HR (when editing another user), `NotFound` if the target
-    /// does not exist, a repository error if the datastore is unavailable, or an
-    /// event error if the event bus fails.
+    /// does not exist, a repository error if the datastore is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, target = ?target))]
     pub async fn update_profile(
         &self,
@@ -317,7 +363,12 @@ impl UserService {
         }
         let now = OffsetDateTime::now_utc();
 
-        resilience::retry_stale(|| async {
+        let event = DomainEvent::UserProfileUpdated {
+            user_id: target,
+            actor,
+            at: now,
+        };
+        let user = resilience::retry_stale(|| async {
             let mut user = self
                 .users
                 .find_by_id(target)
@@ -346,17 +397,12 @@ impl UserService {
             }
             user.updated_at = now;
 
-            self.users.save(&user).await?;
-            self.events
-                .emit(DomainEvent::UserProfileUpdated {
-                    user_id: user.id,
-                    actor,
-                    at: now,
-                })
-                .await?;
+            self.users.save(&user, &[event.outbox_record()]).await?;
             Ok(user)
         })
-        .await
+        .await?;
+        self.events.emit(event).await;
+        Ok(user)
     }
 
     /// Changes the actor's own password after re-verifying the current one,
@@ -379,6 +425,10 @@ impl UserService {
 
         // Hash once outside the retry loop; argon2 is too expensive to redo.
         let new_hash = hash_password(new_password).await?;
+        let event = DomainEvent::UserPasswordChanged {
+            user_id: actor,
+            at: now,
+        };
         resilience::retry_stale(|| async {
             let mut user = self
                 .users
@@ -391,17 +441,17 @@ impl UserService {
 
             user.password_hash = new_hash.clone();
             user.updated_at = now;
-            self.users.save(&user).await?;
+            self.users.save(&user, &[event.outbox_record()]).await?;
             Ok(())
         })
         .await?;
-        self.revocation.bump_version(actor).await?;
-        self.events
-            .emit(DomainEvent::UserPasswordChanged {
-                user_id: actor,
-                at: now,
-            })
-            .await?;
+        self.repair
+            .ensure(
+                self.bump_sessions(actor).await,
+                RepairJob::BumpSessions { user_id: actor },
+            )
+            .await;
+        self.events.emit(event).await;
         Ok(())
     }
 
@@ -424,6 +474,11 @@ impl UserService {
 
         // Hash once outside the retry loop; argon2 is too expensive to redo.
         let new_hash = hash_password(new_password).await?;
+        let event = DomainEvent::UserPasswordReset {
+            user_id: target,
+            actor,
+            at: now,
+        };
         resilience::retry_stale(|| async {
             let mut user = self
                 .users
@@ -432,18 +487,17 @@ impl UserService {
                 .ok_or(Error::NotFound("user"))?;
             user.password_hash = new_hash.clone();
             user.updated_at = now;
-            self.users.save(&user).await?;
+            self.users.save(&user, &[event.outbox_record()]).await?;
             Ok(())
         })
         .await?;
-        self.revocation.bump_version(target).await?;
-        self.events
-            .emit(DomainEvent::UserPasswordReset {
-                user_id: target,
-                actor,
-                at: now,
-            })
-            .await?;
+        self.repair
+            .ensure(
+                self.bump_sessions(target).await,
+                RepairJob::BumpSessions { user_id: target },
+            )
+            .await;
+        self.events.emit(event).await;
         Ok(())
     }
 

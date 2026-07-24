@@ -7,10 +7,10 @@ use domain::{
     error::RepositoryError,
     ids::{CommentId, RequestId, TicketId, UserId},
     model::{Comment, CommentEntity},
-    repository::CommentRepository,
+    repository::{CommentRepository, OutboxRecord},
 };
 
-use crate::postgres::mappers;
+use crate::postgres::{mappers, outbox};
 
 /// One repo over both comment tables; each method matches the entity to pick the table.
 pub struct PgCommentRepo {
@@ -130,22 +130,36 @@ impl CommentRepository for PgCommentRepo {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn save(&self, comment: &Comment) -> Result<(), RepositoryError> {
+    async fn save(
+        &self,
+        comment: &Comment,
+        outbox_records: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         // Author/parent/created_at never change; only the grace-window edit does.
+        let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
         match comment.entity {
             CommentEntity::Request { request_id } => self
-                .save_request_comment(comment, request_id)
+                .save_request_comment(&mut tx, comment, request_id)
                 .await
-                .map_err(mappers::map_pg_error),
+                .map_err(mappers::map_pg_error)?,
             CommentEntity::Ticket { ticket_id } => self
-                .save_ticket_comment(comment, ticket_id)
+                .save_ticket_comment(&mut tx, comment, ticket_id)
                 .await
-                .map_err(mappers::map_pg_error),
+                .map_err(mappers::map_pg_error)?,
         }
+        outbox::write(&mut tx, outbox_records).await?;
+        tx.commit().await.map_err(mappers::map_pg_error)?;
+        Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(id = ?id))]
-    async fn delete(&self, entity: CommentEntity, id: CommentId) -> Result<(), RepositoryError> {
+    async fn delete(
+        &self,
+        entity: CommentEntity,
+        id: CommentId,
+        outbox_records: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
         match entity {
             CommentEntity::Request { request_id } => {
                 sqlx::query!(
@@ -153,7 +167,7 @@ impl CommentRepository for PgCommentRepo {
                     request_id.0,
                     id.0,
                 )
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
             }
             CommentEntity::Ticket { ticket_id } => {
@@ -162,11 +176,13 @@ impl CommentRepository for PgCommentRepo {
                     ticket_id.0,
                     id.0,
                 )
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
             }
         }
         .map_err(mappers::map_pg_error)?;
+        outbox::write(&mut tx, outbox_records).await?;
+        tx.commit().await.map_err(mappers::map_pg_error)?;
         Ok(())
     }
 }
@@ -174,6 +190,7 @@ impl CommentRepository for PgCommentRepo {
 impl PgCommentRepo {
     async fn save_request_comment(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         comment: &Comment,
         request_id: RequestId,
     ) -> Result<(), sqlx::Error> {
@@ -191,13 +208,14 @@ impl PgCommentRepo {
             comment.edited_at,
             comment.created_at,
         )
-        .execute(&self.pool)
+        .execute(&mut **tx)
         .await?;
         Ok(())
     }
 
     async fn save_ticket_comment(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         comment: &Comment,
         ticket_id: TicketId,
     ) -> Result<(), sqlx::Error> {
@@ -215,7 +233,7 @@ impl PgCommentRepo {
             comment.edited_at,
             comment.created_at,
         )
-        .execute(&self.pool)
+        .execute(&mut **tx)
         .await?;
         Ok(())
     }

@@ -27,7 +27,7 @@ use tower_http::{
 };
 
 use application::{
-    bootstrap,
+    Repair, bootstrap,
     events::EventBus,
     permissions::Permissions,
     resilience::{self, DispatchQueue, HealthRegistry, retry},
@@ -60,7 +60,7 @@ use infrastructure::{
         OpenFgaHealthCheck, PgHealthCheck, RedisHealthCheck, ScyllaHealthCheck,
         WorkersGrpcHealthCheck,
     },
-    jobs::{self, ApalisAuditQueue, ApalisNotificationQueue},
+    jobs::{self, ApalisNotificationQueue, ApalisRepairQueue},
     local_storage::LocalStorage,
     openfga::{self, OpenFgaAuthzClient},
     postgres::{
@@ -320,12 +320,12 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
         .await
         .context("connecting apalis redis (jobs)")?,
     );
-    let audit_jobs = ApalisAuditQueue::new(
-        retry::until_deadline("redis (apalis audit)", deadline, || {
-            jobs::audit_storage(&cfg.redis_url)
+    let repair_jobs = ApalisRepairQueue::new(
+        retry::until_deadline("redis (apalis repair)", deadline, || {
+            jobs::repair_storage(&cfg.redis_url)
         })
         .await
-        .context("connecting apalis redis (audit jobs)")?,
+        .context("connecting apalis redis (repair jobs)")?,
     );
     let job_spool: Arc<dyn Spool> = Arc::new(
         retry::until_deadline("redis (job spool)", deadline, || {
@@ -345,18 +345,16 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
         workers_grpc_breaker.clone(),
         telemetry::current_traceparent,
     ));
-    let audit_dispatch: Arc<dyn JobQueue> = Arc::new(DispatchQueue::new(
+    let repair_dispatch: Arc<dyn JobQueue> = Arc::new(DispatchQueue::new(
         grpc_dispatch,
-        Arc::new(audit_jobs),
+        Arc::new(repair_jobs),
         job_spool,
         workers_grpc_breaker,
         telemetry::current_traceparent,
     ));
-    let events = Arc::new(EventBus::new(
-        publisher.clone(),
-        notification_dispatch,
-        audit_dispatch,
-    ));
+    // Post-commit obligations that fail inline queue their reconcile here.
+    let repair = Arc::new(Repair::new(repair_dispatch));
+    let events = Arc::new(EventBus::new(publisher.clone(), notification_dispatch));
     let audit_service = Arc::new(AuditService::new(audit, perms.clone()));
     let storage_port: Arc<dyn FileStorage> = storage.clone();
 
@@ -487,6 +485,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
         leave_service.clone(),
         perms.clone(),
         events.clone(),
+        repair.clone(),
     ));
 
     // Overtime: leader + HR approval, capped monthly by the cached policy.
@@ -541,6 +540,7 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
             chats.clone(),
             perms.clone(),
             events.clone(),
+            repair.clone(),
             revocation.clone(),
         )),
         group: Arc::new(GroupService::new(
@@ -549,18 +549,21 @@ pub async fn build(cfg: &Config) -> anyhow::Result<(Router, IngestShutdown, Grpc
             chats.clone(),
             perms.clone(),
             events.clone(),
+            repair.clone(),
         )),
         project: Arc::new(ProjectService::new(
             projects.clone(),
             requests.clone(),
             perms.clone(),
             events.clone(),
+            repair.clone(),
         )),
         request: request_service.clone(),
         ticket: Arc::new(TicketService::new(
             tickets.clone(),
             perms.clone(),
             events.clone(),
+            repair.clone(),
         )),
         chat,
         chat_ingest,

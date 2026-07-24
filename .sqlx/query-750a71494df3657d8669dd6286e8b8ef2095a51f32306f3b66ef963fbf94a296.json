@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO audit.audit_log\n                 (id, actor_user_id, action, entity_schema, entity_table, entity_id, occurred_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7)",
+  "query": "INSERT INTO audit.audit_log\n                 (id, actor_user_id, action, entity_schema, entity_table, entity_id, occurred_at,\n                  event_id)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n               ON CONFLICT (event_id) DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
@@ -25,10 +25,11 @@
         "Text",
         "Text",
         "Uuid",
-        "Timestamptz"
+        "Timestamptz",
+        "Uuid"
       ]
     },
     "nullable": []
   },
-  "hash": "818b77d12b95441c0e36c7ed967d81fc492dd661abc29347762099f06356b293"
+  "hash": "750a71494df3657d8669dd6286e8b8ef2095a51f32306f3b66ef963fbf94a296"
 }

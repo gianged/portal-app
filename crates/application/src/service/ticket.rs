@@ -13,6 +13,7 @@ use crate::{
     error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
+    repair::{Created, Repair, RepairJob},
     resilience,
 };
 
@@ -20,6 +21,7 @@ pub struct TicketService {
     tickets: Arc<dyn TicketRepository>,
     perms: Arc<Permissions>,
     events: Arc<EventBus>,
+    repair: Arc<Repair>,
 }
 
 impl TicketService {
@@ -28,11 +30,13 @@ impl TicketService {
         tickets: Arc<dyn TicketRepository>,
         perms: Arc<Permissions>,
         events: Arc<EventBus>,
+        repair: Arc<Repair>,
     ) -> Self {
         Self {
             tickets,
             perms,
             events,
+            repair,
         }
     }
 
@@ -41,7 +45,7 @@ impl TicketService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not active, or a repository, event, or authz-backed repository error if the datastore or event bus is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor))]
-    pub async fn raise(&self, actor: UserId, cmd: RaiseTicketCommand) -> Result<Ticket> {
+    pub async fn raise(&self, actor: UserId, cmd: RaiseTicketCommand) -> Result<Created<Ticket>> {
         self.perms.require_active(actor).await?;
         let now = OffsetDateTime::now_utc();
         let ticket = Ticket {
@@ -60,19 +64,29 @@ impl TicketService {
             created_at: now,
             updated_at: now,
         };
-        self.tickets.save(&ticket).await?;
+        let event = DomainEvent::TicketRaised {
+            ticket_id: ticket.id,
+            requester: actor,
+            at: now,
+            after: ticket.clone(),
+        };
+        self.tickets.save(&ticket, &[event.outbox_record()]).await?;
         // OpenFGA: requester + IT group + company drive the ticket viewer
         // (incl. the Director branch).
-        self.perms.grant_ticket_created(actor, ticket.id).await?;
-        self.events
-            .emit(DomainEvent::TicketRaised {
-                ticket_id: ticket.id,
-                requester: actor,
-                at: now,
-                after: ticket.clone(),
-            })
-            .await?;
-        Ok(ticket)
+        let provisioned = self
+            .repair
+            .ensure(
+                self.perms.grant_ticket_created(actor, ticket.id).await,
+                RepairJob::SyncTicketTuples {
+                    ticket_id: ticket.id,
+                },
+            )
+            .await;
+        self.events.emit(event).await;
+        Ok(Created {
+            entity: ticket,
+            authz_pending: !provisioned,
+        })
     }
 
     /// Triages an open ticket, setting its priority. IT-only.
@@ -92,16 +106,18 @@ impl TicketService {
             let from = ticket.status;
             let now = OffsetDateTime::now_utc();
             ticket.triage(priority, now)?;
-            self.tickets.save(&ticket).await?;
-            self.events
-                .emit(DomainEvent::TicketTriaged {
-                    ticket_id: ticket.id,
-                    priority,
-                    actor,
-                    at: now,
-                })
+            let triaged = DomainEvent::TicketTriaged {
+                ticket_id: ticket.id,
+                priority,
+                actor,
+                at: now,
+            };
+            let status = status_event(&ticket, from, actor, now);
+            self.tickets
+                .save(&ticket, &[triaged.outbox_record(), status.outbox_record()])
                 .await?;
-            self.emit_status(actor, &ticket, from, now).await?;
+            self.events.emit(triaged).await;
+            self.events.emit(status).await;
             Ok(ticket)
         })
         .await
@@ -122,27 +138,44 @@ impl TicketService {
         if !self.perms.is_it_member(assignee).await? {
             return Err(Error::Conflict(ConflictCode::AssigneeNotIt));
         }
-        resilience::retry_stale(|| async {
+        let now = OffsetDateTime::now_utc();
+        let (ticket, from) = resilience::retry_stale(|| async {
             let mut ticket = self.load(ticket_id).await?;
             let from = ticket.status;
-            let now = OffsetDateTime::now_utc();
             ticket.assign(assignee, now)?;
-            self.tickets.save(&ticket).await?;
-            self.perms
-                .grant_ticket_assignee(assignee, ticket.id)
+            let assigned = DomainEvent::TicketAssigned {
+                ticket_id: ticket.id,
+                assignee,
+                actor,
+                at: now,
+            };
+            let status = status_event(&ticket, from, actor, now);
+            self.tickets
+                .save(&ticket, &[assigned.outbox_record(), status.outbox_record()])
                 .await?;
-            self.events
-                .emit(DomainEvent::TicketAssigned {
-                    ticket_id: ticket.id,
-                    assignee,
-                    actor,
-                    at: now,
-                })
-                .await?;
-            self.emit_status(actor, &ticket, from, now).await?;
-            Ok(ticket)
+            Ok((ticket, from))
         })
-        .await
+        .await?;
+        self.repair
+            .ensure(
+                self.perms.grant_ticket_assignee(assignee, ticket.id).await,
+                RepairJob::SyncTicketTuples {
+                    ticket_id: ticket.id,
+                },
+            )
+            .await;
+        self.events
+            .emit(DomainEvent::TicketAssigned {
+                ticket_id: ticket.id,
+                assignee,
+                actor,
+                at: now,
+            })
+            .await;
+        self.events
+            .emit(status_event(&ticket, from, actor, now))
+            .await;
+        Ok(ticket)
     }
 
     /// Starts work on an assigned ticket. Assignee-only.
@@ -160,8 +193,11 @@ impl TicketService {
             let from = ticket.status;
             let now = OffsetDateTime::now_utc();
             ticket.start(now)?;
-            self.tickets.save(&ticket).await?;
-            self.emit_status(actor, &ticket, from, now).await?;
+            let status = status_event(&ticket, from, actor, now);
+            self.tickets
+                .save(&ticket, &[status.outbox_record()])
+                .await?;
+            self.events.emit(status).await;
             Ok(ticket)
         })
         .await
@@ -182,8 +218,11 @@ impl TicketService {
             let from = ticket.status;
             let now = OffsetDateTime::now_utc();
             ticket.resolve(now)?;
-            self.tickets.save(&ticket).await?;
-            self.emit_status(actor, &ticket, from, now).await?;
+            let status = status_event(&ticket, from, actor, now);
+            self.tickets
+                .save(&ticket, &[status.outbox_record()])
+                .await?;
+            self.events.emit(status).await;
             Ok(ticket)
         })
         .await
@@ -204,8 +243,11 @@ impl TicketService {
             let from = ticket.status;
             let now = OffsetDateTime::now_utc();
             ticket.close(now)?;
-            self.tickets.save(&ticket).await?;
-            self.emit_status(actor, &ticket, from, now).await?;
+            let status = status_event(&ticket, from, actor, now);
+            self.tickets
+                .save(&ticket, &[status.outbox_record()])
+                .await?;
+            self.events.emit(status).await;
             Ok(ticket)
         })
         .await
@@ -226,8 +268,11 @@ impl TicketService {
             let from = ticket.status;
             let now = OffsetDateTime::now_utc();
             ticket.reject_resolution(now)?;
-            self.tickets.save(&ticket).await?;
-            self.emit_status(actor, &ticket, from, now).await?;
+            let status = status_event(&ticket, from, actor, now);
+            self.tickets
+                .save(&ticket, &[status.outbox_record()])
+                .await?;
+            self.events.emit(status).await;
             Ok(ticket)
         })
         .await
@@ -248,8 +293,11 @@ impl TicketService {
             let from = ticket.status;
             let now = OffsetDateTime::now_utc();
             ticket.reopen(now)?;
-            self.tickets.save(&ticket).await?;
-            self.emit_status(actor, &ticket, from, now).await?;
+            let status = status_event(&ticket, from, actor, now);
+            self.tickets
+                .save(&ticket, &[status.outbox_record()])
+                .await?;
+            self.events.emit(status).await;
             Ok(ticket)
         })
         .await
@@ -302,28 +350,25 @@ impl TicketService {
         Ok(ticket)
     }
 
-    async fn emit_status(
-        &self,
-        actor: UserId,
-        ticket: &Ticket,
-        from: TicketStatus,
-        at: OffsetDateTime,
-    ) -> Result<()> {
-        self.events
-            .emit(DomainEvent::TicketStatusChanged {
-                ticket_id: ticket.id,
-                from,
-                to: ticket.status,
-                actor,
-                at,
-            })
-            .await
-    }
-
     async fn load(&self, id: TicketId) -> Result<Ticket> {
         self.tickets
             .find_by_id(id)
             .await?
             .ok_or(Error::NotFound("ticket"))
+    }
+}
+
+fn status_event(
+    ticket: &Ticket,
+    from: TicketStatus,
+    actor: UserId,
+    at: OffsetDateTime,
+) -> DomainEvent {
+    DomainEvent::TicketStatusChanged {
+        ticket_id: ticket.id,
+        from,
+        to: ticket.status,
+        actor,
+        at,
     }
 }

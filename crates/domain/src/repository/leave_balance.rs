@@ -16,8 +16,13 @@ pub trait LeaveBalanceRepository: Send + Sync {
     /// Sum of `days_remaining` across the user's non-expired grants as of `asof`.
     async fn available(&self, user: UserId, asof: Date) -> Result<f64, RepositoryError>;
 
-    /// Inserts or updates a year grant (keyed on `user_id, grant_year`).
-    async fn upsert_grant(&self, grant: &LeaveGrant) -> Result<(), RepositoryError>;
+    /// Atomically upserts a year grant and appends its ledger transaction (when
+    /// present) in one database transaction, so grant and ledger cannot diverge.
+    async fn upsert_grant_with_txn(
+        &self,
+        grant: &LeaveGrant,
+        txn: Option<&LeaveTransaction>,
+    ) -> Result<(), RepositoryError>;
 
     /// Atomically applies `grant_deltas` (added to each grant's `days_remaining`)
     /// and inserts every transaction in `txns`, in one database transaction.

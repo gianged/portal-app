@@ -42,8 +42,8 @@ impl AnnouncementService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not active or cannot announce in the
-    /// channel, `NotFound` if the channel does not exist, a repository error if
-    /// the datastore is unavailable, or an event error if the event bus fails.
+    /// channel, `NotFound` if the channel does not exist, or a repository error if
+    /// the datastore is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn post(&self, actor: UserId, cmd: PostAnnouncementCommand) -> Result<Announcement> {
         self.perms.require_active(actor).await?;
@@ -79,8 +79,10 @@ impl AnnouncementService {
             created_at: now,
         };
 
-        self.chats.save_message(&message).await?;
-        self.chats.save_announcement(&announcement).await?;
+        // One atomic write: rail row + timeline copy cannot diverge.
+        self.chats
+            .save_announcement_with_message(&announcement, &message)
+            .await?;
         self.events
             .emit(DomainEvent::AnnouncementPosted {
                 announcement_id: id,
@@ -89,7 +91,7 @@ impl AnnouncementService {
                 at: now,
                 after: announcement.clone(),
             })
-            .await?;
+            .await;
         Ok(announcement)
     }
 
@@ -98,8 +100,8 @@ impl AnnouncementService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not active or is not the author,
     /// `NotFound` if the announcement does not exist, `Transition` if the edit
-    /// grace period has elapsed, a repository error if the datastore is
-    /// unavailable, or an event error if the event bus fails.
+    /// grace period has elapsed, or a repository error if the datastore is
+    /// unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id, announcement_id = ?announcement_id))]
     pub async fn edit(
         &self,
@@ -119,12 +121,28 @@ impl AnnouncementService {
         }
         let now = OffsetDateTime::now_utc();
         announcement.edit(body, now)?;
-        self.chats.save_announcement(&announcement).await?;
-        // Keep the dual-written chat timeline copy in sync with the rail.
-        if let Some(mut message) = self.chats.find_message(channel_id, announcement_id).await? {
-            message.edit(announcement.body.clone(), now);
-            self.chats.save_message(&message).await?;
-        }
+        // Rewrite rail + timeline copy in one atomic write; a missing timeline
+        // row (earlier partial write) is healed by rebuilding it from the rail.
+        let message = match self.chats.find_message(channel_id, announcement_id).await? {
+            Some(mut m) => {
+                m.edit(announcement.body.clone(), now);
+                m
+            }
+            None => Message {
+                id: announcement_id,
+                channel_id,
+                sender_user_id: announcement.sender_user_id,
+                body: announcement.body.clone(),
+                mentions: Vec::new(),
+                attachment_keys: Vec::new(),
+                is_announcement: true,
+                edited_at: announcement.edited_at,
+                deleted_at: None,
+            },
+        };
+        self.chats
+            .save_announcement_with_message(&announcement, &message)
+            .await?;
         self.events
             .emit(DomainEvent::AnnouncementEdited {
                 announcement_id,
@@ -133,7 +151,7 @@ impl AnnouncementService {
                 at: now,
                 after: announcement.clone(),
             })
-            .await?;
+            .await;
         Ok(announcement)
     }
 
@@ -143,8 +161,8 @@ impl AnnouncementService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not active, is not the author within
     /// the grace period, and is not HR, `NotFound` if the announcement does not
-    /// exist, a repository error if the datastore or authz backend is
-    /// unavailable, or an event error if the event bus fails.
+    /// exist, or a repository error if the datastore or authz backend is
+    /// unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, channel_id = ?channel_id, announcement_id = ?announcement_id))]
     pub async fn delete(
         &self,
@@ -165,7 +183,7 @@ impl AnnouncementService {
             return Err(Error::Forbidden);
         }
         self.chats
-            .delete_announcement(channel_id, announcement_id)
+            .delete_announcement_with_message(channel_id, announcement_id)
             .await?;
         self.events
             .emit(DomainEvent::AnnouncementDeleted {
@@ -174,7 +192,7 @@ impl AnnouncementService {
                 actor,
                 at: now,
             })
-            .await?;
+            .await;
         Ok(())
     }
 

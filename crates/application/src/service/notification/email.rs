@@ -181,7 +181,11 @@ mod tests {
         ) -> Result<Vec<User>, RepositoryError> {
             Ok(Vec::new())
         }
-        async fn save(&self, _user: &User) -> Result<(), RepositoryError> {
+        async fn save(
+            &self,
+            _user: &User,
+            _outbox: &[domain::repository::OutboxRecord],
+        ) -> Result<(), RepositoryError> {
             Ok(())
         }
         async fn list_avatar_keys(&self) -> Result<Vec<String>, RepositoryError> {

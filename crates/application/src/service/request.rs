@@ -73,16 +73,17 @@ impl RequestService {
             created_at: now,
             updated_at: now,
         };
-        self.requests.save(&request).await?;
-        self.events
-            .emit(DomainEvent::RequestCreated {
-                request_id: request.id,
-                project_id: request.project_id,
-                actor,
-                at: now,
-                after: request.clone(),
-            })
+        let event = DomainEvent::RequestCreated {
+            request_id: request.id,
+            project_id: request.project_id,
+            actor,
+            at: now,
+            after: request.clone(),
+        };
+        self.requests
+            .save(&request, &[event.outbox_record()])
             .await?;
+        self.events.emit(event).await;
         Ok(request)
     }
 
@@ -101,8 +102,7 @@ impl RequestService {
             let from = request.status;
             let now = OffsetDateTime::now_utc();
             request.submit(now)?;
-            self.requests.save(&request).await?;
-            self.emit_status(actor, &request, from, now).await?;
+            self.save_status_change(&request, from, actor, now).await?;
             Ok(request)
         })
         .await
@@ -129,17 +129,29 @@ impl RequestService {
             let from = request.status;
             let now = OffsetDateTime::now_utc();
             request.assign(assignee, now)?;
-            self.requests.save(&request).await?;
-            self.events
-                .emit(DomainEvent::RequestAssigned {
-                    request_id: request.id,
-                    project_id: request.project_id,
-                    assignee,
-                    actor,
-                    at: now,
-                })
+            let assigned = DomainEvent::RequestAssigned {
+                request_id: request.id,
+                project_id: request.project_id,
+                assignee,
+                actor,
+                at: now,
+            };
+            let status = DomainEvent::RequestStatusChanged {
+                request_id: request.id,
+                project_id: request.project_id,
+                from,
+                to: request.status,
+                actor,
+                at: now,
+            };
+            self.requests
+                .save(
+                    &request,
+                    &[assigned.outbox_record(), status.outbox_record()],
+                )
                 .await?;
-            self.emit_status(actor, &request, from, now).await?;
+            self.events.emit(assigned).await;
+            self.events.emit(status).await;
             Ok(request)
         })
         .await
@@ -160,8 +172,7 @@ impl RequestService {
             let from = request.status;
             let now = OffsetDateTime::now_utc();
             request.start(now)?;
-            self.requests.save(&request).await?;
-            self.emit_status(actor, &request, from, now).await?;
+            self.save_status_change(&request, from, actor, now).await?;
             Ok(request)
         })
         .await
@@ -182,8 +193,7 @@ impl RequestService {
             let from = request.status;
             let now = OffsetDateTime::now_utc();
             request.send_for_review(now)?;
-            self.requests.save(&request).await?;
-            self.emit_status(actor, &request, from, now).await?;
+            self.save_status_change(&request, from, actor, now).await?;
             Ok(request)
         })
         .await
@@ -201,8 +211,7 @@ impl RequestService {
             let from = request.status;
             let now = OffsetDateTime::now_utc();
             request.complete(now)?;
-            self.requests.save(&request).await?;
-            self.emit_status(actor, &request, from, now).await?;
+            self.save_status_change(&request, from, actor, now).await?;
             Ok(request)
         })
         .await
@@ -220,8 +229,7 @@ impl RequestService {
             let from = request.status;
             let now = OffsetDateTime::now_utc();
             request.reject(now)?;
-            self.requests.save(&request).await?;
-            self.emit_status(actor, &request, from, now).await?;
+            self.save_status_change(&request, from, actor, now).await?;
             Ok(request)
         })
         .await
@@ -246,8 +254,7 @@ impl RequestService {
             let from = request.status;
             let now = OffsetDateTime::now_utc();
             request.cancel(now)?;
-            self.requests.save(&request).await?;
-            self.emit_status(actor, &request, from, now).await?;
+            self.save_status_change(&request, from, actor, now).await?;
             Ok(request)
         })
         .await
@@ -274,7 +281,7 @@ impl RequestService {
             }
             let now = OffsetDateTime::now_utc();
             request.set_progress(progress, now);
-            self.requests.save(&request).await?;
+            self.requests.save(&request, &[]).await?;
             self.events
                 .emit(DomainEvent::RequestProgressUpdated {
                     request_id: request.id,
@@ -282,7 +289,7 @@ impl RequestService {
                     actor,
                     at: now,
                 })
-                .await?;
+                .await;
             Ok(request)
         })
         .await
@@ -324,7 +331,14 @@ impl RequestService {
             storage_key,
             created_at: now,
         };
-        self.requests.save_attachment(&attachment).await?;
+        if let Err(e) = self.requests.save_attachment(&attachment).await {
+            // Best-effort cleanup; sweep_orphan_uploads is the backstop.
+            if let Err(del) = self.storage.delete(&attachment.storage_key).await {
+                tracing::warn!(key = %attachment.storage_key, error = %del,
+                    "orphan attachment cleanup failed");
+            }
+            return Err(e.into());
+        }
         Ok(attachment)
     }
 
@@ -433,17 +447,18 @@ impl RequestService {
                 request.due_at = Some(due_at);
             }
             request.updated_at = now;
-            self.requests.save(&request).await?;
-            self.events
-                .emit(DomainEvent::RequestMetadataUpdated {
-                    request_id: request.id,
-                    project_id: request.project_id,
-                    actor,
-                    at: now,
-                    before,
-                    after: request.clone(),
-                })
+            let event = DomainEvent::RequestMetadataUpdated {
+                request_id: request.id,
+                project_id: request.project_id,
+                actor,
+                at: now,
+                before,
+                after: request.clone(),
+            };
+            self.requests
+                .save(&request, &[event.outbox_record()])
                 .await?;
+            self.events.emit(event).await;
             Ok(request)
         })
         .await
@@ -486,23 +501,27 @@ impl RequestService {
         Ok(())
     }
 
-    async fn emit_status(
+    /// Persists a status transition with its audit outbox row, then broadcasts it.
+    async fn save_status_change(
         &self,
-        actor: UserId,
         request: &Request,
         from: RequestStatus,
+        actor: UserId,
         at: OffsetDateTime,
     ) -> Result<()> {
-        self.events
-            .emit(DomainEvent::RequestStatusChanged {
-                request_id: request.id,
-                project_id: request.project_id,
-                from,
-                to: request.status,
-                actor,
-                at,
-            })
-            .await
+        let event = DomainEvent::RequestStatusChanged {
+            request_id: request.id,
+            project_id: request.project_id,
+            from,
+            to: request.status,
+            actor,
+            at,
+        };
+        self.requests
+            .save(request, &[event.outbox_record()])
+            .await?;
+        self.events.emit(event).await;
+        Ok(())
     }
 
     async fn load(&self, id: RequestId) -> Result<Request> {

@@ -195,8 +195,12 @@ fn RaiseTicketDialog(open: RwSignal<bool>, on_raised: Callback<()>) -> impl Into
         };
         task::spawn_local(async move {
             match api::raise(&req).await {
-                Ok(_) => {
-                    toast.success("Ticket raised");
+                Ok(raised) => {
+                    if raised.authz_pending {
+                        toast.success("Ticket raised; permissions are still syncing");
+                    } else {
+                        toast.success("Ticket raised");
+                    }
                     title.set(String::new());
                     description.set(String::new());
                     category.set(TicketCategory::Other);

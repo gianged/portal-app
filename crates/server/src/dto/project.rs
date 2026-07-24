@@ -48,6 +48,7 @@ pub fn project_dto(
         progress: project.progress,
         created_at: project.created_at,
         updated_at: project.updated_at,
+        authz_pending: false,
     }
 }
 
@@ -79,6 +80,7 @@ pub fn project_invite_dto(
         status: project_invite_status_dto(invite.status),
         responded_at: invite.responded_at,
         created_at: invite.created_at,
+        authz_pending: false,
     }
 }
 

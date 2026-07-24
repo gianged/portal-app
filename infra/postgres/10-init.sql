@@ -356,8 +356,27 @@ CREATE TABLE audit.audit_log (
     entity_table    TEXT        NOT NULL,
     entity_id       UUID        NOT NULL,
     occurred_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Outbox row that produced this entry; unique so a redelivered projection
+    -- deduplicates instead of double-appending.
+    event_id        UUID,
 
-    CONSTRAINT pk_audit_log PRIMARY KEY (id)
+    CONSTRAINT pk_audit_log PRIMARY KEY (id),
+    CONSTRAINT uq_audit_log_event_id UNIQUE (event_id)
+);
+
+-- audit.outbox_events ---------------------------------------------------------
+-- Transactional outbox for audited domain events: written in the same
+-- transaction as the entity row, projected into audit.audit_log by the workers'
+-- poller, then marked processed. Mutable (processed_at), so it deliberately
+-- does NOT carry the audit_log immutability trigger.
+CREATE TABLE audit.outbox_events (
+    id           UUID        NOT NULL,
+    topic        TEXT        NOT NULL,
+    payload      BYTEA       NOT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ,
+
+    CONSTRAINT pk_outbox_events PRIMARY KEY (id)
 );
 
 -- chat.message_attachments ---------------------------------------------------
@@ -397,11 +416,14 @@ CREATE TABLE notification.notifications (
 );
 
 -- org.groups -----------------------------------------------------------------
+-- Soft delete: archived_at hides the group from active queries; the row stays
+-- so history (projects, chats, audit) keeps resolving.
 CREATE TABLE org.groups (
     id          UUID        NOT NULL DEFAULT gen_random_uuid(),
     name        TEXT        NOT NULL,
     description TEXT        NOT NULL DEFAULT '',
     kind        org.group_kind NOT NULL DEFAULT 'standard',
+    archived_at TIMESTAMPTZ,
     version     BIGINT      NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1234,6 +1256,10 @@ CREATE INDEX idx_notifications_recipient_user_id_created
 -- audit.audit_log
 CREATE INDEX idx_audit_log_entity
     ON audit.audit_log (entity_schema, entity_table, entity_id, occurred_at DESC);
+
+-- audit.outbox_events
+CREATE INDEX idx_outbox_events_unprocessed
+    ON audit.outbox_events (created_at) WHERE processed_at IS NULL;
 
 CREATE INDEX idx_audit_log_actor_user_id_occurred
     ON audit.audit_log (actor_user_id, occurred_at DESC)

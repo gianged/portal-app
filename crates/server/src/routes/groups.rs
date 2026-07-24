@@ -46,11 +46,13 @@ async fn create(
     auth: AuthUser,
     ValidatedJson(body): ValidatedJson<CreateGroupRequest>,
 ) -> Result<Json<GroupDto>, AppError> {
-    let group = state
+    let created = state
         .group
         .create_group(auth.user_id, dto::create_group_command(body))
         .await?;
-    Ok(Json(dto::group_dto(&group, 0)))
+    let mut dto = dto::group_dto(&created.entity, 0);
+    dto.authz_pending = created.authz_pending;
+    Ok(Json(dto))
 }
 
 async fn list(
@@ -123,15 +125,17 @@ async fn add_member(
     Path(id): Path<wire::GroupId>,
     AppJson(body): AppJson<AddMemberRequest>,
 ) -> Result<Json<MembershipDto>, AppError> {
-    let membership = state
+    let created = state
         .group
         .add_membership(
             auth.user_id,
             dto::add_membership_command(GroupId(id.0), &body),
         )
         .await?;
-    let user = resolve::user_summary(&state.user, &state.group, membership.user_id).await?;
-    Ok(Json(dto::membership_dto(&membership, user)))
+    let user = resolve::user_summary(&state.user, &state.group, created.entity.user_id).await?;
+    let mut dto = dto::membership_dto(&created.entity, user);
+    dto.authz_pending = created.authz_pending;
+    Ok(Json(dto))
 }
 
 async fn change_role(

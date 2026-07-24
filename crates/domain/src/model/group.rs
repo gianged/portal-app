@@ -9,6 +9,9 @@ pub struct Group {
     pub name: String,
     pub description: String,
     pub kind: GroupKind,
+    /// Soft delete: set hides the group from active queries; the row stays so
+    /// history keeps resolving.
+    pub archived_at: Option<OffsetDateTime>,
     /// Optimistic-lock version as loaded; the guarded save bumps it.
     pub version: i64,
     pub created_at: OffsetDateTime,

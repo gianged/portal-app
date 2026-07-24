@@ -72,8 +72,7 @@ impl MaintenanceService {
     /// [`DomainEvent::TicketAutoClosed`] per ticket and returns the number closed.
     ///
     /// # Errors
-    /// Returns a repository error if the datastore is unavailable, or an event
-    /// error if the event bus fails.
+    /// Returns a repository error if the datastore is unavailable.
     #[tracing::instrument(skip_all)]
     pub async fn auto_close_resolved_tickets(
         &self,
@@ -86,6 +85,7 @@ impl MaintenanceService {
         loop {
             let batch = self.tickets.list_resolved_before(cutoff, BATCH).await?;
             let batch_len = batch.len();
+            let mut progressed = false;
             for mut ticket in batch {
                 // A concurrent reopen/close between list and here makes the
                 // transition invalid; skip that ticket, don't abort the sweep.
@@ -93,22 +93,30 @@ impl MaintenanceService {
                     tracing::debug!(ticket = %ticket.id.0, error = %e, "auto-close skipped");
                     continue;
                 }
-                match self.tickets.save(&ticket).await {
+                let event = DomainEvent::TicketAutoClosed {
+                    ticket_id: ticket.id,
+                    at: now,
+                };
+                match self.tickets.save(&ticket, &[event.outbox_record()]).await {
                     Err(RepositoryError::Stale) => {
                         tracing::debug!(ticket = %ticket.id.0, "auto-close lost to a concurrent writer");
                         continue;
                     }
-                    other => other?,
+                    // Contain per-ticket failures: the next sweep re-lists it.
+                    Err(e) => {
+                        tracing::warn!(ticket = %ticket.id.0, error = %e,
+                            "auto-close save failed; retrying next sweep");
+                        continue;
+                    }
+                    Ok(()) => {}
                 }
-                self.events
-                    .emit(DomainEvent::TicketAutoClosed {
-                        ticket_id: ticket.id,
-                        at: now,
-                    })
-                    .await?;
+                self.events.emit(event).await;
+                progressed = true;
                 closed += 1;
             }
-            if batch_len < BATCH as usize {
+            // No progress means the same batch would be re-listed; stop instead
+            // of spinning and let the next sweep retry.
+            if batch_len < BATCH as usize || !progressed {
                 break;
             }
         }

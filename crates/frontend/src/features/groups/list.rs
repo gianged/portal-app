@@ -150,8 +150,12 @@ fn CreateGroupDialog(open: RwSignal<bool>, on_created: Callback<()>) -> impl Int
         };
         task::spawn_local(async move {
             match api::create(&req).await {
-                Ok(_) => {
-                    toast.success("Group created");
+                Ok(created) => {
+                    if created.authz_pending {
+                        toast.success("Group created; permissions are still syncing");
+                    } else {
+                        toast.success("Group created");
+                    }
                     name.set(String::new());
                     description.set(String::new());
                     open.set(false);

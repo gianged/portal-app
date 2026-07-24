@@ -7,12 +7,12 @@ use domain::{
     error::RepositoryError,
     ids::{ProjectId, RequestAttachmentId, RequestId, UserId},
     model::{Request, RequestAttachment, RequestStatus},
-    repository::RequestRepository,
+    repository::{OutboxRecord, RequestRepository},
 };
 
 use crate::postgres::{
     enums::{SqlRequestPriority, SqlRequestStatus},
-    mappers,
+    mappers, outbox,
 };
 
 pub struct PgRequestRepo {
@@ -250,9 +250,14 @@ impl RequestRepository for PgRequestRepo {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn save(&self, request: &Request) -> Result<(), RepositoryError> {
+    async fn save(
+        &self,
+        request: &Request,
+        outbox_records: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         let status = SqlRequestStatus::from(request.status);
         let priority = SqlRequestPriority::from(request.priority);
+        let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
         let result = sqlx::query!(
             r#"INSERT INTO project.requests AS t
                  (id, project_id, creator_user_id, assignee_user_id, title, description,
@@ -285,12 +290,14 @@ impl RequestRepository for PgRequestRepo {
             request.version,
             request.created_at,
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(mappers::map_pg_error)?;
         if result.rows_affected() == 0 {
             return Err(RepositoryError::Stale);
         }
+        outbox::write(&mut tx, outbox_records).await?;
+        tx.commit().await.map_err(mappers::map_pg_error)?;
         Ok(())
     }
 

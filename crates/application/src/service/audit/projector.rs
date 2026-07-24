@@ -3,40 +3,57 @@ use std::sync::Arc;
 use domain::{
     ids::{AuditLogId, UserId},
     model::{AuditAction, AuditLog, CommentEntity},
-    repository::AuditRepository,
+    repository::{AuditRepository, OutboxRepository},
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{error::Result, events::DomainEvent};
 
-/// System-level handler that projects audited [`DomainEvent`]s into immutable
-/// [`AuditLog`] rows. Runs in the worker with no permission checks; records only
-/// who/what/which/when, leaving `payload_*` empty to avoid serialising domain
-/// structs that carry secrets (e.g. `User.password_hash`).
+/// Projects audited [`DomainEvent`]s from the transactional outbox into
+/// immutable [`AuditLog`] rows. Runs in the worker with no permission checks;
+/// records only who/what/which/when, leaving `payload_*` empty to avoid
+/// serialising domain structs that carry secrets (e.g. `User.password_hash`).
 pub struct AuditProjector {
     audit: Arc<dyn AuditRepository>,
+    outbox: Arc<dyn OutboxRepository>,
 }
 
 impl AuditProjector {
     #[must_use]
-    pub fn new(audit: Arc<dyn AuditRepository>) -> Self {
-        Self { audit }
+    pub fn new(audit: Arc<dyn AuditRepository>, outbox: Arc<dyn OutboxRepository>) -> Self {
+        Self { audit, outbox }
     }
 
-    /// Dispatch one event. Events that do not map to a Postgres-backed entity
-    /// (chat / announcements live in Scylla) are a logged no-op.
+    /// Drains up to `batch` unprocessed outbox records into the audit log,
+    /// returning how many were settled. Audit rows dedup on the record id, so
+    /// a redelivery after a crash between append and mark is exactly-once end
+    /// to end. Events that do not project (no audit mapping) are settled too.
     ///
     /// # Errors
-    /// Returns a repository error if appending the audit row fails.
+    /// Returns a repository error if reading, appending, or marking fails; the
+    /// next drain re-claims whatever was not marked.
     #[tracing::instrument(skip_all)]
-    pub async fn handle(&self, event: &DomainEvent) -> Result<()> {
-        let Some(entry) = project(event) else {
-            tracing::debug!(topic = event.topic(), "audit: event not projected");
-            return Ok(());
-        };
-        self.audit.append(&entry).await?;
-        Ok(())
+    pub async fn drain(&self, batch: u32) -> Result<usize> {
+        let records = self.outbox.claim_unprocessed(batch).await?;
+        let settled = records.len();
+        for record in records {
+            match serde_json::from_slice::<DomainEvent>(&record.payload) {
+                Ok(event) => {
+                    if let Some(entry) = project(&event) {
+                        self.audit.append_dedup(&entry, record.id).await?;
+                    }
+                }
+                // A poison row can never project; settle it so it cannot wedge
+                // the head of the backlog.
+                Err(e) => {
+                    tracing::error!(id = %record.id, error = %e,
+                        "undecodable outbox event; dropping");
+                }
+            }
+            self.outbox.mark_processed(record.id).await?;
+        }
+        Ok(settled)
     }
 }
 

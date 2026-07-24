@@ -261,8 +261,12 @@ fn AddMemberDialog(
         submitting.set(true);
         task::spawn_local(async move {
             match api::add_member(gid, &req).await {
-                Ok(_) => {
-                    toast.success("Member added");
+                Ok(added) => {
+                    if added.authz_pending {
+                        toast.success("Member added; permissions are still syncing");
+                    } else {
+                        toast.success("Member added");
+                    }
                     target.set(None);
                     open.set(false);
                     on_added.run(());

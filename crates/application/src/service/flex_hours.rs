@@ -113,7 +113,7 @@ impl FlexHoursService {
                 user_id: actor,
                 at: now,
             })
-            .await?;
+            .await;
         Ok(flex)
     }
 
@@ -158,7 +158,7 @@ impl FlexHoursService {
                 actor,
                 at: now,
             })
-            .await?;
+            .await;
         Ok(flex)
     }
 
@@ -182,7 +182,7 @@ impl FlexHoursService {
                 user_id: flex.user_id,
                 at: now,
             })
-            .await?;
+            .await;
         Ok(flex)
     }
 
@@ -233,7 +233,16 @@ impl FlexHoursService {
             .await?;
         let now = OffsetDateTime::now_utc();
         for user in users {
-            if self.month_delta(user, year, month).await?.abs() > RECONCILE_TOLERANCE_HOURS {
+            // A read failure skips the user instead of aborting the sweep.
+            let delta = match self.month_delta(user, year, month).await {
+                Ok(d) => d,
+                Err(e) => {
+                    tracing::warn!(user = ?user, error = %e,
+                        "unreconciled check failed; skipping user");
+                    continue;
+                }
+            };
+            if delta.abs() > RECONCILE_TOLERANCE_HOURS {
                 self.events
                     .emit(DomainEvent::FlexMonthUnreconciled {
                         user_id: user,
@@ -241,7 +250,7 @@ impl FlexHoursService {
                         month,
                         at: now,
                     })
-                    .await?;
+                    .await;
             }
         }
         Ok(())

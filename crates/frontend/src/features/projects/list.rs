@@ -200,8 +200,10 @@ fn InvitesInbox(
         task::spawn_local(async move {
             let req = RespondInviteRequest { accept };
             match api::respond_invite(invite, &req).await {
-                Ok(_) => {
-                    toast.success(if accept {
+                Ok(invite) => {
+                    toast.success(if invite.authz_pending {
+                        "Invite accepted; permissions are still syncing"
+                    } else if accept {
                         "Invite accepted"
                     } else {
                         "Invite declined"
@@ -295,8 +297,12 @@ fn CreateProjectDialog(
         };
         task::spawn_local(async move {
             match api::create(&req).await {
-                Ok(_) => {
-                    toast.success("Project created");
+                Ok(created) => {
+                    if created.authz_pending {
+                        toast.success("Project created; permissions are still syncing");
+                    } else {
+                        toast.success("Project created");
+                    }
                     name.set(String::new());
                     description.set(String::new());
                     open.set(false);

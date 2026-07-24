@@ -7,12 +7,12 @@ use domain::{
     error::RepositoryError,
     ids::{GroupId, ProjectCollaboratorId, ProjectId, ProjectInviteId, UserId},
     model::{Project, ProjectCollaborator, ProjectInvite},
-    repository::ProjectRepository,
+    repository::{OutboxRecord, ProjectRepository},
 };
 
 use crate::postgres::{
     enums::{SqlInviteStatus, SqlProjectStatus},
-    mappers,
+    mappers, outbox,
 };
 
 pub struct PgProjectRepo {
@@ -237,8 +237,13 @@ impl ProjectRepository for PgProjectRepo {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn save_project(&self, project: &Project) -> Result<(), RepositoryError> {
+    async fn save_project(
+        &self,
+        project: &Project,
+        outbox_records: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         let status = SqlProjectStatus::from(project.status);
+        let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
         let result = sqlx::query!(
             r#"INSERT INTO project.projects AS t
                  (id, owner_group_id, created_by_user_id, name, description, status,
@@ -265,12 +270,14 @@ impl ProjectRepository for PgProjectRepo {
             project.version,
             project.created_at,
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(mappers::map_pg_error)?;
         if result.rows_affected() == 0 {
             return Err(RepositoryError::Stale);
         }
+        outbox::write(&mut tx, outbox_records).await?;
+        tx.commit().await.map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -296,13 +303,13 @@ impl ProjectRepository for PgProjectRepo {
     #[tracing::instrument(skip_all)]
     async fn save_collaborator(&self, c: &ProjectCollaborator) -> Result<(), RepositoryError> {
         // fn_no_self_collab trigger blocks owner-as-collaborator, surfacing as a CheckViolation.
+        // (project_id, group_id) conflict no-ops so a retried accept (fresh id
+        // after a crash between the two row writes) converges instead of 409ing.
         sqlx::query!(
             r#"INSERT INTO project.project_collaborators
                  (id, project_id, group_id, created_at)
                VALUES ($1, $2, $3, $4)
-               ON CONFLICT (id) DO UPDATE SET
-                 project_id = EXCLUDED.project_id,
-                 group_id   = EXCLUDED.group_id"#,
+               ON CONFLICT (project_id, group_id) DO NOTHING"#,
             c.id.0,
             c.project_id.0,
             c.group_id.0,
@@ -315,14 +322,21 @@ impl ProjectRepository for PgProjectRepo {
     }
 
     #[tracing::instrument(skip_all, fields(id = ?id))]
-    async fn delete_collaborator(&self, id: ProjectCollaboratorId) -> Result<(), RepositoryError> {
+    async fn delete_collaborator(
+        &self,
+        id: ProjectCollaboratorId,
+        outbox_records: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
         sqlx::query!(
             r#"DELETE FROM project.project_collaborators WHERE id = $1"#,
             id.0,
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(mappers::map_pg_error)?;
+        outbox::write(&mut tx, outbox_records).await?;
+        tx.commit().await.map_err(mappers::map_pg_error)?;
         Ok(())
     }
 
@@ -411,8 +425,13 @@ impl ProjectRepository for PgProjectRepo {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn save_invite(&self, invite: &ProjectInvite) -> Result<(), RepositoryError> {
+    async fn save_invite(
+        &self,
+        invite: &ProjectInvite,
+        outbox_records: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         let status = SqlInviteStatus::from(invite.status);
+        let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
         sqlx::query!(
             r#"INSERT INTO project.project_invites
                  (id, project_id, invited_by_user_id, invited_group_id,
@@ -434,9 +453,11 @@ impl ProjectRepository for PgProjectRepo {
             invite.responded_at,
             invite.created_at,
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(mappers::map_pg_error)?;
+        outbox::write(&mut tx, outbox_records).await?;
+        tx.commit().await.map_err(mappers::map_pg_error)?;
         Ok(())
     }
 }

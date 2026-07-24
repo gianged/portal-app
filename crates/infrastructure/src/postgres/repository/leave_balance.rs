@@ -124,9 +124,14 @@ impl LeaveBalanceRepository for PgLeaveBalanceRepo {
     }
 
     #[tracing::instrument(skip_all, fields(grant = ?grant.id))]
-    async fn upsert_grant(&self, grant: &LeaveGrant) -> Result<(), RepositoryError> {
+    async fn upsert_grant_with_txn(
+        &self,
+        grant: &LeaveGrant,
+        txn: Option<&LeaveTransaction>,
+    ) -> Result<(), RepositoryError> {
         let grant_year = i16::try_from(grant.grant_year)
             .map_err(|_| RepositoryError::Backend("grant_year out of range".into()))?;
+        let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
         sqlx::query!(
             r#"INSERT INTO attendance.leave_grants
                  (id, user_id, grant_year, days_granted, days_remaining, expires_on,
@@ -145,9 +150,31 @@ impl LeaveBalanceRepository for PgLeaveBalanceRepo {
             grant.created_by.map(|u| u.0),
             grant.created_at,
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(mappers::map_pg_error)?;
+        if let Some(t) = txn {
+            sqlx::query!(
+                r#"INSERT INTO attendance.leave_transactions
+                     (id, user_id, grant_id, kind, delta, dayoff_id, work_pct, reason,
+                      created_by_user_id, created_at)
+                   VALUES ($1, $2, $3, $4, $5::float8::numeric, $6, $7::float8::numeric, $8, $9, $10)"#,
+                t.id.0,
+                t.user_id.0,
+                t.grant_id.0,
+                SqlLeaveTxnKind::from(t.kind) as SqlLeaveTxnKind,
+                t.delta,
+                t.dayoff_id.map(|d| d.0),
+                t.work_pct,
+                t.reason,
+                t.created_by.map(|u| u.0),
+                t.created_at,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(mappers::map_pg_error)?;
+        }
+        tx.commit().await.map_err(mappers::map_pg_error)?;
         Ok(())
     }
 

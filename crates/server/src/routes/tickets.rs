@@ -131,11 +131,13 @@ async fn raise(
     auth: AuthUser,
     ValidatedJson(body): ValidatedJson<RaiseTicketRequest>,
 ) -> Result<Json<TicketDto>, AppError> {
-    let ticket = state
+    let created = state
         .ticket
         .raise(auth.user_id, dto::raise_ticket_command(body))
         .await?;
-    Ok(Json(single(&state, &ticket).await?))
+    let mut dto = single(&state, &created.entity).await?;
+    dto.authz_pending = created.authz_pending;
+    Ok(Json(dto))
 }
 
 async fn list(

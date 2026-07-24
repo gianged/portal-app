@@ -108,7 +108,7 @@ impl PolicyService {
         self.provider.store(policy.clone());
         self.events
             .emit(DomainEvent::AttendancePolicyUpdated { actor, at: now })
-            .await?;
+            .await;
         Ok(policy)
     }
 }

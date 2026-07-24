@@ -69,11 +69,13 @@ async fn create(
     auth: AuthUser,
     ValidatedJson(body): ValidatedJson<CreateProjectRequest>,
 ) -> Result<Json<ProjectDto>, AppError> {
-    let project = state
+    let created = state
         .project
         .create_project(auth.user_id, dto::create_project_command(body))
         .await?;
-    Ok(Json(project_dto(&state, &project).await?))
+    let mut dto = project_dto(&state, &created.entity).await?;
+    dto.authz_pending = created.authz_pending;
+    Ok(Json(dto))
 }
 
 async fn list(
@@ -224,18 +226,22 @@ async fn respond(
     Path(invite_id): Path<wire::ProjectInviteId>,
     AppJson(body): AppJson<RespondInviteRequest>,
 ) -> Result<Json<ProjectInviteDto>, AppError> {
-    let invite = if body.accept {
-        state
+    let (invite, authz_pending) = if body.accept {
+        let created = state
             .project
             .accept_invite(auth.user_id, ProjectInviteId(invite_id.0))
-            .await?
+            .await?;
+        (created.entity, created.authz_pending)
     } else {
-        state
+        let invite = state
             .project
             .decline_invite(auth.user_id, ProjectInviteId(invite_id.0))
-            .await?
+            .await?;
+        (invite, false)
     };
-    Ok(Json(invite_dto(&state, &invite).await?))
+    let mut dto = invite_dto(&state, &invite).await?;
+    dto.authz_pending = authz_pending;
+    Ok(Json(dto))
 }
 
 async fn revoke(

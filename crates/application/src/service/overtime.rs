@@ -84,7 +84,7 @@ impl OvertimeService {
                 requester: actor,
                 at: now,
             })
-            .await?;
+            .await;
         Ok(overtime)
     }
 
@@ -111,7 +111,7 @@ impl OvertimeService {
             overtime.reject(actor, cmd.note, now)?;
         }
         self.overtimes.save(&overtime).await?;
-        self.emit_decided(&overtime, actor, now).await?;
+        self.emit_decided(&overtime, actor, now).await;
         Ok(overtime)
     }
 
@@ -138,7 +138,7 @@ impl OvertimeService {
             overtime.reject(actor, cmd.note, now)?;
         }
         self.overtimes.save(&overtime).await?;
-        self.emit_decided(&overtime, actor, now).await?;
+        self.emit_decided(&overtime, actor, now).await;
         Ok(overtime)
     }
 
@@ -161,7 +161,7 @@ impl OvertimeService {
                 requester: overtime.requester_user_id,
                 at: now,
             })
-            .await?;
+            .await;
         Ok(overtime)
     }
 
@@ -195,12 +195,7 @@ impl OvertimeService {
         Ok(self.overtimes.list_pending_for_hr().await?)
     }
 
-    async fn emit_decided(
-        &self,
-        overtime: &Overtime,
-        actor: UserId,
-        now: OffsetDateTime,
-    ) -> Result<()> {
+    async fn emit_decided(&self, overtime: &Overtime, actor: UserId, now: OffsetDateTime) {
         self.events
             .emit(DomainEvent::OvertimeDecided {
                 overtime_id: overtime.id,
@@ -209,8 +204,7 @@ impl OvertimeService {
                 actor,
                 at: now,
             })
-            .await?;
-        Ok(())
+            .await;
     }
 
     async fn load(&self, id: OvertimeId) -> Result<Overtime> {

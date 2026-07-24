@@ -10,10 +10,10 @@ use tokio::time;
 
 use application::resilience::SpooledJob;
 use domain::ports::{
-    job_queue::{QUEUE_AUDIT, QUEUE_EMAILS, QUEUE_NOTIFICATIONS},
+    job_queue::{QUEUE_EMAILS, QUEUE_NOTIFICATIONS, QUEUE_REPAIR},
     spool::{Spool, SpoolId},
 };
-use infrastructure::jobs::{AuditEnvelope, EmailEnvelope, Envelope, NotificationEnvelope};
+use infrastructure::jobs::{EmailEnvelope, Envelope, NotificationEnvelope, RepairEnvelope};
 
 const BATCH: usize = 64;
 const IDLE: Duration = Duration::from_secs(5);
@@ -22,22 +22,22 @@ const IDLE: Duration = Duration::from_secs(5);
 pub struct JobSpoolDrainer {
     spool: Arc<dyn Spool>,
     notifications: RedisStorage<NotificationEnvelope>,
-    audit: RedisStorage<AuditEnvelope>,
     emails: RedisStorage<EmailEnvelope>,
+    repairs: RedisStorage<RepairEnvelope>,
 }
 
 impl JobSpoolDrainer {
     pub fn new(
         spool: Arc<dyn Spool>,
         notifications: RedisStorage<NotificationEnvelope>,
-        audit: RedisStorage<AuditEnvelope>,
         emails: RedisStorage<EmailEnvelope>,
+        repairs: RedisStorage<RepairEnvelope>,
     ) -> Self {
         Self {
             spool,
             notifications,
-            audit,
             emails,
+            repairs,
         }
     }
 
@@ -106,17 +106,17 @@ impl JobSpoolDrainer {
                 )
                 .await
             }
-            QUEUE_AUDIT => {
-                push(
-                    self.audit.clone(),
-                    AuditEnvelope::new(job.payload, job.traceparent),
-                )
-                .await
-            }
             QUEUE_EMAILS => {
                 push(
                     self.emails.clone(),
                     EmailEnvelope::new(job.payload, job.traceparent),
+                )
+                .await
+            }
+            QUEUE_REPAIR => {
+                push(
+                    self.repairs.clone(),
+                    RepairEnvelope::new(job.payload, job.traceparent),
                 )
                 .await
             }

@@ -25,6 +25,7 @@ use uuid::Uuid;
 use application::{
     events::EventBus,
     permissions::Permissions,
+    repair::Repair,
     resilience::HealthRegistry,
     service::{
         AnnouncementService, AuditService, ChatIngest, ChatIngestConfig, ChatService,
@@ -67,9 +68,10 @@ use domain::{
     repository::{
         AuditRepository, ChatAttachmentRepository, ChatRepository, CommentRepository,
         DailyReportRepository, DayOffRepository, FlexHoursRepository, GroupRepository,
-        HolidayRepository, LeaveBalanceRepository, NotificationRepository, OvertimeRepository,
-        PolicyRepository, ProjectRepository, ReportArchiveRepository, ReportStatsRepository,
-        RequestRepository, ServiceAccountRepository, TicketRepository, UserRepository,
+        HolidayRepository, LeaveBalanceRepository, NotificationRepository, OutboxRecord,
+        OvertimeRepository, PolicyRepository, ProjectRepository, ReportArchiveRepository,
+        ReportStatsRepository, RequestRepository, ServiceAccountRepository, TicketRepository,
+        UserRepository,
     },
 };
 use infrastructure::{local_storage::LocalStorage, signed_url::SignedUrl};
@@ -127,7 +129,7 @@ impl UserRepository for FakeUsers {
     ) -> Result<Vec<User>, RepositoryError> {
         Ok(Vec::new())
     }
-    async fn save(&self, _user: &User) -> Result<(), RepositoryError> {
+    async fn save(&self, _user: &User, _outbox: &[OutboxRecord]) -> Result<(), RepositoryError> {
         Ok(())
     }
     async fn list_avatar_keys(&self) -> Result<Vec<String>, RepositoryError> {
@@ -172,7 +174,11 @@ impl GroupRepository for FakeGroups {
     async fn find_it_group(&self) -> Result<Option<Group>, RepositoryError> {
         Ok(self.it_group.lock().unwrap().clone())
     }
-    async fn save_group(&self, _group: &Group) -> Result<(), RepositoryError> {
+    async fn save_group(
+        &self,
+        _group: &Group,
+        _outbox: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         Ok(())
     }
     async fn find_membership(
@@ -227,7 +233,11 @@ impl GroupRepository for FakeGroups {
             .cloned()
             .collect())
     }
-    async fn save_membership(&self, membership: &Membership) -> Result<(), RepositoryError> {
+    async fn save_membership(
+        &self,
+        membership: &Membership,
+        _outbox: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         self.memberships.lock().unwrap().push(membership.clone());
         Ok(())
     }
@@ -260,7 +270,11 @@ impl ProjectRepository for FakeProjects {
     ) -> Result<Vec<Project>, RepositoryError> {
         Ok(Vec::new())
     }
-    async fn save_project(&self, _project: &Project) -> Result<(), RepositoryError> {
+    async fn save_project(
+        &self,
+        _project: &Project,
+        _outbox: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         Ok(())
     }
     async fn list_collaborators(
@@ -272,7 +286,11 @@ impl ProjectRepository for FakeProjects {
     async fn save_collaborator(&self, _c: &ProjectCollaborator) -> Result<(), RepositoryError> {
         Ok(())
     }
-    async fn delete_collaborator(&self, _id: ProjectCollaboratorId) -> Result<(), RepositoryError> {
+    async fn delete_collaborator(
+        &self,
+        _id: ProjectCollaboratorId,
+        _outbox: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         Ok(())
     }
     async fn find_invite(
@@ -293,7 +311,11 @@ impl ProjectRepository for FakeProjects {
     ) -> Result<Vec<ProjectInvite>, RepositoryError> {
         Ok(Vec::new())
     }
-    async fn save_invite(&self, _invite: &ProjectInvite) -> Result<(), RepositoryError> {
+    async fn save_invite(
+        &self,
+        _invite: &ProjectInvite,
+        _outbox: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         Ok(())
     }
 }
@@ -329,7 +351,11 @@ impl RequestRepository for FakeRequests {
     ) -> Result<Vec<Request>, RepositoryError> {
         Ok(Vec::new())
     }
-    async fn save(&self, _request: &Request) -> Result<(), RepositoryError> {
+    async fn save(
+        &self,
+        _request: &Request,
+        _outbox: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         Ok(())
     }
     async fn list_attachments(
@@ -381,7 +407,11 @@ impl TicketRepository for FakeTickets {
     ) -> Result<Vec<Ticket>, RepositoryError> {
         Ok(Vec::new())
     }
-    async fn save(&self, _ticket: &Ticket) -> Result<(), RepositoryError> {
+    async fn save(
+        &self,
+        _ticket: &Ticket,
+        _outbox: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         Ok(())
     }
 }
@@ -470,10 +500,14 @@ impl ChatRepository for FakeChats {
     ) -> Result<Vec<Announcement>, RepositoryError> {
         Ok(Vec::new())
     }
-    async fn save_announcement(&self, _a: &Announcement) -> Result<(), RepositoryError> {
+    async fn save_announcement_with_message(
+        &self,
+        _a: &Announcement,
+        _message: &Message,
+    ) -> Result<(), RepositoryError> {
         Ok(())
     }
-    async fn delete_announcement(
+    async fn delete_announcement_with_message(
         &self,
         _channel_id: ChannelId,
         _message_id: MessageId,
@@ -501,10 +535,19 @@ impl CommentRepository for FakeComments {
     ) -> Result<Vec<Comment>, RepositoryError> {
         Ok(Vec::new())
     }
-    async fn save(&self, _comment: &Comment) -> Result<(), RepositoryError> {
+    async fn save(
+        &self,
+        _comment: &Comment,
+        _outbox: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         Ok(())
     }
-    async fn delete(&self, _entity: CommentEntity, _id: CommentId) -> Result<(), RepositoryError> {
+    async fn delete(
+        &self,
+        _entity: CommentEntity,
+        _id: CommentId,
+        _outbox: &[OutboxRecord],
+    ) -> Result<(), RepositoryError> {
         Ok(())
     }
 }
@@ -568,7 +611,11 @@ struct FakeAudit;
 
 #[async_trait]
 impl AuditRepository for FakeAudit {
-    async fn append(&self, _entry: &AuditLog) -> Result<(), RepositoryError> {
+    async fn append_dedup(
+        &self,
+        _entry: &AuditLog,
+        _event_id: Uuid,
+    ) -> Result<(), RepositoryError> {
         Ok(())
     }
     async fn list_for_entity(
@@ -905,7 +952,11 @@ impl LeaveBalanceRepository for FakeLeaveBalance {
     async fn available(&self, _user: UserId, _asof: Date) -> Result<f64, RepositoryError> {
         Ok(0.0)
     }
-    async fn upsert_grant(&self, _grant: &LeaveGrant) -> Result<(), RepositoryError> {
+    async fn upsert_grant_with_txn(
+        &self,
+        _grant: &LeaveGrant,
+        _txn: Option<&LeaveTransaction>,
+    ) -> Result<(), RepositoryError> {
         Ok(())
     }
     async fn apply(
@@ -1166,11 +1217,8 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
 
     let authz = Arc::new(FakeAuthz);
     let perms = Arc::new(Permissions::new(users.clone(), groups.clone(), authz));
-    let events = Arc::new(EventBus::new(
-        Arc::new(FakePublisher),
-        Arc::new(FakeJobs),
-        Arc::new(FakeJobs),
-    ));
+    let events = Arc::new(EventBus::new(Arc::new(FakePublisher), Arc::new(FakeJobs)));
+    let repair = Arc::new(Repair::new(Arc::new(FakeJobs)));
 
     let publisher: Arc<dyn EventPublisher> = Arc::new(FakePublisher);
     let realtime = Realtime::new(publisher, Arc::new(FakeSubscriber));
@@ -1239,6 +1287,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
         leave_service.clone(),
         perms.clone(),
         events.clone(),
+        repair.clone(),
     ));
 
     let overtime_repo: Arc<dyn OvertimeRepository> = Arc::new(FakeOvertime);
@@ -1277,6 +1326,7 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
             chats.clone(),
             perms.clone(),
             events.clone(),
+            repair.clone(),
             revocation.clone(),
         )),
         group: Arc::new(GroupService::new(
@@ -1285,18 +1335,21 @@ pub fn test_app(rate_limits: RateLimits) -> TestApp {
             chats.clone(),
             perms.clone(),
             events.clone(),
+            repair.clone(),
         )),
         project: Arc::new(ProjectService::new(
             projects.clone(),
             requests.clone(),
             perms.clone(),
             events.clone(),
+            repair.clone(),
         )),
         request: request_service.clone(),
         ticket: Arc::new(TicketService::new(
             Arc::new(FakeTickets),
             perms.clone(),
             events.clone(),
+            repair.clone(),
         )),
         chat,
         chat_ingest,

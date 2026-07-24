@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO org.groups AS t\n                 (id, name, description, kind, archived_at, version, created_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7)\n               ON CONFLICT (id) DO UPDATE SET\n                 name        = EXCLUDED.name,\n                 description = EXCLUDED.description,\n                 kind        = EXCLUDED.kind,\n                 archived_at = EXCLUDED.archived_at,\n                 version     = EXCLUDED.version + 1\n               WHERE t.version = EXCLUDED.version",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        {
+          "Custom": {
+            "name": "org.group_kind",
+            "kind": {
+              "Enum": [
+                "standard",
+                "it"
+              ]
+            }
+          }
+        },
+        "Timestamptz",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5bdd4949d3edb9bb59592adf1ba9592235cfc2301fc00e389373577b7764f447"
+}

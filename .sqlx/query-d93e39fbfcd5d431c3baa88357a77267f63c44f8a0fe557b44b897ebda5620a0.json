@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 name,\n                 description,\n                 kind AS \"kind: SqlGroupKind\",\n                 version,\n                 created_at,\n                 updated_at\n               FROM org.groups\n               WHERE kind = 'it'\n               LIMIT 1",
+  "query": "SELECT\n                 id,\n                 name,\n                 description,\n                 kind AS \"kind: SqlGroupKind\",\n                 archived_at,\n                 version,\n                 created_at,\n                 updated_at\n               FROM org.groups\n               WHERE id = ANY($1)",
   "describe": {
     "columns": [
       {
@@ -59,6 +59,17 @@
       },
       {
         "ordinal": 4,
+        "name": "archived_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "org.groups",
+            "name": "archived_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
         "name": "version",
         "type_info": "Int8",
         "origin": {
@@ -69,7 +80,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -80,7 +91,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -92,17 +103,20 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "UuidArray"
+      ]
     },
     "nullable": [
       false,
       false,
       false,
       false,
+      true,
       false,
       false,
       false
     ]
   },
-  "hash": "eb3cad3be8ac58f2f615d92a4ea877e91c3d71b69d8b02fb391315eb483c71e1"
+  "hash": "d93e39fbfcd5d431c3baa88357a77267f63c44f8a0fe557b44b897ebda5620a0"
 }

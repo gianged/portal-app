@@ -137,7 +137,7 @@ impl DailyReportService {
                 actor,
                 at: now,
             })
-            .await?;
+            .await;
         Ok(report)
     }
 
@@ -171,7 +171,7 @@ impl DailyReportService {
                 actor,
                 at: now,
             })
-            .await?;
+            .await;
         Ok(report)
     }
 

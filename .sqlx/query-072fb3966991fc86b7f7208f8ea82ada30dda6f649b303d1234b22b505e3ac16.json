@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                 id,\n                 group_id,\n                 user_id,\n                 role AS \"role: SqlGroupRole\",\n                 joined_at,\n                 deactivated_at,\n                 version,\n                 created_at,\n                 updated_at\n               FROM org.memberships\n               WHERE user_id = ANY($1) AND deactivated_at IS NULL\n               ORDER BY joined_at",
+  "query": "SELECT\n                 m.id,\n                 m.group_id,\n                 m.user_id,\n                 m.role AS \"role: SqlGroupRole\",\n                 m.joined_at,\n                 m.deactivated_at,\n                 m.version,\n                 m.created_at,\n                 m.updated_at\n               FROM org.memberships m\n               JOIN org.groups g ON g.id = m.group_id AND g.archived_at IS NULL\n               WHERE m.user_id = ANY($1) AND m.deactivated_at IS NULL\n               ORDER BY m.joined_at",
   "describe": {
     "columns": [
       {
@@ -131,5 +131,5 @@
       false
     ]
   },
-  "hash": "1755f6f1a50fe029f4eb54aeb252132a37bcd5687eaf2c868f82533ed1f6a0f8"
+  "hash": "072fb3966991fc86b7f7208f8ea82ada30dda6f649b303d1234b22b505e3ac16"
 }

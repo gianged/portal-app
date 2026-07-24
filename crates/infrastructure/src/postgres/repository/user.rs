@@ -3,11 +3,16 @@ use sqlx::PgPool;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use domain::{error::RepositoryError, ids::UserId, model::User, repository::UserRepository};
+use domain::{
+    error::RepositoryError,
+    ids::UserId,
+    model::User,
+    repository::{OutboxRecord, UserRepository},
+};
 
 use crate::postgres::{
     enums::{SqlSystemRole, SqlUserStatus},
-    mappers,
+    mappers, outbox,
 };
 
 pub struct PgUserRepo {
@@ -200,9 +205,10 @@ impl UserRepository for PgUserRepo {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn save(&self, user: &User) -> Result<(), RepositoryError> {
+    async fn save(&self, user: &User, outbox: &[OutboxRecord]) -> Result<(), RepositoryError> {
         let status = SqlUserStatus::from(user.status);
         let system_role: Option<SqlSystemRole> = user.system_role.map(Into::into);
+        let mut tx = self.pool.begin().await.map_err(mappers::map_pg_error)?;
         let result = sqlx::query!(
             r#"INSERT INTO auth.users AS t
                  (id, email, password_hash, full_name, avatar_storage_key, phone,
@@ -238,12 +244,14 @@ impl UserRepository for PgUserRepo {
             user.version,
             user.created_at,
         )
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(mappers::map_pg_error)?;
         if result.rows_affected() == 0 {
             return Err(RepositoryError::Stale);
         }
+        outbox::write(&mut tx, outbox).await?;
+        tx.commit().await.map_err(mappers::map_pg_error)?;
         Ok(())
     }
 

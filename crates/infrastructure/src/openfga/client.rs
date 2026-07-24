@@ -112,7 +112,8 @@ impl OpenFgaAuthzClient {
 
     /// Single-tuple write that treats `OpenFGA`'s "already exists" / "does not
     /// exist" 400s as success, making re-grants and re-revokes idempotent.
-    /// Batch `write_tuples` stays strict.
+    /// Batch `write_tuples` is strict on the fast path and falls back to this
+    /// per-tuple leniency when a batch hits an already-applied tuple.
     async fn write_single(&self, req: &WriteRequest<'_>) -> Result<(), AuthzError> {
         let url = self.store_url("write");
         let mut http = self.http.post(&url).json(req);
@@ -251,7 +252,27 @@ impl AuthzClient for OpenFgaAuthzClient {
             deletes: (!deletes.is_empty()).then(|| to_keys(deletes)),
             authorization_model_id: &self.authorization_model_id,
         };
-        let _: Value = self.post_json(self.store_url("write"), &req).await?;
+        match self
+            .post_json::<_, Value>(self.store_url("write"), &req)
+            .await
+        {
+            Ok(_) => {}
+            // A reconcile re-run: part of the batch is already applied and the
+            // transactional write rejects it. Replay per tuple through the
+            // lenient single path so repairs converge instead of wedging.
+            Err(AuthzError::Backend(msg))
+                if msg.contains("already exists") || msg.contains("does not exist") =>
+            {
+                for t in writes {
+                    self.write_tuple(&t.subject, &t.relation, &t.object).await?;
+                }
+                for t in deletes {
+                    self.delete_tuple(&t.subject, &t.relation, &t.object)
+                        .await?;
+                }
+            }
+            Err(e) => return Err(e),
+        }
         self.check_cache.invalidate_all();
         Ok(())
     }

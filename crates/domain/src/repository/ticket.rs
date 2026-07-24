@@ -5,6 +5,7 @@ use crate::{
     error::RepositoryError,
     ids::{TicketId, UserId},
     model::Ticket,
+    repository::OutboxRecord,
 };
 
 /// `q` parameters are case-insensitive substring filters on the ticket title;
@@ -40,5 +41,7 @@ pub trait TicketRepository: Send + Sync {
         limit: u32,
     ) -> Result<Vec<Ticket>, RepositoryError>;
 
-    async fn save(&self, ticket: &Ticket) -> Result<(), RepositoryError>;
+    /// `outbox` rows commit in the same transaction as the entity write, so an
+    /// audited event cannot be lost between commit and projection.
+    async fn save(&self, ticket: &Ticket, outbox: &[OutboxRecord]) -> Result<(), RepositoryError>;
 }

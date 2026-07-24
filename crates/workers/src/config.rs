@@ -43,6 +43,9 @@ pub struct Config {
     pub grpc_addr: SocketAddr,
     /// Shared bearer token gating the internal gRPC plane.
     pub internal_grpc_token: String,
+    /// Session TTL, mirrored from the server so the repair worker's
+    /// token-revocation keys use the same lifetime.
+    pub session_ttl_secs: u64,
     /// Read notifications older than this are pruned.
     pub notification_retention: Duration,
     /// How often the notification-prune job runs.
@@ -184,6 +187,10 @@ pub fn from_env() -> anyhow::Result<Config> {
         storage_signing_secret: required_secret("STORAGE_SIGNING_SECRET")?,
         grpc_addr,
         internal_grpc_token: required_secret("INTERNAL_GRPC_TOKEN")?,
+        session_ttl_secs: optional("SESSION_TTL_HOURS", "24")
+            .parse::<u64>()
+            .context("invalid SESSION_TTL_HOURS")?
+            * 3600,
         notification_retention: Duration::days(retention_days),
         cleanup_interval,
         upload_grace: Duration::hours(upload_grace_hours),

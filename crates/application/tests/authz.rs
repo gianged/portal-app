@@ -7,10 +7,12 @@
 //! the authz client are in-memory fakes; the fake authz client records every
 //! tuple so the tests can assert on them.
 
-use std::sync::{Arc, Mutex};
+mod support;
+
+use std::sync::Arc;
 
 use application::{
-    ChatService, Error, EventBus, GroupService, LeaveBalanceService, Permissions, PolicyProvider,
+    ChatService, Error, GroupService, LeaveBalanceService, Permissions, PolicyProvider,
     ProjectService, TicketService,
     commands::{
         group::{AddMembershipCommand, CreateGroupCommand},
@@ -19,753 +21,22 @@ use application::{
     },
     error::ConflictCode,
 };
-use async_trait::async_trait;
 use domain::{
-    error::{AuthzError, EventError, JobError, RepositoryError, StorageError, TransitionError},
-    ids::{
-        ChannelId, DayOffId, GroupId, LeaveGrantId, MembershipId, MessageId, ProjectCollaboratorId,
-        ProjectId, ProjectInviteId, RequestId, TicketId, UserId,
-    },
+    error::TransitionError,
+    ids::{TicketId, UserId},
     model::{
-        Announcement, AttendancePolicy, Channel, ChannelKind, ChannelMembership, ChatAttachment,
-        DayOff, Group, GroupKind, GroupRole, Holiday, LeaveGrant, LeaveTransaction, Membership,
-        Message, Project, ProjectCollaborator, ProjectInvite, Request, RequestAttachment,
-        RequestStatus, SystemRole, Ticket, TicketCategory, TicketStatus, User, UserStatus,
-    },
-    ports::{
-        authz_client::{AuthzClient, RelationTuple},
-        event_publisher::EventPublisher,
-        file_storage::{FileStorage, StorageObject},
-        job_queue::JobQueue,
-    },
-    repository::{
-        ChatAttachmentRepository, ChatRepository, DayOffRepository, GroupRepository,
-        HolidayRepository, LeaveBalanceRepository, ProjectRepository, RequestRepository,
-        TicketRepository, UserRepository,
+        AttendancePolicy, GroupKind, GroupRole, SystemRole, Ticket, TicketCategory, TicketStatus,
+        UserStatus,
     },
 };
-use time::{Date, Duration, OffsetDateTime};
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-// --- recording fake authz client ----------------------------------------------
-
-type Tuple = (String, String, String);
-
-#[derive(Default)]
-struct FakeAuthz {
-    writes: Mutex<Vec<Tuple>>,
-}
-
-impl FakeAuthz {
-    fn writes(&self) -> Vec<Tuple> {
-        self.writes.lock().unwrap().clone()
-    }
-    fn record(&self, subject: &str, relation: &str, object: &str) {
-        self.writes
-            .lock()
-            .unwrap()
-            .push((subject.into(), relation.into(), object.into()));
-    }
-}
-
-#[async_trait]
-impl AuthzClient for FakeAuthz {
-    async fn check(
-        &self,
-        _user: UserId,
-        _relation: &str,
-        _object: &str,
-    ) -> Result<bool, AuthzError> {
-        Ok(false)
-    }
-    async fn check_subject(
-        &self,
-        _subject: &str,
-        _relation: &str,
-        _object: &str,
-    ) -> Result<bool, AuthzError> {
-        Ok(false)
-    }
-    async fn write_tuple(
-        &self,
-        subject: &str,
-        relation: &str,
-        object: &str,
-    ) -> Result<(), AuthzError> {
-        self.record(subject, relation, object);
-        Ok(())
-    }
-    async fn delete_tuple(
-        &self,
-        _subject: &str,
-        _relation: &str,
-        _object: &str,
-    ) -> Result<(), AuthzError> {
-        Ok(())
-    }
-    async fn write_tuples(
-        &self,
-        writes: &[RelationTuple],
-        _deletes: &[RelationTuple],
-    ) -> Result<(), AuthzError> {
-        for t in writes {
-            self.record(&t.subject, &t.relation, &t.object);
-        }
-        Ok(())
-    }
-    async fn list_objects(
-        &self,
-        _user: UserId,
-        _relation: &str,
-        _object_type: &str,
-    ) -> Result<Vec<String>, AuthzError> {
-        Ok(Vec::new())
-    }
-}
-
-// --- fake repositories (only the exercised methods do anything) ----------------
-
-#[derive(Default)]
-struct FakeUsers {
-    users: Mutex<Vec<User>>,
-}
-
-#[async_trait]
-impl UserRepository for FakeUsers {
-    async fn find_by_id(&self, id: UserId) -> Result<Option<User>, RepositoryError> {
-        Ok(self
-            .users
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|u| u.id == id)
-            .cloned())
-    }
-    async fn find_by_ids(&self, ids: &[UserId]) -> Result<Vec<User>, RepositoryError> {
-        Ok(self
-            .users
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|u| ids.contains(&u.id))
-            .cloned()
-            .collect())
-    }
-    async fn find_by_email(&self, _email: &str) -> Result<Option<User>, RepositoryError> {
-        Ok(None)
-    }
-    async fn list_active(
-        &self,
-        _limit: u32,
-        _offset: u32,
-        _q: Option<&str>,
-    ) -> Result<Vec<User>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn save(&self, _user: &User) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn list_avatar_keys(&self) -> Result<Vec<String>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn list_with_system_role(&self) -> Result<Vec<User>, RepositoryError> {
-        Ok(Vec::new())
-    }
-}
-
-#[derive(Default)]
-struct FakeGroups {
-    groups: Mutex<Vec<Group>>,
-    memberships: Mutex<Vec<Membership>>,
-    it_group: Mutex<Option<Group>>,
-}
-
-#[async_trait]
-impl GroupRepository for FakeGroups {
-    async fn find_group(&self, id: GroupId) -> Result<Option<Group>, RepositoryError> {
-        Ok(self
-            .groups
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|g| g.id == id)
-            .cloned())
-    }
-    async fn find_by_ids(&self, ids: &[GroupId]) -> Result<Vec<Group>, RepositoryError> {
-        Ok(self
-            .groups
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|g| ids.contains(&g.id))
-            .cloned()
-            .collect())
-    }
-    async fn list_all(&self) -> Result<Vec<Group>, RepositoryError> {
-        Ok(self.groups.lock().unwrap().clone())
-    }
-    async fn find_it_group(&self) -> Result<Option<Group>, RepositoryError> {
-        Ok(self.it_group.lock().unwrap().clone())
-    }
-    async fn save_group(&self, _group: &Group) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn find_membership(
-        &self,
-        group_id: GroupId,
-        user_id: UserId,
-    ) -> Result<Option<Membership>, RepositoryError> {
-        Ok(self
-            .memberships
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|m| m.group_id == group_id && m.user_id == user_id)
-            .cloned())
-    }
-    async fn list_memberships_for_group(
-        &self,
-        group_id: GroupId,
-    ) -> Result<Vec<Membership>, RepositoryError> {
-        Ok(self
-            .memberships
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|m| m.group_id == group_id)
-            .cloned()
-            .collect())
-    }
-    async fn list_active_memberships_for_user(
-        &self,
-        user_id: UserId,
-    ) -> Result<Vec<Membership>, RepositoryError> {
-        Ok(self
-            .memberships
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|m| m.deactivated_at.is_none() && m.user_id == user_id)
-            .cloned()
-            .collect())
-    }
-    async fn list_active_memberships_for_users(
-        &self,
-        user_ids: &[UserId],
-    ) -> Result<Vec<Membership>, RepositoryError> {
-        Ok(self
-            .memberships
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|m| m.deactivated_at.is_none() && user_ids.contains(&m.user_id))
-            .cloned()
-            .collect())
-    }
-    async fn save_membership(&self, membership: &Membership) -> Result<(), RepositoryError> {
-        self.memberships.lock().unwrap().push(membership.clone());
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-struct FakeProjects;
-
-#[async_trait]
-impl ProjectRepository for FakeProjects {
-    async fn find_by_id(&self, _id: ProjectId) -> Result<Option<Project>, RepositoryError> {
-        Ok(None)
-    }
-    async fn list_for_owner_group(
-        &self,
-        _group_id: GroupId,
-        _q: Option<&str>,
-    ) -> Result<Vec<Project>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn list_for_collaborator_group(
-        &self,
-        _group_id: GroupId,
-    ) -> Result<Vec<Project>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn list_page(
-        &self,
-        _after: Option<ProjectId>,
-        _limit: u32,
-    ) -> Result<Vec<Project>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn save_project(&self, _project: &Project) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn list_collaborators(
-        &self,
-        _project_id: ProjectId,
-    ) -> Result<Vec<ProjectCollaborator>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn save_collaborator(
-        &self,
-        _collaborator: &ProjectCollaborator,
-    ) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn delete_collaborator(&self, _id: ProjectCollaboratorId) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn find_invite(
-        &self,
-        _id: ProjectInviteId,
-    ) -> Result<Option<ProjectInvite>, RepositoryError> {
-        Ok(None)
-    }
-    async fn list_pending_invites_for_group(
-        &self,
-        _group_id: GroupId,
-    ) -> Result<Vec<ProjectInvite>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn list_pending_invites_for_project(
-        &self,
-        _project_id: ProjectId,
-    ) -> Result<Vec<ProjectInvite>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn save_invite(&self, _invite: &ProjectInvite) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-struct FakeRequests;
-
-#[async_trait]
-impl RequestRepository for FakeRequests {
-    async fn find_by_id(&self, _id: RequestId) -> Result<Option<Request>, RepositoryError> {
-        Ok(None)
-    }
-    async fn list_for_project(
-        &self,
-        _project_id: ProjectId,
-        _status: Option<RequestStatus>,
-        _q: Option<&str>,
-    ) -> Result<Vec<Request>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn list_page(
-        &self,
-        _project: Option<ProjectId>,
-        _after: Option<RequestId>,
-        _limit: u32,
-    ) -> Result<Vec<Request>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn list_for_assignee(
-        &self,
-        _assignee: UserId,
-        _status: Option<RequestStatus>,
-        _q: Option<&str>,
-    ) -> Result<Vec<Request>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn save(&self, _request: &Request) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn list_attachments(
-        &self,
-        _request_id: RequestId,
-    ) -> Result<Vec<RequestAttachment>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn save_attachment(
-        &self,
-        _attachment: &RequestAttachment,
-    ) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn list_all_attachment_keys(&self) -> Result<Vec<String>, RepositoryError> {
-        Ok(Vec::new())
-    }
-}
-
-#[derive(Default)]
-struct FakeTickets {
-    tickets: Mutex<Vec<Ticket>>,
-}
-
-#[async_trait]
-impl TicketRepository for FakeTickets {
-    async fn find_by_id(&self, id: TicketId) -> Result<Option<Ticket>, RepositoryError> {
-        Ok(self
-            .tickets
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|t| t.id == id)
-            .cloned())
-    }
-    async fn list_open_for_triage(
-        &self,
-        _limit: u32,
-        _q: Option<&str>,
-    ) -> Result<Vec<Ticket>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn list_for_assignee(
-        &self,
-        _assignee: UserId,
-        _q: Option<&str>,
-    ) -> Result<Vec<Ticket>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn list_for_requester(
-        &self,
-        _requester: UserId,
-        _q: Option<&str>,
-    ) -> Result<Vec<Ticket>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn list_resolved_before(
-        &self,
-        _cutoff: OffsetDateTime,
-        _limit: u32,
-    ) -> Result<Vec<Ticket>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn save(&self, ticket: &Ticket) -> Result<(), RepositoryError> {
-        let mut v = self.tickets.lock().unwrap();
-        if let Some(existing) = v.iter_mut().find(|t| t.id == ticket.id) {
-            *existing = ticket.clone();
-        } else {
-            v.push(ticket.clone());
-        }
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-struct FakeChatAttachments;
-
-#[async_trait]
-impl ChatAttachmentRepository for FakeChatAttachments {
-    async fn save(&self, _attachment: &ChatAttachment) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn find_by_keys(&self, _keys: &[String]) -> Result<Vec<ChatAttachment>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn list_all_keys(&self) -> Result<Vec<String>, RepositoryError> {
-        Ok(Vec::new())
-    }
-}
-
-#[derive(Default)]
-struct FakeStorage;
-
-#[async_trait]
-impl FileStorage for FakeStorage {
-    async fn put(&self, _key: &str, _ct: &str, _bytes: Vec<u8>) -> Result<(), StorageError> {
-        Ok(())
-    }
-    async fn get(&self, _key: &str) -> Result<Vec<u8>, StorageError> {
-        Ok(Vec::new())
-    }
-    async fn delete(&self, _key: &str) -> Result<(), StorageError> {
-        Ok(())
-    }
-    async fn presign_get(
-        &self,
-        key: &str,
-        _ttl: std::time::Duration,
-        _user: UserId,
-    ) -> Result<String, StorageError> {
-        Ok(format!("/files/{key}"))
-    }
-    async fn list(&self, _prefix: &str) -> Result<Vec<StorageObject>, StorageError> {
-        Ok(Vec::new())
-    }
-}
-
-#[derive(Default)]
-struct FakeChats;
-
-#[async_trait]
-impl ChatRepository for FakeChats {
-    async fn find_channel(&self, _id: ChannelId) -> Result<Option<Channel>, RepositoryError> {
-        Ok(None)
-    }
-    async fn find_direct_channel(
-        &self,
-        _a: UserId,
-        _b: UserId,
-    ) -> Result<Option<Channel>, RepositoryError> {
-        Ok(None)
-    }
-    async fn save_channel(&self, _channel: &Channel) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn find_group_channel(
-        &self,
-        _group_id: GroupId,
-    ) -> Result<Option<Channel>, RepositoryError> {
-        Ok(None)
-    }
-    async fn find_general_channel(&self) -> Result<Option<Channel>, RepositoryError> {
-        Ok(None)
-    }
-    async fn subscribe_member(
-        &self,
-        _user_id: UserId,
-        _channel_id: ChannelId,
-        _kind: ChannelKind,
-    ) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn unsubscribe_member(
-        &self,
-        _user_id: UserId,
-        _channel_id: ChannelId,
-    ) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn list_channels_for_user(
-        &self,
-        _user_id: UserId,
-    ) -> Result<Vec<ChannelMembership>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn update_last_read(
-        &self,
-        _user_id: UserId,
-        _channel_id: ChannelId,
-        _at: OffsetDateTime,
-    ) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn list_messages(
-        &self,
-        _channel_id: ChannelId,
-        _before: Option<MessageId>,
-        _limit: u32,
-    ) -> Result<Vec<Message>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn find_message(
-        &self,
-        _channel_id: ChannelId,
-        _message_id: MessageId,
-    ) -> Result<Option<Message>, RepositoryError> {
-        Ok(None)
-    }
-    async fn save_message(&self, _message: &Message) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn find_announcement(
-        &self,
-        _channel_id: ChannelId,
-        _message_id: MessageId,
-    ) -> Result<Option<Announcement>, RepositoryError> {
-        Ok(None)
-    }
-    async fn list_announcements(
-        &self,
-        _channel_id: ChannelId,
-        _limit: u32,
-    ) -> Result<Vec<Announcement>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn save_announcement(&self, _announcement: &Announcement) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn delete_announcement(
-        &self,
-        _channel_id: ChannelId,
-        _message_id: MessageId,
-    ) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-struct FakePublisher;
-
-#[async_trait]
-impl EventPublisher for FakePublisher {
-    async fn publish(&self, _topic: &str, _payload: &[u8]) -> Result<(), EventError> {
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-struct FakeJobs;
-
-#[async_trait]
-impl JobQueue for FakeJobs {
-    async fn enqueue(&self, _queue: &str, _payload: &[u8]) -> Result<(), JobError> {
-        Ok(())
-    }
-}
-
-// --- builders + assertions -----------------------------------------------------
-
-fn user(system_role: Option<SystemRole>) -> User {
-    let now = OffsetDateTime::now_utc();
-    User {
-        id: UserId(Uuid::now_v7()),
-        email: "a@b.c".into(),
-        password_hash: String::new(),
-        full_name: "Test".into(),
-        avatar_storage_key: None,
-        phone: None,
-        timezone: "UTC".into(),
-        status: UserStatus::Active,
-        system_role,
-        email_notifications: true,
-        first_logged_in_at: Some(now),
-        deactivated_at: None,
-        version: 0,
-        created_at: now,
-        updated_at: now,
-    }
-}
-
-fn group(kind: GroupKind) -> Group {
-    let now = OffsetDateTime::now_utc();
-    Group {
-        id: GroupId(Uuid::now_v7()),
-        name: "G".into(),
-        description: String::new(),
-        kind,
-        version: 0,
-        created_at: now,
-        updated_at: now,
-    }
-}
-
-fn membership(group_id: GroupId, user_id: UserId, role: GroupRole) -> Membership {
-    let now = OffsetDateTime::now_utc();
-    Membership {
-        id: MembershipId(Uuid::now_v7()),
-        group_id,
-        user_id,
-        role,
-        joined_at: now,
-        deactivated_at: None,
-        version: 0,
-        created_at: now,
-        updated_at: now,
-    }
-}
-
-fn events() -> Arc<EventBus> {
-    Arc::new(EventBus::new(
-        Arc::new(FakePublisher),
-        Arc::new(FakeJobs),
-        Arc::new(FakeJobs),
-    ))
-}
-
-struct FakeLeave;
-
-#[async_trait]
-impl LeaveBalanceRepository for FakeLeave {
-    async fn list_grants(&self, _user: UserId) -> Result<Vec<LeaveGrant>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn available(&self, _user: UserId, _asof: Date) -> Result<f64, RepositoryError> {
-        Ok(5.0)
-    }
-    async fn upsert_grant(&self, _grant: &LeaveGrant) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn apply(
-        &self,
-        _grant_deltas: &[(LeaveGrantId, f64)],
-        _txns: &[LeaveTransaction],
-    ) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn list_expiring(
-        &self,
-        _asof: Date,
-        _within_days: i64,
-    ) -> Result<Vec<LeaveGrant>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn list_transactions(
-        &self,
-        _user: UserId,
-        _from: Date,
-        _to: Date,
-    ) -> Result<Vec<LeaveTransaction>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn transactions_for_dayoff(
-        &self,
-        _dayoff_id: DayOffId,
-    ) -> Result<Vec<LeaveTransaction>, RepositoryError> {
-        Ok(Vec::new())
-    }
-}
-
-struct FakeHolidays;
-
-#[async_trait]
-impl HolidayRepository for FakeHolidays {
-    async fn list(&self, _from: Date, _to: Date) -> Result<Vec<Holiday>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn upsert(&self, _date: Date, _name: &str) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-    async fn delete(&self, _date: Date) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-}
-
-struct FakeDayOffs;
-
-#[async_trait]
-impl DayOffRepository for FakeDayOffs {
-    async fn find_by_id(&self, _id: DayOffId) -> Result<Option<DayOff>, RepositoryError> {
-        Ok(None)
-    }
-    async fn list_for_user(
-        &self,
-        _user: UserId,
-        _from: Date,
-        _to: Date,
-    ) -> Result<Vec<DayOff>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn approved_days_in_month(
-        &self,
-        _user: UserId,
-        _year: i32,
-        _month: u8,
-    ) -> Result<f64, RepositoryError> {
-        Ok(0.0)
-    }
-    async fn list_pending_for_leader(
-        &self,
-        _group: GroupId,
-    ) -> Result<Vec<DayOff>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn list_pending_for_hr(&self) -> Result<Vec<DayOff>, RepositoryError> {
-        Ok(Vec::new())
-    }
-    async fn save(&self, _day_off: &DayOff) -> Result<(), RepositoryError> {
-        Ok(())
-    }
-}
-
-fn has(writes: &[Tuple], subject: &str, relation: &str, object: &str) -> bool {
-    writes
-        .iter()
-        .any(|(s, r, o)| s == subject && r == relation && o == object)
-}
+use support::{
+    FakeAuthz, FakeChatAttachments, FakeChats, FakeDayOffs, FakeGroups, FakeHolidays, FakeLeave,
+    FakeProjects, FakeRequests, FakeStorage, FakeTickets, FakeUsers, events, group, has,
+    membership, repair, user,
+};
 
 // --- tests ---------------------------------------------------------------------
 
@@ -785,10 +56,11 @@ async fn create_project_writes_owner_group_and_company_tuples() {
     let authz = Arc::new(FakeAuthz::default());
     let perms = Arc::new(Permissions::new(users, groups, authz.clone()));
     let svc = ProjectService::new(
-        Arc::new(FakeProjects),
+        Arc::new(FakeProjects::default()),
         Arc::new(FakeRequests),
         perms,
         events(),
+        repair(),
     );
 
     let project = svc
@@ -804,7 +76,7 @@ async fn create_project_writes_owner_group_and_company_tuples() {
         .expect("create_project");
 
     let writes = authz.writes();
-    let obj = format!("project:{}", project.id.0);
+    let obj = format!("project:{}", project.entity.id.0);
     assert!(
         has(
             &writes,
@@ -832,7 +104,7 @@ async fn raise_ticket_writes_requester_it_group_and_company() {
 
     let authz = Arc::new(FakeAuthz::default());
     let perms = Arc::new(Permissions::new(users, groups, authz.clone()));
-    let svc = TicketService::new(Arc::new(FakeTickets::default()), perms, events());
+    let svc = TicketService::new(Arc::new(FakeTickets::default()), perms, events(), repair());
 
     let ticket = svc
         .raise(
@@ -847,7 +119,7 @@ async fn raise_ticket_writes_requester_it_group_and_company() {
         .expect("raise");
 
     let writes = authz.writes();
-    let obj = format!("ticket:{}", ticket.id.0);
+    let obj = format!("ticket:{}", ticket.entity.id.0);
     assert!(
         has(
             &writes,
@@ -881,10 +153,11 @@ async fn create_group_writes_group_and_channel_company_tuples() {
     ));
     let svc = GroupService::new(
         Arc::new(FakeGroups::default()),
-        Arc::new(FakeProjects),
-        Arc::new(FakeChats),
+        Arc::new(FakeProjects::default()),
+        Arc::new(FakeChats::default()),
         perms,
         events(),
+        repair(),
     );
 
     let created = svc
@@ -900,7 +173,7 @@ async fn create_group_writes_group_and_channel_company_tuples() {
         .expect("create_group");
 
     let writes = authz.writes();
-    let group_obj = format!("group:{}", created.id.0);
+    let group_obj = format!("group:{}", created.entity.id.0);
     assert!(
         has(&writes, "company:portal", "company", &group_obj),
         "group company tuple: {writes:?}"
@@ -943,10 +216,11 @@ async fn add_member_writes_direct_member_not_computed_member() {
     groups.groups.lock().unwrap().push(g.clone());
     let svc = GroupService::new(
         groups,
-        Arc::new(FakeProjects),
-        Arc::new(FakeChats),
+        Arc::new(FakeProjects::default()),
+        Arc::new(FakeChats::default()),
         perms,
         events(),
+        repair(),
     );
 
     svc.add_membership(
@@ -1022,10 +296,11 @@ async fn invariant_group_has_one_leader() {
     let perms = Arc::new(Permissions::new(users, groups.clone(), authz));
     let svc = GroupService::new(
         groups,
-        Arc::new(FakeProjects),
-        Arc::new(FakeChats),
+        Arc::new(FakeProjects::default()),
+        Arc::new(FakeChats::default()),
         perms,
         events(),
+        repair(),
     );
 
     let err = svc
@@ -1066,10 +341,11 @@ async fn invariant_one_membership_per_user_per_group() {
     let perms = Arc::new(Permissions::new(users, groups.clone(), authz));
     let svc = GroupService::new(
         groups,
-        Arc::new(FakeProjects),
-        Arc::new(FakeChats),
+        Arc::new(FakeProjects::default()),
+        Arc::new(FakeChats::default()),
         perms,
         events(),
+        repair(),
     );
 
     let err = svc
@@ -1108,7 +384,7 @@ async fn invariant_direct_messages_write_no_authz_tuples() {
         authz.clone(),
     ));
     let svc = ChatService::new(
-        Arc::new(FakeChats),
+        Arc::new(FakeChats::default()),
         users,
         Arc::new(FakeChatAttachments),
         Arc::new(FakeStorage),
@@ -1144,7 +420,7 @@ async fn direct_message_validation() {
         authz,
     ));
     let svc = ChatService::new(
-        Arc::new(FakeChats),
+        Arc::new(FakeChats::default()),
         users,
         Arc::new(FakeChatAttachments),
         Arc::new(FakeStorage),
@@ -1194,7 +470,7 @@ async fn invariant_ticket_reopen_window() {
     let ticket_id = t.id;
     tickets.tickets.lock().unwrap().push(t);
 
-    let svc = TicketService::new(tickets.clone(), perms, events());
+    let svc = TicketService::new(tickets.clone(), perms, events(), repair());
     let reopened = svc
         .reopen(requester.id, ticket_id)
         .await
@@ -1242,9 +518,9 @@ async fn leave_balance_views_gated_to_self_leader_or_hr() {
         Arc::new(FakeAuthz::default()),
     ));
     let svc = LeaveBalanceService::new(
-        Arc::new(FakeLeave),
+        Arc::new(FakeLeave::default()),
         Arc::new(FakeHolidays),
-        Arc::new(FakeDayOffs),
+        Arc::new(FakeDayOffs::default()),
         Arc::new(PolicyProvider::new(AttendancePolicy::default())),
         perms,
         events(),

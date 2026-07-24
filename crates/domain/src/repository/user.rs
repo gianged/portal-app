@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::{error::RepositoryError, ids::UserId, model::User};
+use crate::{error::RepositoryError, ids::UserId, model::User, repository::OutboxRecord};
 
 #[async_trait]
 pub trait UserRepository: Send + Sync {
@@ -21,7 +21,9 @@ pub trait UserRepository: Send + Sync {
         q: Option<&str>,
     ) -> Result<Vec<User>, RepositoryError>;
 
-    async fn save(&self, user: &User) -> Result<(), RepositoryError>;
+    /// `outbox` rows commit in the same transaction as the entity write, so an
+    /// audited event cannot be lost between commit and projection.
+    async fn save(&self, user: &User, outbox: &[OutboxRecord]) -> Result<(), RepositoryError>;
 
     /// Every non-null avatar storage key. Backs the upload orphan-sweep job.
     async fn list_avatar_keys(&self) -> Result<Vec<String>, RepositoryError>;

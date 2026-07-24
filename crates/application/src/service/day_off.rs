@@ -13,6 +13,7 @@ use crate::{
     error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
+    repair::{Repair, RepairJob},
     service::leave_balance::LeaveBalanceService,
 };
 
@@ -24,6 +25,7 @@ pub struct DayOffService {
     leave: Arc<LeaveBalanceService>,
     perms: Arc<Permissions>,
     events: Arc<EventBus>,
+    repair: Arc<Repair>,
 }
 
 impl DayOffService {
@@ -34,6 +36,7 @@ impl DayOffService {
         leave: Arc<LeaveBalanceService>,
         perms: Arc<Permissions>,
         events: Arc<EventBus>,
+        repair: Arc<Repair>,
     ) -> Self {
         Self {
             dayoffs,
@@ -41,6 +44,7 @@ impl DayOffService {
             leave,
             perms,
             events,
+            repair,
         }
     }
 
@@ -111,7 +115,7 @@ impl DayOffService {
                 actor,
                 at: now,
             })
-            .await?;
+            .await;
         Ok(day_off)
     }
 
@@ -142,7 +146,7 @@ impl DayOffService {
             day_off.reject(actor, cmd.note, now)?;
         }
         self.dayoffs.save(&day_off).await?;
-        self.emit_decided(&day_off, cmd.approve, actor, now).await?;
+        self.emit_decided(&day_off, cmd.approve, actor, now).await;
         Ok(day_off)
     }
 
@@ -165,6 +169,8 @@ impl DayOffService {
         }
         let now = OffsetDateTime::now_utc();
         if cmd.approve {
+            // Consume stays BEFORE save: insufficient balance must reject the
+            // approval (business gate, not an obligation).
             if day_off.kind.consumes_balance() {
                 self.leave
                     .consume(day_off.requester_user_id, day_off.days, day_off.id)
@@ -174,8 +180,21 @@ impl DayOffService {
         } else {
             day_off.reject(actor, cmd.note, now)?;
         }
-        self.dayoffs.save(&day_off).await?;
-        self.emit_decided(&day_off, cmd.approve, actor, now).await?;
+        // A save failure after the debit queues a reconcile that refunds
+        // (status is still LeaderApproved).
+        if let Err(e) = self.dayoffs.save(&day_off).await {
+            let e: Error = e.into();
+            self.repair
+                .queue(
+                    RepairJob::SyncDayOffBalance {
+                        dayoff_id: day_off.id,
+                    },
+                    &e,
+                )
+                .await;
+            return Err(e);
+        }
+        self.emit_decided(&day_off, cmd.approve, actor, now).await;
         Ok(day_off)
     }
 
@@ -194,17 +213,25 @@ impl DayOffService {
             day_off.kind.consumes_balance() && day_off.status == DayOffStatus::Approved;
         let now = OffsetDateTime::now_utc();
         day_off.cancel(now)?;
-        if was_consumed {
-            self.leave.refund(day_off.id).await?;
-        }
         self.dayoffs.save(&day_off).await?;
+        // The refund is a post-commit obligation: always allowed to lag.
+        if was_consumed {
+            self.repair
+                .ensure(
+                    self.leave.refund(day_off.id).await,
+                    RepairJob::SyncDayOffBalance {
+                        dayoff_id: day_off.id,
+                    },
+                )
+                .await;
+        }
         self.events
             .emit(DomainEvent::DayOffCancelled {
                 dayoff_id: day_off.id,
                 user_id: day_off.requester_user_id,
                 at: now,
             })
-            .await?;
+            .await;
         Ok(day_off)
     }
 
@@ -244,7 +271,7 @@ impl DayOffService {
         approved: bool,
         actor: UserId,
         now: OffsetDateTime,
-    ) -> Result<()> {
+    ) {
         self.events
             .emit(DomainEvent::DayOffDecided {
                 dayoff_id: day_off.id,
@@ -253,8 +280,7 @@ impl DayOffService {
                 actor,
                 at: now,
             })
-            .await?;
-        Ok(())
+            .await;
     }
 
     async fn load(&self, id: DayOffId) -> Result<DayOff> {

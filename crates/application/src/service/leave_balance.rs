@@ -99,25 +99,24 @@ impl LeaveBalanceService {
                 0.0,
             ),
         };
-        self.leave.upsert_grant(&grant).await?;
-
-        // Record the change in the ledger (absolute remainder is already written).
+        // Grant and its ledger entry commit in one transaction (absolute
+        // remainder is already written; the ledger records the change).
         let delta = cmd.days_granted - prev_granted;
-        if delta.abs() > f64::EPSILON {
-            let txn = LeaveTransaction {
-                id: LeaveTransactionId(Uuid::now_v7()),
-                user_id: cmd.user_id,
-                grant_id: grant.id,
-                kind: LeaveTxnKind::Grant,
-                delta,
-                dayoff_id: None,
-                work_pct: None,
-                reason: String::new(),
-                created_by: Some(actor),
-                created_at: now,
-            };
-            self.leave.apply(&[], &[txn]).await?;
-        }
+        let txn = (delta.abs() > f64::EPSILON).then(|| LeaveTransaction {
+            id: LeaveTransactionId(Uuid::now_v7()),
+            user_id: cmd.user_id,
+            grant_id: grant.id,
+            kind: LeaveTxnKind::Grant,
+            delta,
+            dayoff_id: None,
+            work_pct: None,
+            reason: String::new(),
+            created_by: Some(actor),
+            created_at: now,
+        });
+        self.leave
+            .upsert_grant_with_txn(&grant, txn.as_ref())
+            .await?;
 
         self.events
             .emit(DomainEvent::LeaveBalanceAdjusted {
@@ -125,7 +124,7 @@ impl LeaveBalanceService {
                 actor,
                 at: now,
             })
-            .await?;
+            .await;
         Ok(())
     }
 
@@ -152,9 +151,8 @@ impl LeaveBalanceService {
             grant.days_granted = grant.days_remaining;
         }
         grant.updated_at = now;
-        self.leave.upsert_grant(&grant).await?;
-
-        // Ledger the delta actually applied; the zero clamp may shrink it.
+        // Ledger the delta actually applied (the zero clamp may shrink it),
+        // committed atomically with the grant.
         let txn = LeaveTransaction {
             id: LeaveTransactionId(Uuid::now_v7()),
             user_id: cmd.user_id,
@@ -167,7 +165,7 @@ impl LeaveBalanceService {
             created_by: Some(actor),
             created_at: now,
         };
-        self.leave.apply(&[], &[txn]).await?;
+        self.leave.upsert_grant_with_txn(&grant, Some(&txn)).await?;
 
         self.events
             .emit(DomainEvent::LeaveBalanceAdjusted {
@@ -175,7 +173,7 @@ impl LeaveBalanceService {
                 actor,
                 at: now,
             })
-            .await?;
+            .await;
         Ok(())
     }
 
@@ -362,7 +360,16 @@ impl LeaveBalanceService {
                 let work_pct = if record_pct {
                     let year = g.expires_on.year();
                     let month = u8::from(g.expires_on.month());
-                    Some(self.work_percentage(g.user_id, year, month).await?)
+                    // A read failure skips this grant instead of aborting the
+                    // sweep; the next run retries it.
+                    match self.work_percentage(g.user_id, year, month).await {
+                        Ok(pct) => Some(pct),
+                        Err(e) => {
+                            tracing::warn!(user = ?g.user_id, grant = ?g.id, error = %e,
+                                "work percentage read failed; skipping grant this sweep");
+                            continue;
+                        }
+                    }
                 } else {
                     None
                 };
@@ -386,7 +393,7 @@ impl LeaveBalanceService {
                         grant_id: g.id,
                         at: now,
                     })
-                    .await?;
+                    .await;
             }
         }
         if !deltas.is_empty() {

@@ -16,6 +16,7 @@ use crate::{
     error::{ConflictCode, Error, Result},
     events::{DomainEvent, EventBus},
     permissions::Permissions,
+    repair::{Created, Repair, RepairJob},
     resilience,
 };
 
@@ -25,6 +26,7 @@ pub struct GroupService {
     chats: Arc<dyn ChatRepository>,
     perms: Arc<Permissions>,
     events: Arc<EventBus>,
+    repair: Arc<Repair>,
     /// Memoized id of the single IT group, a stable org invariant. Populated on
     /// first sighting so role resolution stops re-querying it on every login.
     it_group: OnceLock<GroupId>,
@@ -38,6 +40,7 @@ impl GroupService {
         chats: Arc<dyn ChatRepository>,
         perms: Arc<Permissions>,
         events: Arc<EventBus>,
+        repair: Arc<Repair>,
     ) -> Self {
         Self {
             groups,
@@ -45,6 +48,7 @@ impl GroupService {
             chats,
             perms,
             events,
+            repair,
             it_group: OnceLock::new(),
         }
     }
@@ -52,69 +56,115 @@ impl GroupService {
     /// Creates a group and its group channel.
     ///
     /// # Errors
-    /// Returns `Forbidden` if the actor is not HR, a repository error if the
-    /// datastore or authz backend is unavailable, or an event error if the event
-    /// bus fails.
+    /// Returns `Forbidden` if the actor is not HR, or a repository error if the
+    /// datastore or authz backend is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor))]
-    pub async fn create_group(&self, actor: UserId, cmd: CreateGroupCommand) -> Result<Group> {
+    pub async fn create_group(
+        &self,
+        actor: UserId,
+        cmd: CreateGroupCommand,
+    ) -> Result<Created<Group>> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
 
         let group = Group {
             id: GroupId(Uuid::now_v7()),
-            name: cmd.name.clone(),
+            name: cmd.name,
             description: cmd.description,
             kind: cmd.kind,
+            archived_at: None,
             version: 0,
             created_at: now,
             updated_at: now,
         };
-        self.groups.save_group(&group).await?;
-
-        let channel_id = ChannelId(Uuid::now_v7());
-        let channel = Channel::Group(GroupChannel {
-            id: channel_id,
+        let event = DomainEvent::GroupCreated {
             group_id: group.id,
-            name: cmd.name,
-            created_at: now,
-        });
-        self.chats.save_channel(&channel).await?;
+            actor,
+            at: now,
+            after: group.clone(),
+        };
+        self.groups
+            .save_group(&group, &[event.outbox_record()])
+            .await?;
+        let provisioned = self
+            .repair
+            .ensure(
+                self.provision_group(&group).await,
+                RepairJob::SyncGroupProvision { group_id: group.id },
+            )
+            .await;
+        self.events.emit(event).await;
+        Ok(Created {
+            entity: group,
+            authz_pending: !provisioned,
+        })
+    }
 
+    /// Channel row + company/channel tuples; the same logic the repair re-runs.
+    async fn provision_group(&self, group: &Group) -> Result<()> {
+        let channel_id = self.ensure_group_channel(group).await?;
         // OpenFGA: tie the group and its channel to the company singleton so the
         // org-wide (Director) viewer branches resolve.
         self.perms.grant_group_created(group.id).await?;
         self.perms
             .grant_group_channel_created(group.id, channel_id)
-            .await?;
-
-        self.events
-            .emit(DomainEvent::GroupCreated {
-                group_id: group.id,
-                actor,
-                at: now,
-                after: group.clone(),
-            })
-            .await?;
-        Ok(group)
+            .await
     }
 
-    /// Signals deletion of a group; the row removal happens via the emitted event.
+    /// Find-or-create the group's chat channel; idempotent across repair re-runs.
+    async fn ensure_group_channel(&self, group: &Group) -> Result<ChannelId> {
+        if let Some(channel) = self.chats.find_group_channel(group.id).await? {
+            return Ok(channel.id());
+        }
+        let id = ChannelId(Uuid::now_v7());
+        let channel = Channel::Group(GroupChannel {
+            id,
+            group_id: group.id,
+            name: group.name.clone(),
+            created_at: OffsetDateTime::now_utc(),
+        });
+        self.chats.save_channel(&channel).await?;
+        Ok(id)
+    }
+
+    async fn subscribe_group_channel(&self, group_id: GroupId, user_id: UserId) -> Result<()> {
+        // Subscribe the member to the group channel so it appears in their
+        // channel list (channels_by_user is per-user denormalised in Scylla).
+        if let Some(channel) = self.chats.find_group_channel(group_id).await? {
+            self.chats
+                .subscribe_member(user_id, channel.id(), ChannelKind::Group)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn unsubscribe_group_channel(&self, group_id: GroupId, user_id: UserId) -> Result<()> {
+        if let Some(channel) = self.chats.find_group_channel(group_id).await? {
+            self.chats.unsubscribe_member(user_id, channel.id()).await?;
+        }
+        Ok(())
+    }
+
+    /// Archives a group (soft delete): the row stays for history, but the group
+    /// disappears from active queries and loses its org-wide tuples.
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the group does
-    /// not exist, `Conflict` if the group still owns active projects, a repository
-    /// error if the datastore is unavailable, or an event error if the event bus
-    /// fails.
+    /// not exist, `Conflict` if the group still owns active projects, or a
+    /// repository error if the datastore is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, group_id = ?group_id))]
     pub async fn delete_group(&self, actor: UserId, group_id: GroupId) -> Result<()> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
 
-        let group = self
+        let mut group = self
             .groups
             .find_group(group_id)
             .await?
             .ok_or(Error::NotFound("group"))?;
+        if group.archived_at.is_some() {
+            return Ok(());
+        }
 
         let projects = self.projects.list_for_owner_group(group_id, None).await?;
         let has_active = projects.iter().any(|p| {
@@ -127,16 +177,37 @@ impl GroupService {
             return Err(Error::Conflict(ConflictCode::GroupHasActiveProjects));
         }
 
-        // Row deletion happens in infrastructure on the GroupDeleted event; the
-        // service only signals intent.
-        self.events
-            .emit(DomainEvent::GroupDeleted {
-                group_id: group.id,
-                actor,
-                at: now,
-                before: group,
-            })
+        let before = group.clone();
+        group.archived_at = Some(now);
+        group.updated_at = now;
+        let event = DomainEvent::GroupDeleted {
+            group_id: group.id,
+            actor,
+            at: now,
+            before,
+        };
+        self.groups
+            .save_group(&group, &[event.outbox_record()])
             .await?;
+        self.repair
+            .ensure(
+                self.purge_group_access(group_id).await,
+                RepairJob::SyncGroupProvision { group_id },
+            )
+            .await;
+        self.events.emit(event).await;
+        Ok(())
+    }
+
+    /// Archived groups lose org-wide visibility: company + channel tuples go.
+    /// Member role tuples stay so historical projects remain readable.
+    async fn purge_group_access(&self, group_id: GroupId) -> Result<()> {
+        self.perms.revoke_group_created(group_id).await?;
+        if let Some(channel) = self.chats.find_group_channel(group_id).await? {
+            self.perms
+                .revoke_group_channel_created(group_id, channel.id())
+                .await?;
+        }
         Ok(())
     }
 
@@ -146,22 +217,21 @@ impl GroupService {
     /// # Errors
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the group does
     /// not exist, `Conflict` if the user is already an active member or the role
-    /// is `Leader` while the group already has one, a repository error if the
-    /// datastore or authz backend is unavailable, or an event error if the event
-    /// bus fails.
+    /// is `Leader` while the group already has one, or a repository error if the
+    /// datastore or authz backend is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor))]
     pub async fn add_membership(
         &self,
         actor: UserId,
         cmd: AddMembershipCommand,
-    ) -> Result<Membership> {
+    ) -> Result<Created<Membership>> {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
 
         if self.groups.find_group(cmd.group_id).await?.is_none() {
             return Err(Error::NotFound("group"));
         }
-        resilience::retry_stale(|| async {
+        let membership = resilience::retry_stale(|| async {
             let existing = self
                 .groups
                 .find_membership(cmd.group_id, cmd.user_id)
@@ -195,28 +265,47 @@ impl GroupService {
                     updated_at: now,
                 },
             };
-            self.groups.save_membership(&membership).await?;
-            self.perms.grant_group_membership(&membership).await?;
-            // Subscribe the new member to the group channel so it appears in their
-            // channel list (channels_by_user is per-user denormalised in Scylla).
-            if let Some(channel) = self.chats.find_group_channel(cmd.group_id).await? {
-                self.chats
-                    .subscribe_member(cmd.user_id, channel.id(), ChannelKind::Group)
-                    .await?;
-            }
-            self.events
-                .emit(DomainEvent::MembershipAdded {
-                    membership_id: membership.id,
+            let event = DomainEvent::MembershipAdded {
+                membership_id: membership.id,
+                group_id: cmd.group_id,
+                user_id: cmd.user_id,
+                role: membership.role,
+                actor,
+                at: now,
+            };
+            self.groups
+                .save_membership(&membership, &[event.outbox_record()])
+                .await?;
+            Ok((membership, event))
+        })
+        .await?;
+        let (membership, event) = membership;
+        let granted = self
+            .repair
+            .ensure(
+                self.perms.grant_group_membership(&membership).await,
+                RepairJob::SyncMembership {
                     group_id: cmd.group_id,
                     user_id: cmd.user_id,
-                    role: cmd.role,
-                    actor,
-                    at: now,
-                })
-                .await?;
-            Ok(membership)
+                },
+            )
+            .await;
+        let subscribed = self
+            .repair
+            .ensure(
+                self.subscribe_group_channel(cmd.group_id, cmd.user_id)
+                    .await,
+                RepairJob::SyncMembership {
+                    group_id: cmd.group_id,
+                    user_id: cmd.user_id,
+                },
+            )
+            .await;
+        self.events.emit(event).await;
+        Ok(Created {
+            entity: membership,
+            authz_pending: !(granted && subscribed),
         })
-        .await
     }
 
     /// Changes a member's role within a group.
@@ -225,8 +314,7 @@ impl GroupService {
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the membership
     /// does not exist, `Conflict` if the membership is inactive, the change would
     /// demote the last leader, or the group already has a leader when promoting,
-    /// a repository error if the datastore or authz backend is unavailable, or an
-    /// event error if the event bus fails.
+    /// a repository error if the datastore or authz backend is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, group_id = ?group_id, user_id = ?user_id))]
     pub async fn change_role(
         &self,
@@ -238,7 +326,7 @@ impl GroupService {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
 
-        resilience::retry_stale(|| async {
+        let (membership, from_role) = resilience::retry_stale(|| async {
             let mut membership = self
                 .groups
                 .find_membership(group_id, user_id)
@@ -249,7 +337,7 @@ impl GroupService {
             }
             let from_role = membership.role;
             if from_role == new_role {
-                return Ok(membership);
+                return Ok((membership, from_role));
             }
 
             if from_role == GroupRole::Leader && self.count_active_leaders(group_id).await? <= 1 {
@@ -259,26 +347,46 @@ impl GroupService {
                 return Err(Error::Conflict(ConflictCode::GroupAlreadyHasLeader));
             }
 
-            // Update OpenFGA: revoke old role tuple before granting the new one.
-            self.perms.revoke_group_membership(&membership).await?;
             membership.change_role(new_role, now);
-            self.groups.save_membership(&membership).await?;
-            self.perms.grant_group_membership(&membership).await?;
-
-            self.events
-                .emit(DomainEvent::MembershipRoleChanged {
-                    membership_id: membership.id,
-                    group_id,
-                    user_id,
-                    from: from_role,
-                    to: new_role,
-                    actor,
-                    at: now,
-                })
+            let event = DomainEvent::MembershipRoleChanged {
+                membership_id: membership.id,
+                group_id,
+                user_id,
+                from: from_role,
+                to: membership.role,
+                actor,
+                at: now,
+            };
+            self.groups
+                .save_membership(&membership, &[event.outbox_record()])
                 .await?;
-            Ok(membership)
+            Ok((membership, from_role))
         })
-        .await
+        .await?;
+        // No-op change: nothing was saved, nothing to sync or announce.
+        if from_role == membership.role {
+            return Ok(membership);
+        }
+        self.repair
+            .ensure(
+                self.perms
+                    .sync_group_role(user_id, group_id, Some(membership.role))
+                    .await,
+                RepairJob::SyncMembership { group_id, user_id },
+            )
+            .await;
+        self.events
+            .emit(DomainEvent::MembershipRoleChanged {
+                membership_id: membership.id,
+                group_id,
+                user_id,
+                from: from_role,
+                to: membership.role,
+                actor,
+                at: now,
+            })
+            .await;
+        Ok(membership)
     }
 
     /// Deactivates a user's membership in a group.
@@ -287,7 +395,7 @@ impl GroupService {
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the membership
     /// does not exist, `Conflict` if the member is the last leader (transfer
     /// leadership first), a repository error if the datastore or authz backend is
-    /// unavailable, or an event error if the event bus fails.
+    /// unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, group_id = ?group_id, user_id = ?user_id))]
     pub async fn deactivate_membership(
         &self,
@@ -298,14 +406,14 @@ impl GroupService {
         self.perms.require_hr(actor).await?;
         let now = OffsetDateTime::now_utc();
 
-        resilience::retry_stale(|| async {
+        let membership = resilience::retry_stale(|| async {
             let mut membership = self
                 .groups
                 .find_membership(group_id, user_id)
                 .await?
                 .ok_or(Error::NotFound("membership"))?;
             if !membership.is_active() {
-                return Ok(());
+                return Ok(None);
             }
             if membership.role == GroupRole::Leader
                 && self.count_active_leaders(group_id).await? <= 1
@@ -313,25 +421,46 @@ impl GroupService {
                 return Err(Error::Conflict(ConflictCode::TransferLeadershipFirst));
             }
 
-            self.perms.revoke_group_membership(&membership).await?;
             membership.deactivate(now);
-            self.groups.save_membership(&membership).await?;
-            if let Some(channel) = self.chats.find_group_channel(group_id).await? {
-                self.chats.unsubscribe_member(user_id, channel.id()).await?;
-            }
-
-            self.events
-                .emit(DomainEvent::MembershipDeactivated {
-                    membership_id: membership.id,
-                    group_id,
-                    user_id,
-                    actor,
-                    at: now,
-                })
+            let event = DomainEvent::MembershipDeactivated {
+                membership_id: membership.id,
+                group_id,
+                user_id,
+                actor,
+                at: now,
+            };
+            self.groups
+                .save_membership(&membership, &[event.outbox_record()])
                 .await?;
-            Ok(())
+            Ok(Some(membership))
         })
-        .await
+        .await?;
+        // Already inactive: nothing was saved, nothing to tear down.
+        let Some(membership) = membership else {
+            return Ok(());
+        };
+        self.repair
+            .ensure(
+                self.perms.sync_group_role(user_id, group_id, None).await,
+                RepairJob::SyncMembership { group_id, user_id },
+            )
+            .await;
+        self.repair
+            .ensure(
+                self.unsubscribe_group_channel(group_id, user_id).await,
+                RepairJob::SyncMembership { group_id, user_id },
+            )
+            .await;
+        self.events
+            .emit(DomainEvent::MembershipDeactivated {
+                membership_id: membership.id,
+                group_id,
+                user_id,
+                actor,
+                at: now,
+            })
+            .await;
+        Ok(())
     }
 
     /// Transfers leadership of a group from one active member to another.
@@ -340,8 +469,7 @@ impl GroupService {
     /// Returns `Forbidden` if the actor is not HR, `Validation` if the source and
     /// target are the same user, `NotFound` if either membership does not exist,
     /// `Conflict` if the source is not an active leader or the target is inactive,
-    /// a repository error if the datastore or authz backend is unavailable, or an
-    /// event error if the event bus fails.
+    /// a repository error if the datastore or authz backend is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, group_id = ?group_id, from_user = ?from_user, to_user = ?to_user))]
     pub async fn transfer_leadership(
         &self,
@@ -356,7 +484,7 @@ impl GroupService {
         }
         let now = OffsetDateTime::now_utc();
 
-        resilience::retry_stale(|| async {
+        let (from_membership, to_membership, to_was) = resilience::retry_stale(|| async {
             let mut from_membership = self
                 .groups
                 .find_membership(group_id, from_user)
@@ -374,33 +502,20 @@ impl GroupService {
                 return Err(Error::Conflict(ConflictCode::ToUserInactive));
             }
 
-            self.perms.revoke_group_membership(&from_membership).await?;
-            self.perms.revoke_group_membership(&to_membership).await?;
-            let from_was = from_membership.role;
             let to_was = to_membership.role;
             from_membership.change_role(GroupRole::Member, now);
             to_membership.change_role(GroupRole::Leader, now);
-            // One transaction so the group is never left leaderless; demoted row first
-            // so the partial unique index on (group_id WHERE role=leader) accepts it.
-            self.groups
-                .save_memberships(&[from_membership.clone(), to_membership.clone()])
-                .await?;
-            self.perms.grant_group_membership(&from_membership).await?;
-            self.perms.grant_group_membership(&to_membership).await?;
-
-            self.events
-                .emit(DomainEvent::MembershipRoleChanged {
+            let events = [
+                DomainEvent::MembershipRoleChanged {
                     membership_id: from_membership.id,
                     group_id,
                     user_id: from_user,
-                    from: from_was,
+                    from: GroupRole::Leader,
                     to: GroupRole::Member,
                     actor,
                     at: now,
-                })
-                .await?;
-            self.events
-                .emit(DomainEvent::MembershipRoleChanged {
+                },
+                DomainEvent::MembershipRoleChanged {
                     membership_id: to_membership.id,
                     group_id,
                     user_id: to_user,
@@ -408,20 +523,78 @@ impl GroupService {
                     to: GroupRole::Leader,
                     actor,
                     at: now,
-                })
-                .await?;
-            self.events
-                .emit(DomainEvent::LeadershipTransferred {
+                },
+                DomainEvent::LeadershipTransferred {
                     group_id,
                     from_user,
                     to_user,
                     actor,
                     at: now,
-                })
+                },
+            ];
+            let outbox: Vec<_> = events.iter().map(DomainEvent::outbox_record).collect();
+            // One transaction so the group is never left leaderless; demoted row first
+            // so the partial unique index on (group_id WHERE role=leader) accepts it.
+            self.groups
+                .save_memberships(&[from_membership.clone(), to_membership.clone()], &outbox)
                 .await?;
-            Ok(())
+            Ok((from_membership, to_membership, to_was))
         })
-        .await
+        .await?;
+        self.repair
+            .ensure(
+                self.perms
+                    .sync_group_role(from_user, group_id, Some(GroupRole::Member))
+                    .await,
+                RepairJob::SyncMembership {
+                    group_id,
+                    user_id: from_user,
+                },
+            )
+            .await;
+        self.repair
+            .ensure(
+                self.perms
+                    .sync_group_role(to_user, group_id, Some(GroupRole::Leader))
+                    .await,
+                RepairJob::SyncMembership {
+                    group_id,
+                    user_id: to_user,
+                },
+            )
+            .await;
+        self.events
+            .emit(DomainEvent::MembershipRoleChanged {
+                membership_id: from_membership.id,
+                group_id,
+                user_id: from_user,
+                from: GroupRole::Leader,
+                to: GroupRole::Member,
+                actor,
+                at: now,
+            })
+            .await;
+        self.events
+            .emit(DomainEvent::MembershipRoleChanged {
+                membership_id: to_membership.id,
+                group_id,
+                user_id: to_user,
+                from: to_was,
+                to: GroupRole::Leader,
+                actor,
+                at: now,
+            })
+            .await;
+        self.events
+            .emit(DomainEvent::LeadershipTransferred {
+                group_id,
+                from_user,
+                to_user,
+                actor,
+                at: now,
+            })
+            .await;
+        Ok(())
     }
 
     /// Looks up a group by id, returning `None` if it does not exist.
@@ -458,8 +631,7 @@ impl GroupService {
     ///
     /// # Errors
     /// Returns `Forbidden` if the actor is not HR, `NotFound` if the group does
-    /// not exist, a repository error if the datastore is unavailable, or an event
-    /// error if the event bus fails.
+    /// not exist, a repository error if the datastore is unavailable.
     #[tracing::instrument(skip_all, fields(actor = ?actor, group_id = ?group_id))]
     pub async fn update_metadata(
         &self,
@@ -483,7 +655,16 @@ impl GroupService {
                 group.description = description;
             }
             group.updated_at = now;
-            self.groups.save_group(&group).await?;
+            let event = DomainEvent::GroupMetadataUpdated {
+                group_id: group.id,
+                actor,
+                at: now,
+                before: before.clone(),
+                after: group.clone(),
+            };
+            self.groups
+                .save_group(&group, &[event.outbox_record()])
+                .await?;
             // The group channel denormalises the name; keep the chat title in sync.
             if group.name != before.name
                 && let Some(Channel::Group(mut channel)) =
@@ -492,15 +673,7 @@ impl GroupService {
                 channel.name = group.name.clone();
                 self.chats.save_channel(&Channel::Group(channel)).await?;
             }
-            self.events
-                .emit(DomainEvent::GroupMetadataUpdated {
-                    group_id: group.id,
-                    actor,
-                    at: now,
-                    before,
-                    after: group.clone(),
-                })
-                .await?;
+            self.events.emit(event).await;
             Ok(group)
         })
         .await

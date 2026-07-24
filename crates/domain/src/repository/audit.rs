@@ -6,7 +6,9 @@ use crate::{error::RepositoryError, model::AuditLog};
 
 #[async_trait]
 pub trait AuditRepository: Send + Sync {
-    async fn append(&self, entry: &AuditLog) -> Result<(), RepositoryError>;
+    /// Appends one entry keyed by the outbox `event_id` that produced it; a
+    /// redelivered projection deduplicates instead of double-appending.
+    async fn append_dedup(&self, entry: &AuditLog, event_id: Uuid) -> Result<(), RepositoryError>;
 
     async fn list_for_entity(
         &self,

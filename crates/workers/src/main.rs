@@ -1,6 +1,5 @@
 //! Thin entry point. Runs the tokio runtime on an 8 MiB thread because composing
 //! the worker graph overflows Windows' 1 MiB main-thread stack in debug builds.
-mod audit;
 mod bootstrap;
 mod cleanup;
 mod config;
@@ -11,6 +10,8 @@ mod job_error;
 mod job_spool;
 mod leave_expiry;
 mod notifications;
+mod outbox;
+mod repair;
 mod report_schedule;
 mod ticket_autoclose;
 mod uploads;
@@ -58,7 +59,8 @@ async fn run() -> anyhow::Result<()> {
         fanout,
         storage,
         audit_projector,
-        audit_storage,
+        repair_service,
+        repair_storage,
         maintenance,
         mailer,
         email_storage,
@@ -79,8 +81,8 @@ async fn run() -> anyhow::Result<()> {
     {
         let jobs_service = GrpcJobs::new(
             storage.clone(),
-            audit_storage.clone(),
             email_storage.clone(),
+            repair_storage.clone(),
         );
         let addr = cfg.grpc_addr;
         let token = cfg.internal_grpc_token.clone();
@@ -96,8 +98,8 @@ async fn run() -> anyhow::Result<()> {
         let drainer = JobSpoolDrainer::new(
             job_spool,
             storage.clone(),
-            audit_storage.clone(),
             email_storage.clone(),
+            repair_storage.clone(),
         );
         resilience::supervise("job-spool-drainer", move || drainer.clone().run());
     }
@@ -135,6 +137,13 @@ async fn run() -> anyhow::Result<()> {
     // Chat spool drainer: replays optimistically-acked batches that couldn't reach
     // Scylla, paced by the Scylla breaker so a revived backend isn't flooded.
     resilience::supervise("chat-drainer", move || chat_drainer.clone().run());
+
+    // Audit outbox projector: polls audit.outbox_events and projects entries
+    // into the audit log, exactly-once via the event_id dedup.
+    {
+        let projector = audit_projector.clone();
+        resilience::supervise("audit-outbox", move || outbox::run(projector.clone()));
+    }
 
     if cfg.report_enabled {
         let reports = report.clone();
@@ -179,25 +188,25 @@ async fn run() -> anyhow::Result<()> {
         .data(pg_breaker.clone())
         .backend(storage)
         .build_fn(notifications::handle);
-    let audit_worker = WorkerBuilder::new("audit")
-        .data(audit_projector)
-        .data(pg_breaker)
-        .backend(audit_storage)
-        .build_fn(audit::handle);
     let email_worker = WorkerBuilder::new("emails")
         .data(mailer)
         .backend(email_storage)
         .build_fn(emails::handle);
+    let repair_worker = WorkerBuilder::new("repair")
+        .data(repair_service)
+        .data(pg_breaker)
+        .backend(repair_storage)
+        .build_fn(repair::handle);
 
     tracing::info!(
-        "workers ready: notification + audit + email consumers + maintenance loops (cleanup, uploads, ticket auto-close, monthly report, leave-expiry, flex-reconciliation)"
+        "workers ready: notification + email + repair consumers + audit outbox projector + maintenance loops (cleanup, uploads, ticket auto-close, monthly report, leave-expiry, flex-reconciliation)"
     );
     // Guarantees a shutdown signal exits even if the Monitor's graceful shutdown stalls.
     tokio::spawn(force_exit_watchdog());
     Monitor::new()
         .register(notify_worker)
-        .register(audit_worker)
         .register(email_worker)
+        .register(repair_worker)
         .run_with_signal(async {
             wait_for_shutdown().await;
             Ok(())
